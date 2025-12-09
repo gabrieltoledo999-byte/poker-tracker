@@ -28,6 +28,20 @@ export const sessions = mysqlTable("sessions", {
   // Session type: online or live
   type: mysqlEnum("type", ["online", "live"]).notNull(),
   
+  // Game format: tournament, cash game, sit & go, etc.
+  gameFormat: mysqlEnum("gameFormat", [
+    "cash_game",      // Cash Game / Ring Game
+    "tournament",     // Torneio Regular
+    "turbo",          // Torneio Turbo/Rápido
+    "hyper_turbo",    // Torneio Hyper Turbo
+    "sit_and_go",     // Sit & Go
+    "spin_and_go",    // Spin & Go / Jackpot
+    "bounty",         // Torneio Bounty/PKO
+    "satellite",      // Satélite
+    "freeroll",       // Freeroll
+    "home_game"       // Home Game
+  ]).notNull().default("cash_game"),
+  
   // Financial data (stored in centavos to avoid decimal issues)
   buyIn: int("buyIn").notNull(), // in centavos (R$ 100.00 = 10000)
   cashOut: int("cashOut").notNull(), // in centavos

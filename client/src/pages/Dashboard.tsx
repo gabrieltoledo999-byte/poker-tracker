@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { getGameFormatLabel, getGameFormatEmoji, GameFormat } from "@shared/gameFormats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -148,6 +149,88 @@ function BankrollCard({
           </span>
         </div>
         <p className="text-xs text-muted-foreground">{sessions} sessões</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Game format stats component
+function GameFormatStats() {
+  const { data: formatStats, isLoading } = trpc.sessions.statsByFormat.useQuery();
+
+  if (isLoading) {
+    return <Skeleton className="h-64" />;
+  }
+
+  if (!formatStats || formatStats.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-[oklch(0.7_0.15_85)]" />
+          Desempenho por Tipo de Jogo
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {formatStats.map((stat) => {
+            const isPositive = stat.totalProfit >= 0;
+            return (
+              <div
+                key={stat.format}
+                className="p-4 rounded-lg bg-muted/50 space-y-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">
+                    {getGameFormatEmoji(stat.format as GameFormat)}
+                  </span>
+                  <span className="font-medium">
+                    {getGameFormatLabel(stat.format as GameFormat)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Sessões</p>
+                    <p className="font-medium">{stat.sessions}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Win Rate</p>
+                    <p className="font-medium">{stat.winRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Lucro Total</p>
+                    <p
+                      className={`font-bold ${
+                        isPositive
+                          ? "text-[oklch(0.6_0.2_145)]"
+                          : "text-[oklch(0.55_0.22_25)]"
+                      }`}
+                    >
+                      {isPositive ? "+" : ""}
+                      {formatCurrency(stat.totalProfit)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">R$/hora</p>
+                    <p
+                      className={`font-medium ${
+                        stat.avgHourlyRate >= 0
+                          ? "text-[oklch(0.6_0.2_145)]"
+                          : "text-[oklch(0.55_0.22_25)]"
+                      }`}
+                    >
+                      {stat.avgHourlyRate >= 0 ? "+" : ""}
+                      {formatCurrency(stat.avgHourlyRate)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   );
@@ -322,6 +405,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Stats by Game Format */}
+      <GameFormatStats />
 
       {/* Bankroll Evolution Chart */}
       <Card>

@@ -46,6 +46,7 @@ import {
   Monitor,
   Users,
 } from "lucide-react";
+import { GAME_FORMATS, GameFormat, getGameFormatLabel, getGameFormatEmoji } from "@shared/gameFormats";
 
 // Helper to format currency
 function formatCurrency(centavos: number): string {
@@ -85,20 +86,22 @@ function SessionForm({
   initialData?: {
     id?: number;
     type: "online" | "live";
+    gameFormat: GameFormat;
     buyIn: number;
     cashOut: number;
     sessionDate: Date;
     durationMinutes: number;
-    notes?: string;
-    gameType?: string;
-    stakes?: string;
-    location?: string;
+    notes?: string | null;
+    gameType?: string | null;
+    stakes?: string | null;
+    location?: string | null;
   };
   onSubmit: (data: any) => void;
   onCancel: () => void;
   isLoading: boolean;
 }) {
   const [type, setType] = useState<"online" | "live">(initialData?.type || "live");
+  const [gameFormat, setGameFormat] = useState<GameFormat>(initialData?.gameFormat || "cash_game");
   const [buyIn, setBuyIn] = useState(
     initialData ? String(initialData.buyIn / 100) : ""
   );
@@ -145,6 +148,7 @@ function SessionForm({
     onSubmit({
       id: initialData?.id,
       type,
+      gameFormat,
       buyIn: buyInCentavos,
       cashOut: cashOutCentavos,
       sessionDate: new Date(sessionDate),
@@ -168,7 +172,7 @@ function SessionForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Tipo</Label>
+          <Label>Modalidade</Label>
           <Select value={type} onValueChange={(v) => setType(v as "online" | "live")}>
             <SelectTrigger>
               <SelectValue />
@@ -197,6 +201,24 @@ function SessionForm({
             required
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Tipo de Jogo</Label>
+        <Select value={gameFormat} onValueChange={(v) => setGameFormat(v as GameFormat)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GAME_FORMATS.map((format) => (
+              <SelectItem key={format.value} value={format.value}>
+                <span className="flex items-center gap-2">
+                  <span>{format.emoji}</span> {format.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -303,7 +325,7 @@ function SessionForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Tipo de Jogo (opcional)</Label>
+          <Label>Variante (opcional)</Label>
           <Input
             placeholder="Ex: NL Hold'em, PLO"
             value={gameType}
@@ -363,6 +385,7 @@ function SessionCard({
   session: {
     id: number;
     type: "online" | "live";
+    gameFormat: GameFormat;
     buyIn: number;
     cashOut: number;
     sessionDate: Date;
@@ -392,7 +415,7 @@ function SessionCard({
       <CardContent className="pt-4">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {session.type === "online" ? (
                 <Monitor className="h-4 w-4 text-[oklch(0.5_0.15_250)]" />
               ) : (
@@ -400,6 +423,9 @@ function SessionCard({
               )}
               <span className="font-medium">
                 {session.type === "online" ? "Online" : "Live"}
+              </span>
+              <span className="text-sm bg-muted px-2 py-0.5 rounded flex items-center gap-1">
+                {getGameFormatEmoji(session.gameFormat)} {getGameFormatLabel(session.gameFormat)}
               </span>
               {session.stakes && (
                 <span className="text-xs bg-muted px-2 py-0.5 rounded">
@@ -508,13 +534,17 @@ function SessionCard({
 
 export default function Sessions() {
   const [typeFilter, setTypeFilter] = useState<"all" | "online" | "live">("all");
+  const [formatFilter, setFormatFilter] = useState<"all" | GameFormat>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<any>(null);
 
   const utils = trpc.useUtils();
 
   const { data: sessions, isLoading } = trpc.sessions.list.useQuery(
-    typeFilter === "all" ? {} : { type: typeFilter }
+    {
+      ...(typeFilter !== "all" && { type: typeFilter }),
+      ...(formatFilter !== "all" && { gameFormat: formatFilter }),
+    }
   );
 
   const createMutation = trpc.sessions.create.useMutation({
@@ -522,6 +552,7 @@ export default function Sessions() {
       toast.success("Sessão criada com sucesso!");
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.statsByFormat.invalidate();
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
       setIsDialogOpen(false);
@@ -536,6 +567,7 @@ export default function Sessions() {
       toast.success("Sessão atualizada com sucesso!");
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.statsByFormat.invalidate();
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
       setIsDialogOpen(false);
@@ -551,6 +583,7 @@ export default function Sessions() {
       toast.success("Sessão excluída com sucesso!");
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.statsByFormat.invalidate();
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
     },
@@ -588,7 +621,7 @@ export default function Sessions() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Select
             value={typeFilter}
             onValueChange={(v) => setTypeFilter(v as typeof typeFilter)}
@@ -601,6 +634,23 @@ export default function Sessions() {
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="online">Online</SelectItem>
               <SelectItem value="live">Live</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={formatFilter}
+            onValueChange={(v) => setFormatFilter(v as typeof formatFilter)}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Tipo de jogo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              {GAME_FORMATS.map((format) => (
+                <SelectItem key={format.value} value={format.value}>
+                  {format.emoji} {format.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 

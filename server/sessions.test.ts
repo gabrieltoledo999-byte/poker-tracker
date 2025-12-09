@@ -10,6 +10,7 @@ vi.mock("./db", () => ({
   getSessionById: vi.fn(),
   getUserSessions: vi.fn(),
   getSessionStats: vi.fn(),
+  getStatsByGameFormat: vi.fn(),
   getBankrollSettings: vi.fn(),
   upsertBankrollSettings: vi.fn(),
   getBankrollHistory: vi.fn(),
@@ -56,6 +57,7 @@ describe("sessions router", () => {
           id: 1,
           userId: 1,
           type: "live" as const,
+          gameFormat: "cash_game" as const,
           buyIn: 50000,
           cashOut: 75000,
           sessionDate: new Date(),
@@ -118,7 +120,7 @@ describe("sessions router", () => {
       const result = await caller.sessions.stats({});
 
       expect(result).toEqual(mockStats);
-      expect(db.getSessionStats).toHaveBeenCalledWith(1, undefined);
+      expect(db.getSessionStats).toHaveBeenCalledWith(1, undefined, undefined);
     });
   });
 
@@ -128,6 +130,7 @@ describe("sessions router", () => {
         id: 1,
         userId: 1,
         type: "live" as const,
+        gameFormat: "cash_game" as const,
         buyIn: 50000,
         cashOut: 75000,
         sessionDate: new Date(),
@@ -147,6 +150,7 @@ describe("sessions router", () => {
 
       const result = await caller.sessions.create({
         type: "live",
+        gameFormat: "cash_game",
         buyIn: 50000,
         cashOut: 75000,
         sessionDate: new Date(),

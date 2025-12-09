@@ -131,10 +131,14 @@ export async function getSessionById(id: number, userId: number): Promise<Sessio
   return session || null;
 }
 
+// Game format type
+type GameFormat = "cash_game" | "tournament" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game";
+
 export async function getUserSessions(
   userId: number,
   filters?: {
     type?: "online" | "live";
+    gameFormat?: GameFormat;
     startDate?: Date;
     endDate?: Date;
     orderBy?: "date" | "profit" | "duration";
@@ -148,6 +152,9 @@ export async function getUserSessions(
   
   if (filters?.type) {
     conditions.push(eq(sessions.type, filters.type));
+  }
+  if (filters?.gameFormat) {
+    conditions.push(eq(sessions.gameFormat, filters.gameFormat));
   }
   if (filters?.startDate) {
     conditions.push(gte(sessions.sessionDate, filters.startDate));
@@ -163,13 +170,16 @@ export async function getUserSessions(
   return result;
 }
 
-export async function getSessionStats(userId: number, type?: "online" | "live") {
+export async function getSessionStats(userId: number, type?: "online" | "live", gameFormat?: GameFormat) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
   const conditions = [eq(sessions.userId, userId)];
   if (type) {
     conditions.push(eq(sessions.type, type));
+  }
+  if (gameFormat) {
+    conditions.push(eq(sessions.gameFormat, gameFormat));
   }
   
   const allSessions = await db.select().from(sessions).where(and(...conditions));
@@ -269,6 +279,76 @@ export async function upsertBankrollSettings(userId: number, initialOnline: numb
     .where(eq(bankrollSettings.userId, userId));
   
   return settings;
+}
+
+// Get statistics grouped by game format
+export async function getStatsByGameFormat(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const allSessions = await db.select().from(sessions)
+    .where(eq(sessions.userId, userId));
+  
+  const formatStats: Record<string, {
+    format: string;
+    sessions: number;
+    totalProfit: number;
+    totalBuyIn: number;
+    winningSessions: number;
+    avgProfit: number;
+    winRate: number;
+    totalDuration: number;
+    avgHourlyRate: number;
+  }> = {};
+  
+  const formats: GameFormat[] = [
+    "cash_game", "tournament", "turbo", "hyper_turbo",
+    "sit_and_go", "spin_and_go", "bounty", "satellite",
+    "freeroll", "home_game"
+  ];
+  
+  // Initialize all formats
+  for (const format of formats) {
+    formatStats[format] = {
+      format,
+      sessions: 0,
+      totalProfit: 0,
+      totalBuyIn: 0,
+      winningSessions: 0,
+      avgProfit: 0,
+      winRate: 0,
+      totalDuration: 0,
+      avgHourlyRate: 0,
+    };
+  }
+  
+  // Calculate stats for each format
+  for (const session of allSessions) {
+    const format = session.gameFormat;
+    const profit = session.cashOut - session.buyIn;
+    
+    formatStats[format].sessions++;
+    formatStats[format].totalProfit += profit;
+    formatStats[format].totalBuyIn += session.buyIn;
+    formatStats[format].totalDuration += session.durationMinutes;
+    if (profit > 0) formatStats[format].winningSessions++;
+  }
+  
+  // Calculate averages
+  for (const format of formats) {
+    const stats = formatStats[format];
+    if (stats.sessions > 0) {
+      stats.avgProfit = Math.round(stats.totalProfit / stats.sessions);
+      stats.winRate = Math.round((stats.winningSessions / stats.sessions) * 100);
+      const totalHours = stats.totalDuration / 60;
+      stats.avgHourlyRate = totalHours > 0 ? Math.round(stats.totalProfit / totalHours) : 0;
+    }
+  }
+  
+  // Return only formats with sessions, sorted by profit
+  return Object.values(formatStats)
+    .filter(s => s.sessions > 0)
+    .sort((a, b) => b.totalProfit - a.totalProfit);
 }
 
 export async function getBankrollHistory(userId: number, type?: "online" | "live") {

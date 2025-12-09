@@ -19,3 +19,11 @@
 - [x] Tema escuro com cores de poker (verde, dourado, preto)
 - [x] Ícones temáticos de poker
 - [x] Indicadores visuais de resultado (verde/vermelho)
+
+## Tipos de Jogo (Nova Feature)
+
+- [x] Adicionar campo gameFormat ao schema (Torneio, Cash Game, Sit & Go, etc.)
+- [x] Atualizar rotas tRPC para filtrar por gameFormat
+- [x] Adicionar estatísticas por tipo de jogo no dashboard
+- [x] Atualizar formulário de sessão com seleção de tipo de jogo
+- [x] Adicionar filtro por tipo de jogo na lista de sessões

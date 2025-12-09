@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `gameFormat` enum('cash_game','tournament','turbo','hyper_turbo','sit_and_go','spin_and_go','bounty','satellite','freeroll','home_game') DEFAULT 'cash_game' NOT NULL;

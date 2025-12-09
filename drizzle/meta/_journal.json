@@ -15,6 +15,13 @@
       "when": 1765243601991,
       "tag": "0001_tidy_sheva_callister",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1765244653512,
+      "tag": "0002_majestic_ironclad",
+      "breakpoints": true
     }
   ]
 }

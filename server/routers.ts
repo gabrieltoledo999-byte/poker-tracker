@@ -10,10 +10,25 @@ import {
   getSessionById,
   getUserSessions,
   getSessionStats,
+  getStatsByGameFormat,
   getBankrollSettings,
   upsertBankrollSettings,
   getBankrollHistory,
 } from "./db";
+
+// Game format enum for validation
+const gameFormatEnum = z.enum([
+  "cash_game",
+  "tournament",
+  "turbo",
+  "hyper_turbo",
+  "sit_and_go",
+  "spin_and_go",
+  "bounty",
+  "satellite",
+  "freeroll",
+  "home_game",
+]);
 
 export const appRouter = router({
   system: systemRouter,
@@ -32,6 +47,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({
         type: z.enum(["online", "live"]),
+        gameFormat: gameFormatEnum,
         buyIn: z.number().int().positive(),
         cashOut: z.number().int().min(0),
         sessionDate: z.date(),
@@ -53,6 +69,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number().int(),
         type: z.enum(["online", "live"]).optional(),
+        gameFormat: gameFormatEnum.optional(),
         buyIn: z.number().int().positive().optional(),
         cashOut: z.number().int().min(0).optional(),
         sessionDate: z.date().optional(),
@@ -85,6 +102,7 @@ export const appRouter = router({
     list: protectedProcedure
       .input(z.object({
         type: z.enum(["online", "live"]).optional(),
+        gameFormat: gameFormatEnum.optional(),
         startDate: z.date().optional(),
         endDate: z.date().optional(),
         orderBy: z.enum(["date", "profit", "duration"]).optional(),
@@ -98,9 +116,16 @@ export const appRouter = router({
     stats: protectedProcedure
       .input(z.object({
         type: z.enum(["online", "live"]).optional(),
+        gameFormat: gameFormatEnum.optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        return await getSessionStats(ctx.user.id, input?.type);
+        return await getSessionStats(ctx.user.id, input?.type, input?.gameFormat);
+      }),
+
+    // Get statistics grouped by game format
+    statsByFormat: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getStatsByGameFormat(ctx.user.id);
       }),
   }),
 
