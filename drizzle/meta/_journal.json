@@ -22,6 +22,20 @@
       "when": 1765244653512,
       "tag": "0002_majestic_ironclad",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1765245695879,
+      "tag": "0003_tan_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1765245862379,
+      "tag": "0004_mixed_the_initiative",
+      "breakpoints": true
     }
   ]
 }

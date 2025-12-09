@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,14 +45,17 @@ import {
   Filter,
   Monitor,
   Users,
+  DollarSign,
+  RefreshCw,
+  MapPin,
 } from "lucide-react";
 import { GAME_FORMATS, GameFormat, getGameFormatLabel, getGameFormatEmoji } from "@shared/gameFormats";
 
 // Helper to format currency
-function formatCurrency(centavos: number): string {
+function formatCurrency(centavos: number, currency: "BRL" | "USD" = "BRL"): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "BRL",
+    currency: currency,
   }).format(centavos / 100);
 }
 
@@ -87,14 +90,18 @@ function SessionForm({
     id?: number;
     type: "online" | "live";
     gameFormat: GameFormat;
+    currency?: "BRL" | "USD";
     buyIn: number;
     cashOut: number;
     sessionDate: Date;
     durationMinutes: number;
     notes?: string | null;
+    venueId?: number | null;
     gameType?: string | null;
     stakes?: string | null;
     location?: string | null;
+    originalBuyIn?: number | null;
+    originalCashOut?: number | null;
   };
   onSubmit: (data: any) => void;
   onCancel: () => void;
@@ -102,11 +109,17 @@ function SessionForm({
 }) {
   const [type, setType] = useState<"online" | "live">(initialData?.type || "live");
   const [gameFormat, setGameFormat] = useState<GameFormat>(initialData?.gameFormat || "cash_game");
+  const [currency, setCurrency] = useState<"BRL" | "USD">(initialData?.currency || "BRL");
+  const [venueId, setVenueId] = useState<string>(initialData?.venueId?.toString() || "");
   const [buyIn, setBuyIn] = useState(
-    initialData ? String(initialData.buyIn / 100) : ""
+    initialData 
+      ? String((initialData.originalBuyIn || initialData.buyIn) / 100) 
+      : ""
   );
   const [cashOut, setCashOut] = useState(
-    initialData ? String(initialData.cashOut / 100) : ""
+    initialData 
+      ? String((initialData.originalCashOut || initialData.cashOut) / 100) 
+      : ""
   );
   const [sessionDate, setSessionDate] = useState(
     initialData
@@ -122,7 +135,29 @@ function SessionForm({
   const [notes, setNotes] = useState(initialData?.notes || "");
   const [gameType, setGameType] = useState(initialData?.gameType || "");
   const [stakes, setStakes] = useState(initialData?.stakes || "");
-  const [location, setLocation] = useState(initialData?.location || "");
+
+  // Fetch venues
+  const { data: venues } = trpc.venues.list.useQuery({ type });
+  
+  // Fetch exchange rate
+  const { data: rateData, refetch: refetchRate } = trpc.currency.getRate.useQuery();
+  const exchangeRate = rateData?.rate || 5.0;
+
+  // Auto-set currency to USD for online
+  useEffect(() => {
+    if (type === "online" && !initialData) {
+      setCurrency("USD");
+    } else if (type === "live" && !initialData) {
+      setCurrency("BRL");
+    }
+  }, [type, initialData]);
+
+  // Reset venue when type changes
+  useEffect(() => {
+    if (!initialData) {
+      setVenueId("");
+    }
+  }, [type, initialData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,22 +184,25 @@ function SessionForm({
       id: initialData?.id,
       type,
       gameFormat,
+      currency,
       buyIn: buyInCentavos,
       cashOut: cashOutCentavos,
       sessionDate: new Date(sessionDate),
       durationMinutes,
       notes: notes || undefined,
+      venueId: venueId ? parseInt(venueId) : undefined,
       gameType: gameType || undefined,
       stakes: stakes || undefined,
-      location: location || undefined,
     });
   };
 
-  // Preview calculations
+  // Preview calculations (convert to BRL for display if USD)
   const buyInNum = parseFloat(buyIn) * 100 || 0;
   const cashOutNum = parseFloat(cashOut) * 100 || 0;
-  const profit = cashOutNum - buyInNum;
-  const roi = calculateROI(buyInNum, cashOutNum);
+  const buyInBrl = currency === "USD" ? buyInNum * exchangeRate : buyInNum;
+  const cashOutBrl = currency === "USD" ? cashOutNum * exchangeRate : cashOutNum;
+  const profit = cashOutBrl - buyInBrl;
+  const roi = calculateROI(buyInBrl, cashOutBrl);
   const durationMins = (parseInt(hours) || 0) * 60 + (parseInt(minutes) || 0);
   const hourlyRate = calculateHourlyRate(profit, durationMins);
 
@@ -221,9 +259,71 @@ function SessionForm({
         </Select>
       </div>
 
+      {/* Venue selection */}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          <MapPin className="h-4 w-4" />
+          {type === "online" ? "Plataforma" : "Local"}
+        </Label>
+        <Select value={venueId} onValueChange={setVenueId}>
+          <SelectTrigger>
+            <SelectValue placeholder={`Selecione ${type === "online" ? "a plataforma" : "o local"}`} />
+          </SelectTrigger>
+          <SelectContent>
+            {venues?.map((venue) => (
+              <SelectItem key={venue.id} value={venue.id.toString()}>
+                <span className="flex items-center gap-2">
+                  {venue.logoUrl && (
+                    <img 
+                      src={venue.logoUrl} 
+                      alt={venue.name} 
+                      className="h-5 w-5 rounded object-contain"
+                    />
+                  )}
+                  {venue.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Currency selection */}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          <DollarSign className="h-4 w-4" />
+          Moeda
+        </Label>
+        <div className="flex gap-2">
+          <Select value={currency} onValueChange={(v) => setCurrency(v as "BRL" | "USD")}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="BRL">R$ (BRL)</SelectItem>
+              <SelectItem value="USD">$ (USD)</SelectItem>
+            </SelectContent>
+          </Select>
+          {currency === "USD" && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted px-3 rounded-md">
+              <span>1 USD = R$ {exchangeRate.toFixed(2)}</span>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6"
+                onClick={() => refetchRate()}
+              >
+                <RefreshCw className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Buy-in (R$)</Label>
+          <Label>Buy-in ({currency === "USD" ? "$" : "R$"})</Label>
           <Input
             type="number"
             step="0.01"
@@ -236,7 +336,7 @@ function SessionForm({
         </div>
 
         <div className="space-y-2">
-          <Label>Cash-out (R$)</Label>
+          <Label>Cash-out ({currency === "USD" ? "$" : "R$"})</Label>
           <Input
             type="number"
             step="0.01"
@@ -280,7 +380,7 @@ function SessionForm({
           <CardContent className="pt-4">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-xs text-muted-foreground">Resultado</p>
+                <p className="text-xs text-muted-foreground">Resultado (R$)</p>
                 <p
                   className={`text-lg font-bold ${
                     profit >= 0
@@ -291,6 +391,11 @@ function SessionForm({
                   {profit >= 0 ? "+" : ""}
                   {formatCurrency(profit)}
                 </p>
+                {currency === "USD" && (
+                  <p className="text-xs text-muted-foreground">
+                    ({formatCurrency(cashOutNum - buyInNum, "USD")})
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ROI</p>
@@ -344,15 +449,6 @@ function SessionForm({
       </div>
 
       <div className="space-y-2">
-        <Label>Local (opcional)</Label>
-        <Input
-          placeholder="Ex: PokerStars, Cassino XYZ"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-        />
-      </div>
-
-      <div className="space-y-2">
         <Label>Notas (opcional)</Label>
         <Textarea
           placeholder="Observações sobre a sessão..."
@@ -379,22 +475,28 @@ function SessionForm({
 // Session card component
 function SessionCard({
   session,
+  venues,
   onEdit,
   onDelete,
 }: {
   session: {
     id: number;
     type: "online" | "live";
-    gameFormat: GameFormat;
+    gameFormat: string;
+    currency: "BRL" | "USD";
     buyIn: number;
     cashOut: number;
+    originalBuyIn?: number | null;
+    originalCashOut?: number | null;
     sessionDate: Date;
     durationMinutes: number;
     notes?: string | null;
+    venueId?: number | null;
     gameType?: string | null;
     stakes?: string | null;
     location?: string | null;
   };
+  venues?: Array<{ id: number; name: string; logoUrl: string | null }>;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -402,6 +504,8 @@ function SessionCard({
   const roi = calculateROI(session.buyIn, session.cashOut);
   const hourlyRate = calculateHourlyRate(profit, session.durationMinutes);
   const isPositive = profit >= 0;
+  
+  const venue = venues?.find(v => v.id === session.venueId);
 
   return (
     <Card className="overflow-hidden">
@@ -425,8 +529,13 @@ function SessionCard({
                 {session.type === "online" ? "Online" : "Live"}
               </span>
               <span className="text-sm bg-muted px-2 py-0.5 rounded flex items-center gap-1">
-                {getGameFormatEmoji(session.gameFormat)} {getGameFormatLabel(session.gameFormat)}
+                {getGameFormatEmoji(session.gameFormat as GameFormat)} {getGameFormatLabel(session.gameFormat as GameFormat)}
               </span>
+              {session.currency === "USD" && (
+                <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
+                  USD
+                </span>
+              )}
               {session.stakes && (
                 <span className="text-xs bg-muted px-2 py-0.5 rounded">
                   {session.stakes}
@@ -443,6 +552,18 @@ function SessionCard({
                 {formatDuration(session.durationMinutes)}
               </span>
             </div>
+            {venue && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {venue.logoUrl && (
+                  <img 
+                    src={venue.logoUrl} 
+                    alt={venue.name} 
+                    className="h-4 w-4 rounded object-contain"
+                  />
+                )}
+                <span>{venue.name}</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-1">
@@ -459,32 +580,43 @@ function SessionCard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Excluir sessão?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Esta ação não pode ser desfeita. A sessão será permanentemente
-                    removida.
+                    Esta ação não pode ser desfeita. A sessão será removida permanentemente.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={onDelete}>Excluir</AlertDialogAction>
+                  <AlertDialogAction onClick={onDelete}>
+                    Excluir
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-4 gap-4">
+        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
           <div>
             <p className="text-xs text-muted-foreground">Buy-in</p>
             <p className="font-medium">{formatCurrency(session.buyIn)}</p>
+            {session.originalBuyIn && (
+              <p className="text-xs text-muted-foreground">
+                ({formatCurrency(session.originalBuyIn, "USD")})
+              </p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Cash-out</p>
             <p className="font-medium">{formatCurrency(session.cashOut)}</p>
+            {session.originalCashOut && (
+              <p className="text-xs text-muted-foreground">
+                ({formatCurrency(session.originalCashOut, "USD")})
+              </p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Resultado</p>
             <p
-              className={`font-bold flex items-center gap-1 ${
+              className={`font-bold flex items-center justify-center gap-1 ${
                 isPositive
                   ? "text-[oklch(0.6_0.2_145)]"
                   : "text-[oklch(0.55_0.22_25)]"
@@ -514,18 +646,10 @@ function SessionCard({
           </div>
         </div>
 
-        {(session.location || session.gameType || session.notes) && (
-          <div className="mt-3 pt-3 border-t border-border space-y-1">
-            {session.location && (
-              <p className="text-sm text-muted-foreground">📍 {session.location}</p>
-            )}
-            {session.gameType && (
-              <p className="text-sm text-muted-foreground">🎴 {session.gameType}</p>
-            )}
-            {session.notes && (
-              <p className="text-sm text-muted-foreground">📝 {session.notes}</p>
-            )}
-          </div>
+        {session.notes && (
+          <p className="mt-3 text-sm text-muted-foreground border-t pt-3">
+            {session.notes}
+          </p>
         )}
       </CardContent>
     </Card>
@@ -533,48 +657,51 @@ function SessionCard({
 }
 
 export default function Sessions() {
-  const [typeFilter, setTypeFilter] = useState<"all" | "online" | "live">("all");
-  const [formatFilter, setFormatFilter] = useState<"all" | GameFormat>("all");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<any>(null);
+  const [filterType, setFilterType] = useState<"all" | "online" | "live">("all");
+  const [filterFormat, setFilterFormat] = useState<string>("all");
 
   const utils = trpc.useUtils();
 
   const { data: sessions, isLoading } = trpc.sessions.list.useQuery(
-    {
-      ...(typeFilter !== "all" && { type: typeFilter }),
-      ...(formatFilter !== "all" && { gameFormat: formatFilter }),
-    }
+    filterType === "all" && filterFormat === "all"
+      ? {}
+      : {
+          type: filterType === "all" ? undefined : filterType,
+          gameFormat: filterFormat === "all" ? undefined : filterFormat as GameFormat,
+        }
   );
+
+  const { data: venues } = trpc.venues.list.useQuery({});
 
   const createMutation = trpc.sessions.create.useMutation({
     onSuccess: () => {
       toast.success("Sessão criada com sucesso!");
+      setIsCreateOpen(false);
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
       utils.sessions.statsByFormat.invalidate();
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
-      setIsDialogOpen(false);
     },
     onError: (error) => {
-      toast.error("Erro ao criar sessão: " + error.message);
+      toast.error(`Erro ao criar sessão: ${error.message}`);
     },
   });
 
   const updateMutation = trpc.sessions.update.useMutation({
     onSuccess: () => {
       toast.success("Sessão atualizada com sucesso!");
+      setEditingSession(null);
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
       utils.sessions.statsByFormat.invalidate();
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
-      setIsDialogOpen(false);
-      setEditingSession(null);
     },
     onError: (error) => {
-      toast.error("Erro ao atualizar sessão: " + error.message);
+      toast.error(`Erro ao atualizar sessão: ${error.message}`);
     },
   });
 
@@ -588,119 +715,113 @@ export default function Sessions() {
       utils.bankroll.history.invalidate();
     },
     onError: (error) => {
-      toast.error("Erro ao excluir sessão: " + error.message);
+      toast.error(`Erro ao excluir sessão: ${error.message}`);
     },
   });
 
-  const handleSubmit = (data: any) => {
-    if (data.id) {
-      updateMutation.mutate(data);
-    } else {
-      const { id, ...createData } = data;
-      createMutation.mutate(createData);
-    }
+  const handleCreate = (data: any) => {
+    createMutation.mutate(data);
   };
 
-  const handleEdit = (session: any) => {
-    setEditingSession(session);
-    setIsDialogOpen(true);
+  const handleUpdate = (data: any) => {
+    updateMutation.mutate(data);
   };
 
   const handleDelete = (id: number) => {
     deleteMutation.mutate({ id });
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Sessões</h2>
-          <p className="text-muted-foreground">
-            Gerencie suas sessões de poker
-          </p>
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-10 w-32" />
         </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <Select
-            value={typeFilter}
-            onValueChange={(v) => setTypeFilter(v as typeof typeFilter)}
-          >
-            <SelectTrigger className="w-32">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="online">Online</SelectItem>
-              <SelectItem value="live">Live</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={formatFilter}
-            onValueChange={(v) => setFormatFilter(v as typeof formatFilter)}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Tipo de jogo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os tipos</SelectItem>
-              {GAME_FORMATS.map((format) => (
-                <SelectItem key={format.value} value={format.value}>
-                  {format.emoji} {format.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Dialog
-            open={isDialogOpen}
-            onOpenChange={(open) => {
-              setIsDialogOpen(open);
-              if (!open) setEditingSession(null);
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nova Sessão
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingSession ? "Editar Sessão" : "Nova Sessão"}
-                </DialogTitle>
-              </DialogHeader>
-              <SessionForm
-                initialData={editingSession}
-                onSubmit={handleSubmit}
-                onCancel={() => {
-                  setIsDialogOpen(false);
-                  setEditingSession(null);
-                }}
-                isLoading={createMutation.isPending || updateMutation.isPending}
-              />
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* Sessions List */}
-      {isLoading ? (
-        <div className="space-y-4">
+        <div className="grid gap-4">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-40" />
           ))}
         </div>
-      ) : sessions && sessions.length > 0 ? (
-        <div className="space-y-4">
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Sessões</h1>
+          <p className="text-muted-foreground">
+            {sessions?.length || 0} sessões registradas
+          </p>
+        </div>
+
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Nova Sessão
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Nova Sessão</DialogTitle>
+            </DialogHeader>
+            <SessionForm
+              onSubmit={handleCreate}
+              onCancel={() => setIsCreateOpen(false)}
+              isLoading={createMutation.isPending}
+            />
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Filtros:</span>
+            </div>
+            <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="online">Online</SelectItem>
+                <SelectItem value="live">Live</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterFormat} onValueChange={setFilterFormat}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os tipos</SelectItem>
+                {GAME_FORMATS.map((format) => (
+                  <SelectItem key={format.value} value={format.value}>
+                    {format.emoji} {format.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sessions List */}
+      {sessions && sessions.length > 0 ? (
+        <div className="grid gap-4">
           {sessions.map((session) => (
             <SessionCard
               key={session.id}
-              session={session}
-              onEdit={() => handleEdit(session)}
+              session={session as any}
+              venues={venues}
+              onEdit={() => setEditingSession(session)}
               onDelete={() => handleDelete(session.id)}
             />
           ))}
@@ -708,16 +829,29 @@ export default function Sessions() {
       ) : (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground mb-4">
-              Nenhuma sessão registrada ainda
+            <p className="text-muted-foreground">
+              Nenhuma sessão encontrada. Clique em "Nova Sessão" para começar!
             </p>
-            <Button onClick={() => setIsDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Registrar primeira sessão
-            </Button>
           </CardContent>
         </Card>
       )}
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Sessão</DialogTitle>
+          </DialogHeader>
+          {editingSession && (
+            <SessionForm
+              initialData={editingSession}
+              onSubmit={handleUpdate}
+              onCancel={() => setEditingSession(null)}
+              isLoading={updateMutation.isPending}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -42,9 +42,15 @@ export const sessions = mysqlTable("sessions", {
     "home_game"       // Home Game
   ]).notNull().default("cash_game"),
   
-  // Financial data (stored in centavos to avoid decimal issues)
-  buyIn: int("buyIn").notNull(), // in centavos (R$ 100.00 = 10000)
-  cashOut: int("cashOut").notNull(), // in centavos
+  // Financial data (stored in BRL centavos - converted if originally USD)
+  buyIn: int("buyIn").notNull(), // in BRL centavos (R$ 100.00 = 10000)
+  cashOut: int("cashOut").notNull(), // in BRL centavos
+  
+  // Original currency info (for sessions entered in USD)
+  currency: mysqlEnum("currency", ["BRL", "USD"]).default("BRL").notNull(),
+  originalBuyIn: int("originalBuyIn"), // original value in original currency centavos
+  originalCashOut: int("originalCashOut"), // original value in original currency centavos
+  exchangeRate: int("exchangeRate"), // rate * 10000 for precision (e.g., 5.50 = 55000)
   
   // Time data
   sessionDate: timestamp("sessionDate").notNull(),
@@ -53,10 +59,13 @@ export const sessions = mysqlTable("sessions", {
   // Optional notes
   notes: text("notes"),
   
+  // Venue reference (optional - links to venues table)
+  venueId: int("venueId"),
+  
   // Game details (optional)
   gameType: varchar("gameType", { length: 64 }), // e.g., "NL Hold'em", "PLO"
   stakes: varchar("stakes", { length: 32 }), // e.g., "1/2", "2/5"
-  location: varchar("location", { length: 128 }), // casino/site name
+  location: varchar("location", { length: 128 }), // casino/site name (legacy, use venueId)
   
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -83,3 +92,32 @@ export const bankrollSettings = mysqlTable("bankroll_settings", {
 
 export type BankrollSettings = typeof bankrollSettings.$inferSelect;
 export type InsertBankrollSettings = typeof bankrollSettings.$inferInsert;
+
+/**
+ * Venues table - stores poker venues (online sites and live clubs)
+ */
+export const venues = mysqlTable("venues", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  
+  // Venue info
+  name: varchar("name", { length: 128 }).notNull(),
+  type: mysqlEnum("type", ["online", "live"]).notNull(),
+  
+  // Logo URL (optional - for custom venues)
+  logoUrl: varchar("logoUrl", { length: 512 }),
+  
+  // Is this a preset venue (not deletable by user)
+  isPreset: int("isPreset").default(0).notNull(), // 0 = false, 1 = true
+  
+  // Optional details
+  website: varchar("website", { length: 256 }),
+  address: text("address"),
+  notes: text("notes"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Venue = typeof venues.$inferSelect;
+export type InsertVenue = typeof venues.$inferInsert;

@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, lte, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, InsertSession, Session, BankrollSettings } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -365,4 +365,159 @@ export async function getBankrollHistory(userId: number, type?: "online" | "live
     .orderBy(sessions.sessionDate);
   
   return allSessions;
+}
+
+// ============== VENUE QUERIES ==============
+
+export async function createVenue(data: InsertVenue): Promise<Venue> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [result] = await db.insert(venues).values(data).$returningId();
+  const [venue] = await db.select().from(venues).where(eq(venues.id, result.id));
+  return venue;
+}
+
+export async function updateVenue(id: number, userId: number, data: Partial<InsertVenue>): Promise<Venue | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(venues)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(venues.id, id), eq(venues.userId, userId)));
+  
+  const [venue] = await db.select().from(venues).where(eq(venues.id, id));
+  return venue || null;
+}
+
+export async function deleteVenue(id: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Don't allow deleting preset venues
+  const [venue] = await db.select().from(venues).where(eq(venues.id, id));
+  if (venue?.isPreset === 1) {
+    return false;
+  }
+  
+  const result = await db.delete(venues)
+    .where(and(eq(venues.id, id), eq(venues.userId, userId)));
+  
+  return (result[0] as any).affectedRows > 0;
+}
+
+export async function getUserVenues(userId: number, type?: "online" | "live"): Promise<Venue[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const conditions = [eq(venues.userId, userId)];
+  if (type) {
+    conditions.push(eq(venues.type, type));
+  }
+  
+  const result = await db.select().from(venues)
+    .where(and(...conditions))
+    .orderBy(venues.name);
+  
+  return result;
+}
+
+export async function getVenueById(id: number, userId: number): Promise<Venue | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [venue] = await db.select().from(venues)
+    .where(and(eq(venues.id, id), eq(venues.userId, userId)));
+  
+  return venue || null;
+}
+
+export async function initializePresetVenues(userId: number, presets: Array<{ name: string; type: "online" | "live"; logoUrl: string; website?: string }>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Check if user already has preset venues
+  const existingPresets = await db.select().from(venues)
+    .where(and(eq(venues.userId, userId), eq(venues.isPreset, 1)));
+  
+  if (existingPresets.length > 0) {
+    return; // Already initialized
+  }
+  
+  // Insert preset venues for this user
+  for (const preset of presets) {
+    await db.insert(venues).values({
+      userId,
+      name: preset.name,
+      type: preset.type,
+      logoUrl: preset.logoUrl,
+      website: preset.website || null,
+      isPreset: 1,
+    });
+  }
+}
+
+export async function getStatsByVenue(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const allSessions = await db.select().from(sessions)
+    .where(eq(sessions.userId, userId));
+  
+  const allVenues = await db.select().from(venues)
+    .where(eq(venues.userId, userId));
+  
+  const venueMap = new Map(allVenues.map(v => [v.id, v]));
+  
+  const venueStats: Record<number, {
+    venueId: number;
+    venueName: string;
+    venueType: "online" | "live";
+    logoUrl: string | null;
+    sessions: number;
+    totalProfit: number;
+    winningSessions: number;
+    winRate: number;
+    totalDuration: number;
+    avgHourlyRate: number;
+  }> = {};
+  
+  for (const session of allSessions) {
+    if (!session.venueId) continue;
+    
+    const venue = venueMap.get(session.venueId);
+    if (!venue) continue;
+    
+    if (!venueStats[session.venueId]) {
+      venueStats[session.venueId] = {
+        venueId: venue.id,
+        venueName: venue.name,
+        venueType: venue.type,
+        logoUrl: venue.logoUrl,
+        sessions: 0,
+        totalProfit: 0,
+        winningSessions: 0,
+        winRate: 0,
+        totalDuration: 0,
+        avgHourlyRate: 0,
+      };
+    }
+    
+    const profit = session.cashOut - session.buyIn;
+    venueStats[session.venueId].sessions++;
+    venueStats[session.venueId].totalProfit += profit;
+    venueStats[session.venueId].totalDuration += session.durationMinutes;
+    if (profit > 0) venueStats[session.venueId].winningSessions++;
+  }
+  
+  // Calculate rates
+  for (const stats of Object.values(venueStats)) {
+    if (stats.sessions > 0) {
+      stats.winRate = Math.round((stats.winningSessions / stats.sessions) * 100);
+      const totalHours = stats.totalDuration / 60;
+      stats.avgHourlyRate = totalHours > 0 ? Math.round(stats.totalProfit / totalHours) : 0;
+    }
+  }
+  
+  return Object.values(venueStats).sort((a, b) => b.totalProfit - a.totalProfit);
 }

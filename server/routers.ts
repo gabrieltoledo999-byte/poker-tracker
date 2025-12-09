@@ -14,7 +14,16 @@ import {
   getBankrollSettings,
   upsertBankrollSettings,
   getBankrollHistory,
+  createVenue,
+  updateVenue,
+  deleteVenue,
+  getUserVenues,
+  getVenueById,
+  initializePresetVenues,
+  getStatsByVenue,
 } from "./db";
+import { getUsdToBrlRate, convertUsdToBrl } from "./currency";
+import { PRESET_VENUES } from "@shared/presetVenues";
 
 // Game format enum for validation
 const gameFormatEnum = z.enum([
@@ -29,6 +38,9 @@ const gameFormatEnum = z.enum([
   "freeroll",
   "home_game",
 ]);
+
+// Currency enum
+const currencyEnum = z.enum(["BRL", "USD"]);
 
 export const appRouter = router({
   system: systemRouter,
@@ -48,19 +60,51 @@ export const appRouter = router({
       .input(z.object({
         type: z.enum(["online", "live"]),
         gameFormat: gameFormatEnum,
-        buyIn: z.number().int().positive(),
-        cashOut: z.number().int().min(0),
+        currency: currencyEnum.default("BRL"),
+        buyIn: z.number().int().positive(), // in original currency centavos
+        cashOut: z.number().int().min(0), // in original currency centavos
         sessionDate: z.date(),
         durationMinutes: z.number().int().positive(),
         notes: z.string().optional(),
+        venueId: z.number().int().optional(),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
         location: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        let buyInBrl = input.buyIn;
+        let cashOutBrl = input.cashOut;
+        let exchangeRate: number | null = null;
+        let originalBuyIn: number | null = null;
+        let originalCashOut: number | null = null;
+
+        // Convert USD to BRL if needed
+        if (input.currency === "USD") {
+          const rate = await getUsdToBrlRate();
+          exchangeRate = Math.round(rate * 10000); // Store as integer (5.50 = 55000)
+          originalBuyIn = input.buyIn;
+          originalCashOut = input.cashOut;
+          buyInBrl = convertUsdToBrl(input.buyIn, rate);
+          cashOutBrl = convertUsdToBrl(input.cashOut, rate);
+        }
+
         return await createSession({
           userId: ctx.user.id,
-          ...input,
+          type: input.type,
+          gameFormat: input.gameFormat,
+          currency: input.currency,
+          buyIn: buyInBrl,
+          cashOut: cashOutBrl,
+          originalBuyIn,
+          originalCashOut,
+          exchangeRate,
+          sessionDate: input.sessionDate,
+          durationMinutes: input.durationMinutes,
+          notes: input.notes,
+          venueId: input.venueId,
+          gameType: input.gameType,
+          stakes: input.stakes,
+          location: input.location,
         });
       }),
 
@@ -70,17 +114,36 @@ export const appRouter = router({
         id: z.number().int(),
         type: z.enum(["online", "live"]).optional(),
         gameFormat: gameFormatEnum.optional(),
+        currency: currencyEnum.optional(),
         buyIn: z.number().int().positive().optional(),
         cashOut: z.number().int().min(0).optional(),
         sessionDate: z.date().optional(),
         durationMinutes: z.number().int().positive().optional(),
         notes: z.string().optional(),
+        venueId: z.number().int().optional(),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
         location: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
+        
+        // If currency is being changed to USD and values provided, convert
+        if (data.currency === "USD" && (data.buyIn || data.cashOut)) {
+          const rate = await getUsdToBrlRate();
+          const exchangeRate = Math.round(rate * 10000);
+          
+          if (data.buyIn) {
+            (data as any).originalBuyIn = data.buyIn;
+            data.buyIn = convertUsdToBrl(data.buyIn, rate);
+          }
+          if (data.cashOut !== undefined) {
+            (data as any).originalCashOut = data.cashOut;
+            data.cashOut = convertUsdToBrl(data.cashOut, rate);
+          }
+          (data as any).exchangeRate = exchangeRate;
+        }
+        
         return await updateSession(id, ctx.user.id, data);
       }),
 
@@ -129,6 +192,91 @@ export const appRouter = router({
       }),
   }),
 
+  // Venues router
+  venues: router({
+    // Initialize preset venues for user
+    initPresets: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        await initializePresetVenues(ctx.user.id, PRESET_VENUES);
+        return { success: true };
+      }),
+
+    // Create a custom venue
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(128),
+        type: z.enum(["online", "live"]),
+        logoUrl: z.string().optional(),
+        website: z.string().optional(),
+        address: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createVenue({
+          userId: ctx.user.id,
+          ...input,
+          isPreset: 0,
+        });
+      }),
+
+    // Update a venue
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        name: z.string().min(1).max(128).optional(),
+        type: z.enum(["online", "live"]).optional(),
+        logoUrl: z.string().optional(),
+        website: z.string().optional(),
+        address: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        return await updateVenue(id, ctx.user.id, data);
+      }),
+
+    // Delete a venue
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        return await deleteVenue(input.id, ctx.user.id);
+      }),
+
+    // Get a single venue
+    get: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        return await getVenueById(input.id, ctx.user.id);
+      }),
+
+    // List venues
+    list: protectedProcedure
+      .input(z.object({
+        type: z.enum(["online", "live"]).optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        // Initialize presets if needed
+        await initializePresetVenues(ctx.user.id, PRESET_VENUES);
+        return await getUserVenues(ctx.user.id, input?.type);
+      }),
+
+    // Get statistics by venue
+    statsByVenue: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getStatsByVenue(ctx.user.id);
+      }),
+  }),
+
+  // Currency router
+  currency: router({
+    // Get current USD/BRL rate
+    getRate: protectedProcedure
+      .query(async () => {
+        const rate = await getUsdToBrlRate();
+        return { rate };
+      }),
+  }),
+
   // Bankroll router
   bankroll: router({
     // Get bankroll settings
@@ -136,7 +284,6 @@ export const appRouter = router({
       .query(async ({ ctx }) => {
         const settings = await getBankrollSettings(ctx.user.id);
         if (!settings) {
-          // Return default values if no settings exist
           return {
             initialOnline: 100000, // R$ 1.000,00
             initialLive: 400000,   // R$ 4.000,00
@@ -206,7 +353,6 @@ export const appRouter = router({
         let initialOnline = settings?.initialOnline ?? 100000;
         let initialLive = settings?.initialLive ?? 400000;
         
-        // Calculate running bankroll for chart
         let runningOnline = initialOnline;
         let runningLive = initialLive;
         
@@ -230,7 +376,6 @@ export const appRouter = router({
           };
         });
         
-        // Add initial point
         const initialPoint = {
           date: sessions.length > 0 
             ? new Date(new Date(sessions[0].sessionDate).getTime() - 86400000)
