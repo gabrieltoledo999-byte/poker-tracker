@@ -53,3 +53,7 @@
 - [x] Exibir foto de perfil do usuário no layout
 - [x] Criar página de convites com formulário para enviar
 - [x] Exibir ranking de usuários com mais convites aceitos
+
+## Correções
+
+- [x] Adicionar opção para usuário incluir foto de perfil manualmente nas configurações

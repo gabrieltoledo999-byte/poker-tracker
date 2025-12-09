@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera } from "lucide-react";
 
 // Helper to format currency
 function formatCurrency(centavos: number): string {
@@ -17,16 +20,19 @@ function formatCurrency(centavos: number): string {
 }
 
 export default function Settings() {
+  const { user } = useAuth();
   const [onlineBankroll, setOnlineBankroll] = useState("");
   const [liveBankroll, setLiveBankroll] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
+  const [hasAvatarChanges, setHasAvatarChanges] = useState(false);
 
   const { data: settings, isLoading } = trpc.bankroll.getSettings.useQuery();
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.bankroll.updateSettings.useMutation({
     onSuccess: () => {
-      toast.success("Configurações salvas com sucesso!");
+      toast.success("Configurações de bankroll salvas!");
       utils.bankroll.getSettings.invalidate();
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
@@ -37,12 +43,28 @@ export default function Settings() {
     },
   });
 
+  const updateAvatarMutation = trpc.profile.updateAvatar.useMutation({
+    onSuccess: () => {
+      toast.success("Foto de perfil atualizada! Recarregue a página para ver as alterações.");
+      setHasAvatarChanges(false);
+    },
+    onError: (error) => {
+      toast.error("Erro ao atualizar foto: " + error.message);
+    },
+  });
+
   useEffect(() => {
     if (settings) {
       setOnlineBankroll(String(settings.initialOnline / 100));
       setLiveBankroll(String(settings.initialLive / 100));
     }
   }, [settings]);
+
+  useEffect(() => {
+    if (user && (user as any).avatarUrl) {
+      setAvatarUrl((user as any).avatarUrl);
+    }
+  }, [user]);
 
   const handleOnlineChange = (value: string) => {
     setOnlineBankroll(value);
@@ -52,6 +74,11 @@ export default function Settings() {
   const handleLiveChange = (value: string) => {
     setLiveBankroll(value);
     setHasChanges(true);
+  };
+
+  const handleAvatarChange = (value: string) => {
+    setAvatarUrl(value);
+    setHasAvatarChanges(true);
   };
 
   const handleSave = () => {
@@ -71,6 +98,23 @@ export default function Settings() {
       initialOnline: onlineCentavos,
       initialLive: liveCentavos,
     });
+  };
+
+  const handleSaveAvatar = () => {
+    if (!avatarUrl.trim()) {
+      toast.error("Por favor, insira uma URL de imagem válida");
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(avatarUrl);
+    } catch {
+      toast.error("URL inválida. Por favor, insira uma URL completa (ex: https://...)");
+      return;
+    }
+
+    updateAvatarMutation.mutate({ avatarUrl: avatarUrl.trim() });
   };
 
   if (isLoading) {
@@ -93,10 +137,65 @@ export default function Settings() {
           Configurações
         </h2>
         <p className="text-muted-foreground">
-          Configure seu bankroll inicial
+          Configure seu perfil e bankroll inicial
         </p>
       </div>
 
+      {/* Profile Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <User className="h-5 w-5 text-primary" />
+            Perfil
+          </CardTitle>
+          <CardDescription>
+            Personalize seu perfil com uma foto
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-start gap-6">
+            <div className="relative">
+              <Avatar className="h-24 w-24 border-2 border-primary/20">
+                <AvatarImage src={avatarUrl || undefined} />
+                <AvatarFallback className="text-2xl bg-primary/10">
+                  {user?.name?.charAt(0).toUpperCase() || "?"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute -bottom-1 -right-1 bg-primary rounded-full p-1.5">
+                <Camera className="h-3 w-3 text-primary-foreground" />
+              </div>
+            </div>
+            <div className="flex-1 space-y-4">
+              <div>
+                <p className="font-medium">{user?.name || "Usuário"}</p>
+                <p className="text-sm text-muted-foreground">{user?.email || ""}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>URL da Foto de Perfil</Label>
+                <Input
+                  type="url"
+                  placeholder="https://exemplo.com/sua-foto.jpg"
+                  value={avatarUrl}
+                  onChange={(e) => handleAvatarChange(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cole a URL de uma imagem da web (ex: foto do Google, Gravatar, etc.)
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSaveAvatar}
+                disabled={!hasAvatarChanges || updateAvatarMutation.isPending}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {updateAvatarMutation.isPending ? "Salvando..." : "Salvar Foto"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Bankroll Settings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
