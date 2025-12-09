@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Sessions from "./pages/Sessions";
 import Settings from "./pages/Settings";
 import Venues from "./pages/Venues";
+import Invites from "./pages/Invites";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
         <Route path="/" component={Dashboard} />
         <Route path="/sessions" component={Sessions} />
         <Route path="/venues" component={Venues} />
+        <Route path="/invites" component={Invites} />
         <Route path="/settings" component={Settings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

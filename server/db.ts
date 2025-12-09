@@ -521,3 +521,156 @@ export async function getStatsByVenue(userId: number) {
   
   return Object.values(venueStats).sort((a, b) => b.totalProfit - a.totalProfit);
 }
+
+
+// ============== INVITE QUERIES ==============
+
+import { invites, Invite, InsertInvite } from "../drizzle/schema";
+import { nanoid } from "nanoid";
+
+export async function generateInviteCode(): Promise<string> {
+  return nanoid(12);
+}
+
+export async function createInvite(inviterId: number, email?: string): Promise<Invite> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const code = await generateInviteCode();
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
+  
+  const [result] = await db.insert(invites).values({
+    inviterId,
+    code,
+    inviteeEmail: email || null,
+    status: "pending",
+    expiresAt,
+  }).$returningId();
+  
+  const [invite] = await db.select().from(invites).where(eq(invites.id, result.id));
+  return invite;
+}
+
+export async function getInviteByCode(code: string): Promise<Invite | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [invite] = await db.select().from(invites).where(eq(invites.code, code));
+  return invite || null;
+}
+
+export async function acceptInvite(code: string, inviteeId: number): Promise<Invite | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const invite = await getInviteByCode(code);
+  if (!invite || invite.status !== "pending") {
+    return null;
+  }
+  
+  // Check if expired
+  if (invite.expiresAt && new Date() > invite.expiresAt) {
+    await db.update(invites)
+      .set({ status: "expired" })
+      .where(eq(invites.id, invite.id));
+    return null;
+  }
+  
+  // Update invite
+  await db.update(invites)
+    .set({ 
+      inviteeId, 
+      status: "accepted", 
+      acceptedAt: new Date() 
+    })
+    .where(eq(invites.id, invite.id));
+  
+  // Update inviter's invite count
+  await db.update(users)
+    .set({ 
+      inviteCount: sql`${users.inviteCount} + 1` 
+    })
+    .where(eq(users.id, invite.inviterId));
+  
+  // Update invitee's invitedBy
+  await db.update(users)
+    .set({ invitedBy: invite.inviterId })
+    .where(eq(users.id, inviteeId));
+  
+  const [updated] = await db.select().from(invites).where(eq(invites.id, invite.id));
+  return updated;
+}
+
+export async function getUserInvites(userId: number): Promise<Invite[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.select().from(invites)
+    .where(eq(invites.inviterId, userId))
+    .orderBy(desc(invites.createdAt));
+  
+  return result;
+}
+
+export async function getInviteRanking(limit: number = 10) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.select({
+    id: users.id,
+    name: users.name,
+    avatarUrl: users.avatarUrl,
+    inviteCount: users.inviteCount,
+  })
+    .from(users)
+    .where(gte(users.inviteCount, 1))
+    .orderBy(desc(users.inviteCount))
+    .limit(limit);
+  
+  return result;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [user] = await db.select().from(users).where(eq(users.id, id));
+  return user || null;
+}
+
+export async function updateUserAvatar(userId: number, avatarUrl: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(users)
+    .set({ avatarUrl })
+    .where(eq(users.id, userId));
+}
+
+export async function getUserInviteCode(userId: number): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  
+  if (user?.inviteCode) {
+    return user.inviteCode;
+  }
+  
+  // Generate new invite code for user
+  const code = nanoid(8);
+  await db.update(users)
+    .set({ inviteCode: code })
+    .where(eq(users.id, userId));
+  
+  return code;
+}
+
+export async function getUserByInviteCode(code: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [user] = await db.select().from(users).where(eq(users.inviteCode, code));
+  return user || null;
+}

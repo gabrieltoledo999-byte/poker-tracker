@@ -21,6 +21,15 @@ import {
   getVenueById,
   initializePresetVenues,
   getStatsByVenue,
+  createInvite,
+  getInviteByCode,
+  acceptInvite,
+  getUserInvites,
+  getInviteRanking,
+  getUserById,
+  updateUserAvatar,
+  getUserInviteCode,
+  getUserByInviteCode,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -274,6 +283,85 @@ export const appRouter = router({
       .query(async () => {
         const rate = await getUsdToBrlRate();
         return { rate };
+      }),
+  }),
+
+  // Invites router
+  invites: router({
+    // Get user's personal invite code
+    getMyCode: protectedProcedure
+      .query(async ({ ctx }) => {
+        const code = await getUserInviteCode(ctx.user.id);
+        return { code };
+      }),
+
+    // Create a new invite
+    create: protectedProcedure
+      .input(z.object({
+        email: z.string().email().optional(),
+      }).optional())
+      .mutation(async ({ ctx, input }) => {
+        return await createInvite(ctx.user.id, input?.email);
+      }),
+
+    // Get invite by code
+    getByCode: publicProcedure
+      .input(z.object({ code: z.string() }))
+      .query(async ({ input }) => {
+        const invite = await getInviteByCode(input.code);
+        if (!invite) return null;
+        
+        // Get inviter info
+        const inviter = await getUserById(invite.inviterId);
+        return {
+          ...invite,
+          inviterName: inviter?.name || "Usuário",
+          inviterAvatar: inviter?.avatarUrl,
+        };
+      }),
+
+    // Accept an invite (called after login)
+    accept: protectedProcedure
+      .input(z.object({ code: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return await acceptInvite(input.code, ctx.user.id);
+      }),
+
+    // Get user's sent invites
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getUserInvites(ctx.user.id);
+      }),
+
+    // Get invite ranking
+    ranking: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(100).default(10) }).optional())
+      .query(async ({ input }) => {
+        return await getInviteRanking(input?.limit ?? 10);
+      }),
+  }),
+
+  // User profile router
+  profile: router({
+    // Update avatar
+    updateAvatar: protectedProcedure
+      .input(z.object({ avatarUrl: z.string().url() }))
+      .mutation(async ({ ctx, input }) => {
+        await updateUserAvatar(ctx.user.id, input.avatarUrl);
+        return { success: true };
+      }),
+
+    // Get user by invite code (for invite page)
+    getByInviteCode: publicProcedure
+      .input(z.object({ code: z.string() }))
+      .query(async ({ input }) => {
+        const user = await getUserByInviteCode(input.code);
+        if (!user) return null;
+        return {
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          inviteCount: user.inviteCount,
+        };
       }),
   }),
 

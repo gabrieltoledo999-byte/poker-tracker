@@ -8,8 +8,13 @@ export const users = mysqlTable("users", {
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
+  avatarUrl: varchar("avatarUrl", { length: 512 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  // Invite system
+  inviteCode: varchar("inviteCode", { length: 32 }).unique(),
+  invitedBy: int("invitedBy"),
+  inviteCount: int("inviteCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -121,3 +126,29 @@ export const venues = mysqlTable("venues", {
 
 export type Venue = typeof venues.$inferSelect;
 export type InsertVenue = typeof venues.$inferInsert;
+
+/**
+ * Invites table - tracks sent invites
+ */
+export const invites = mysqlTable("invites", {
+  id: int("id").autoincrement().primaryKey(),
+  inviterId: int("inviterId").notNull(),
+  
+  // Invite code (unique per invite)
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  
+  // Invitee info (filled when accepted)
+  inviteeId: int("inviteeId"),
+  inviteeEmail: varchar("inviteeEmail", { length: 320 }),
+  
+  // Status
+  status: mysqlEnum("status", ["pending", "accepted", "expired"]).default("pending").notNull(),
+  
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  acceptedAt: timestamp("acceptedAt"),
+  expiresAt: timestamp("expiresAt"),
+});
+
+export type Invite = typeof invites.$inferSelect;
+export type InsertInvite = typeof invites.$inferInsert;

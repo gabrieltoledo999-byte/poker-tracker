@@ -43,3 +43,13 @@
 - [x] Adicionar campo de moeda no formulário de sessão (USD/BRL)
 - [x] Converter automaticamente valores USD para BRL ao salvar
 - [x] Mostrar valor original e convertido na lista de sessões
+
+## Perfil e Convites (Nova Feature)
+
+- [x] Adicionar campo avatarUrl à tabela de usuários
+- [x] Criar tabela de convites (inviterId, inviteeId, code, status)
+- [x] Criar rotas tRPC para gerar e aceitar convites
+- [x] Criar rota para ranking de usuários por convites
+- [x] Exibir foto de perfil do usuário no layout
+- [x] Criar página de convites com formulário para enviar
+- [x] Exibir ranking de usuários com mais convites aceitos
