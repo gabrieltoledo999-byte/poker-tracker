@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -7,9 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X } from "lucide-react";
 
 // Helper to format currency
 function formatCurrency(centavos: number): string {
@@ -19,13 +18,26 @@ function formatCurrency(centavos: number): string {
   }).format(centavos / 100);
 }
 
+// Convert file to base64
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+}
+
 export default function Settings() {
   const { user } = useAuth();
   const [onlineBankroll, setOnlineBankroll] = useState("");
   const [liveBankroll, setLiveBankroll] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
-  const [hasAvatarChanges, setHasAvatarChanges] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: settings, isLoading } = trpc.bankroll.getSettings.useQuery();
   const utils = trpc.useUtils();
@@ -43,10 +55,21 @@ export default function Settings() {
     },
   });
 
+  const uploadAvatarMutation = trpc.profile.uploadAvatar.useMutation({
+    onSuccess: (data) => {
+      toast.success("Foto de perfil atualizada! Recarregue a página para ver as alterações.");
+      setAvatarUrl(data.url);
+      setAvatarPreview("");
+      setSelectedFile(null);
+    },
+    onError: (error) => {
+      toast.error("Erro ao enviar foto: " + error.message);
+    },
+  });
+
   const updateAvatarMutation = trpc.profile.updateAvatar.useMutation({
     onSuccess: () => {
       toast.success("Foto de perfil atualizada! Recarregue a página para ver as alterações.");
-      setHasAvatarChanges(false);
     },
     onError: (error) => {
       toast.error("Erro ao atualizar foto: " + error.message);
@@ -76,11 +99,6 @@ export default function Settings() {
     setHasChanges(true);
   };
 
-  const handleAvatarChange = (value: string) => {
-    setAvatarUrl(value);
-    setHasAvatarChanges(true);
-  };
-
   const handleSave = () => {
     const onlineCentavos = Math.round(parseFloat(onlineBankroll) * 100);
     const liveCentavos = Math.round(parseFloat(liveBankroll) * 100);
@@ -100,21 +118,79 @@ export default function Settings() {
     });
   };
 
-  const handleSaveAvatar = () => {
-    if (!avatarUrl.trim()) {
-      toast.error("Por favor, insira uma URL de imagem válida");
+  // Handle file selection
+  const handleFileSelect = useCallback(async (file: File) => {
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Por favor, selecione uma imagem válida");
       return;
     }
 
-    // Basic URL validation
-    try {
-      new URL(avatarUrl);
-    } catch {
-      toast.error("URL inválida. Por favor, insira uma URL completa (ex: https://...)");
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 5MB");
       return;
     }
 
-    updateAvatarMutation.mutate({ avatarUrl: avatarUrl.trim() });
+    setSelectedFile(file);
+    
+    // Create preview
+    const base64 = await fileToBase64(file);
+    setAvatarPreview(base64);
+  }, []);
+
+  // Handle drag events
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileSelect(files[0]);
+    }
+  }, [handleFileSelect]);
+
+  // Handle file input change
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileSelect(files[0]);
+    }
+  };
+
+  // Upload the selected file
+  const handleUploadAvatar = async () => {
+    if (!selectedFile) return;
+
+    const base64 = await fileToBase64(selectedFile);
+    
+    uploadAvatarMutation.mutate({
+      base64,
+      mimeType: selectedFile.type,
+      fileName: selectedFile.name,
+    });
+  };
+
+  // Cancel file selection
+  const handleCancelUpload = () => {
+    setSelectedFile(null);
+    setAvatarPreview("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   if (isLoading) {
@@ -128,6 +204,8 @@ export default function Settings() {
 
   const totalBankroll =
     (parseFloat(onlineBankroll) || 0) + (parseFloat(liveBankroll) || 0);
+
+  const displayAvatar = avatarPreview || avatarUrl;
 
   return (
     <div className="space-y-6">
@@ -153,10 +231,11 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-start gap-6">
+          <div className="flex flex-col md:flex-row items-start gap-6">
+            {/* Avatar Preview */}
             <div className="relative">
               <Avatar className="h-24 w-24 border-2 border-primary/20">
-                <AvatarImage src={avatarUrl || undefined} />
+                <AvatarImage src={displayAvatar || undefined} />
                 <AvatarFallback className="text-2xl bg-primary/10">
                   {user?.name?.charAt(0).toUpperCase() || "?"}
                 </AvatarFallback>
@@ -165,31 +244,101 @@ export default function Settings() {
                 <Camera className="h-3 w-3 text-primary-foreground" />
               </div>
             </div>
-            <div className="flex-1 space-y-4">
+
+            {/* Upload Area */}
+            <div className="flex-1 w-full space-y-4">
               <div>
                 <p className="font-medium">{user?.name || "Usuário"}</p>
                 <p className="text-sm text-muted-foreground">{user?.email || ""}</p>
               </div>
-              <div className="space-y-2">
-                <Label>URL da Foto de Perfil</Label>
-                <Input
-                  type="url"
-                  placeholder="https://exemplo.com/sua-foto.jpg"
-                  value={avatarUrl}
-                  onChange={(e) => handleAvatarChange(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Cole a URL de uma imagem da web (ex: foto do Google, Gravatar, etc.)
-                </p>
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSaveAvatar}
-                disabled={!hasAvatarChanges || updateAvatarMutation.isPending}
+
+              {/* Drag & Drop Zone */}
+              <div
+                className={`relative border-2 border-dashed rounded-lg p-6 transition-colors cursor-pointer ${
+                  isDragging
+                    ? "border-primary bg-primary/10"
+                    : "border-muted-foreground/25 hover:border-primary/50"
+                }`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <Save className="h-4 w-4 mr-2" />
-                {updateAvatarMutation.isPending ? "Salvando..." : "Salvar Foto"}
-              </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileInputChange}
+                />
+                
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <Upload className={`h-8 w-8 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                  <div>
+                    <p className="font-medium">
+                      {isDragging ? "Solte a imagem aqui" : "Arraste sua foto aqui"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      ou clique para selecionar (máx. 5MB)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected File Actions */}
+              {selectedFile && (
+                <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(selectedFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCancelUpload}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleUploadAvatar}
+                    disabled={uploadAvatarMutation.isPending}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {uploadAvatarMutation.isPending ? "Enviando..." : "Salvar"}
+                  </Button>
+                </div>
+              )}
+
+              {/* URL Input (alternative) */}
+              <div className="pt-2 border-t">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Ou cole a URL de uma imagem:
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    type="url"
+                    placeholder="https://exemplo.com/sua-foto.jpg"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    className="text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (avatarUrl) {
+                        updateAvatarMutation.mutate({ avatarUrl });
+                      }
+                    }}
+                    disabled={!avatarUrl || updateAvatarMutation.isPending}
+                  >
+                    <Save className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>

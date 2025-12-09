@@ -57,3 +57,5 @@
 ## Correções
 
 - [x] Adicionar opção para usuário incluir foto de perfil manualmente nas configurações
+
+- [x] Adicionar upload de foto de perfil via drag & drop (salvar no S3)

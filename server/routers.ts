@@ -343,12 +343,40 @@ export const appRouter = router({
 
   // User profile router
   profile: router({
-    // Update avatar
+    // Update avatar from URL
     updateAvatar: protectedProcedure
       .input(z.object({ avatarUrl: z.string().url() }))
       .mutation(async ({ ctx, input }) => {
         await updateUserAvatar(ctx.user.id, input.avatarUrl);
         return { success: true };
+      }),
+
+    // Upload avatar image (base64)
+    uploadAvatar: protectedProcedure
+      .input(z.object({
+        base64: z.string(),
+        mimeType: z.string(),
+        fileName: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { storagePut } = await import("./storage");
+        const { nanoid } = await import("nanoid");
+        
+        // Decode base64
+        const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(base64Data, "base64");
+        
+        // Generate unique file key
+        const ext = input.fileName.split(".").pop() || "jpg";
+        const fileKey = `avatars/${ctx.user.id}-${nanoid(8)}.${ext}`;
+        
+        // Upload to S3
+        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+        
+        // Update user avatar URL
+        await updateUserAvatar(ctx.user.id, url);
+        
+        return { success: true, url };
       }),
 
     // Get user by invite code (for invite page)
