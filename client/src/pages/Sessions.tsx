@@ -48,7 +48,10 @@ import {
   DollarSign,
   RefreshCw,
   MapPin,
+  HelpCircle,
+  Sparkles,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { GAME_FORMATS, GameFormat, getGameFormatLabel, getGameFormatEmoji } from "@shared/gameFormats";
 
 // Helper to format currency
@@ -827,11 +830,19 @@ export default function Sessions() {
           ))}
         </div>
       ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">
-              Nenhuma sessão encontrada. Clique em "Nova Sessão" para começar!
+        <Card className="border-dashed">
+          <CardContent className="py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-medium mb-2">Nenhuma sessão registrada</h3>
+            <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+              Comece a registrar suas sessões de poker para acompanhar seu desempenho e evolução do bankroll.
             </p>
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Registrar Primeira Sessão
+            </Button>
           </CardContent>
         </Card>
       )}

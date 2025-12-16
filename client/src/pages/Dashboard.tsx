@@ -1,15 +1,17 @@
 import { trpc } from "@/lib/trpc";
 import { getGameFormatLabel, getGameFormatEmoji, GameFormat } from "@shared/gameFormats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Legend,
 } from "recharts";
@@ -23,8 +25,12 @@ import {
   Skull,
   BarChart3,
   Percent,
+  Plus,
+  HelpCircle,
+  ArrowRight,
 } from "lucide-react";
 import { useState } from "react";
+import { Link } from "wouter";
 
 // Helper to format currency in BRL
 function formatCurrency(centavos: number): string {
@@ -39,21 +45,28 @@ function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
-// Helper to format duration
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours === 0) return `${mins}min`;
-  return `${hours}h ${mins}min`;
+// Info tooltip component
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 cursor-help" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <p className="text-sm">{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
-// Stat card component
+// Stat card component with tooltip
 function StatCard({
   title,
   value,
   subtitle,
   icon: Icon,
   trend,
+  tooltip,
   className = "",
 }: {
   title: string;
@@ -61,6 +74,7 @@ function StatCard({
   subtitle?: string;
   icon: React.ElementType;
   trend?: "up" | "down" | "neutral";
+  tooltip?: string;
   className?: string;
 }) {
   const trendColor =
@@ -73,9 +87,12 @@ function StatCard({
   return (
     <Card className={`${className}`}>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
+        <div className="flex items-center gap-1.5">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {title}
+          </CardTitle>
+          {tooltip && <InfoTooltip content={tooltip} />}
+        </div>
         <Icon className={`h-4 w-4 ${trendColor}`} />
       </CardHeader>
       <CardContent>
@@ -113,16 +130,25 @@ function BankrollCard({
     total: "from-[oklch(0.65_0.15_85)] to-[oklch(0.55_0.12_85)]",
   };
 
+  const typeDescriptions = {
+    online: "Bankroll para jogos em sites e apps",
+    live: "Bankroll para jogos presenciais",
+    total: "Soma de todos os bankrolls",
+  };
+
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden group hover:shadow-lg transition-shadow">
       <div className={`h-2 bg-gradient-to-r ${typeColors[type]}`} />
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg flex items-center gap-2">
-          {type === "online" && "🖥️"}
-          {type === "live" && "🎰"}
-          {type === "total" && "💰"}
-          {title}
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            {type === "online" && "🖥️"}
+            {type === "live" && "🎰"}
+            {type === "total" && "💰"}
+            {title}
+          </CardTitle>
+          <InfoTooltip content={typeDescriptions[type]} />
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
@@ -154,6 +180,35 @@ function BankrollCard({
   );
 }
 
+// Empty state component
+function EmptyState({ 
+  title, 
+  description, 
+  actionLabel, 
+  actionHref 
+}: { 
+  title: string; 
+  description: string; 
+  actionLabel: string;
+  actionHref: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+        <BarChart3 className="h-8 w-8 text-muted-foreground" />
+      </div>
+      <h3 className="text-lg font-medium mb-2">{title}</h3>
+      <p className="text-muted-foreground mb-4 max-w-sm">{description}</p>
+      <Link href={actionHref}>
+        <Button>
+          <Plus className="h-4 w-4 mr-2" />
+          {actionLabel}
+        </Button>
+      </Link>
+    </div>
+  );
+}
+
 // Game format stats component
 function GameFormatStats() {
   const { data: formatStats, isLoading } = trpc.sessions.statsByFormat.useQuery();
@@ -169,10 +224,11 @@ function GameFormatStats() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <Target className="h-5 w-5 text-[oklch(0.7_0.15_85)]" />
-          Desempenho por Tipo de Jogo
-        </CardTitle>
+          <CardTitle>Desempenho por Tipo de Jogo</CardTitle>
+          <InfoTooltip content="Estatísticas separadas por cada modalidade de poker que você joga" />
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -181,7 +237,7 @@ function GameFormatStats() {
             return (
               <div
                 key={stat.format}
-                className="p-4 rounded-lg bg-muted/50 space-y-2"
+                className="p-4 rounded-lg bg-muted/50 space-y-2 hover:bg-muted/70 transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-xl">
@@ -243,8 +299,6 @@ export default function Dashboard() {
     trpc.bankroll.getCurrent.useQuery();
   const { data: stats, isLoading: loadingStats } =
     trpc.sessions.stats.useQuery({});
-  const { data: onlineStats } = trpc.sessions.stats.useQuery({ type: "online" });
-  const { data: liveStats } = trpc.sessions.stats.useQuery({ type: "live" });
   const { data: history, isLoading: loadingHistory } =
     trpc.bankroll.history.useQuery(
       chartFilter === "all" ? {} : { type: chartFilter }
@@ -291,8 +345,26 @@ export default function Dashboard() {
         : "down"
       : "neutral";
 
+  const hasNoSessions = (stats?.totalSessions || 0) === 0;
+
   return (
     <div className="space-y-6">
+      {/* Quick Action Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Visão geral do seu desempenho no poker
+          </p>
+        </div>
+        <Link href="/sessions">
+          <Button size="lg" className="gap-2">
+            <Plus className="h-5 w-5" />
+            Nova Sessão
+          </Button>
+        </Link>
+      </div>
+
       {/* Bankroll Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <BankrollCard
@@ -328,6 +400,7 @@ export default function Dashboard() {
           value={String(stats?.totalSessions || 0)}
           icon={BarChart3}
           trend="neutral"
+          tooltip="Número total de sessões de poker registradas"
         />
         <StatCard
           title="Win Rate"
@@ -343,12 +416,14 @@ export default function Dashboard() {
               ? "down"
               : "neutral"
           }
+          tooltip="Porcentagem de sessões com lucro. Acima de 50% indica mais vitórias que derrotas"
         />
         <StatCard
           title="Média por Sessão"
           value={formatCurrency(stats?.avgProfit || 0)}
           icon={DollarSign}
           trend={(stats?.avgProfit || 0) >= 0 ? "up" : "down"}
+          tooltip="Lucro médio por sessão. Valor positivo indica que você está lucrando em média"
         />
         <StatCard
           title="Taxa Horária"
@@ -356,19 +431,20 @@ export default function Dashboard() {
           subtitle="por hora"
           icon={Clock}
           trend={(stats?.avgHourlyRate || 0) >= 0 ? "up" : "down"}
+          tooltip="Quanto você ganha (ou perde) por hora jogada. Métrica importante para avaliar sua eficiência"
         />
       </div>
 
       {/* Best/Worst Sessions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
+        <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Trophy className="h-5 w-5 text-[oklch(0.7_0.15_85)]" />
             <CardTitle className="text-lg">Melhor Sessão</CardTitle>
           </CardHeader>
           <CardContent>
             {stats?.bestSession ? (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <p className="text-2xl font-bold text-[oklch(0.6_0.2_145)]">
                   +{formatCurrency(stats.bestSession.cashOut - stats.bestSession.buyIn)}
                 </p>
@@ -376,21 +452,32 @@ export default function Dashboard() {
                   {new Date(stats.bestSession.sessionDate).toLocaleDateString("pt-BR")} •{" "}
                   {stats.bestSession.type === "online" ? "Online" : "Live"}
                 </p>
+                <Link href="/sessions" className="inline-flex items-center text-sm text-primary hover:underline">
+                  Ver detalhes <ArrowRight className="h-3 w-3 ml-1" />
+                </Link>
               </div>
             ) : (
-              <p className="text-muted-foreground">Nenhuma sessão registrada</p>
+              <div className="py-4 text-center">
+                <p className="text-muted-foreground mb-2">Nenhuma sessão registrada</p>
+                <Link href="/sessions">
+                  <Button variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Registrar primeira sessão
+                  </Button>
+                </Link>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Skull className="h-5 w-5 text-[oklch(0.55_0.22_25)]" />
             <CardTitle className="text-lg">Pior Sessão</CardTitle>
           </CardHeader>
           <CardContent>
             {stats?.worstSession ? (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <p className="text-2xl font-bold text-[oklch(0.55_0.22_25)]">
                   {formatCurrency(stats.worstSession.cashOut - stats.worstSession.buyIn)}
                 </p>
@@ -398,9 +485,14 @@ export default function Dashboard() {
                   {new Date(stats.worstSession.sessionDate).toLocaleDateString("pt-BR")} •{" "}
                   {stats.worstSession.type === "online" ? "Online" : "Live"}
                 </p>
+                <Link href="/sessions" className="inline-flex items-center text-sm text-primary hover:underline">
+                  Ver detalhes <ArrowRight className="h-3 w-3 ml-1" />
+                </Link>
               </div>
             ) : (
-              <p className="text-muted-foreground">Nenhuma sessão registrada</p>
+              <div className="py-4 text-center">
+                <p className="text-muted-foreground">Nenhuma sessão registrada</p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -413,14 +505,15 @@ export default function Dashboard() {
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <CardTitle className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               {chartTrend === "up" ? (
                 <TrendingUp className="h-5 w-5 text-[oklch(0.6_0.2_145)]" />
               ) : (
                 <TrendingDown className="h-5 w-5 text-[oklch(0.55_0.22_25)]" />
               )}
-              Evolução do Bankroll
-            </CardTitle>
+              <CardTitle>Evolução do Bankroll</CardTitle>
+              <InfoTooltip content="Gráfico mostrando como seu bankroll evoluiu ao longo do tempo com cada sessão registrada" />
+            </div>
             <Tabs
               value={chartFilter}
               onValueChange={(v) => setChartFilter(v as typeof chartFilter)}
@@ -457,7 +550,7 @@ export default function Dashboard() {
                       }).format(v)
                     }
                   />
-                  <Tooltip
+                  <RechartsTooltip
                     contentStyle={{
                       backgroundColor: "oklch(0.16 0.015 150)",
                       border: "1px solid oklch(0.28 0.03 150)",
@@ -504,10 +597,17 @@ export default function Dashboard() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
+          ) : hasNoSessions ? (
+            <EmptyState
+              title="Nenhuma sessão registrada"
+              description="Registre sua primeira sessão de poker para começar a acompanhar a evolução do seu bankroll"
+              actionLabel="Registrar Sessão"
+              actionHref="/sessions"
+            />
           ) : (
             <div className="h-80 flex items-center justify-center">
               <p className="text-muted-foreground">
-                Registre sessões para ver o gráfico de evolução
+                Registre mais sessões para ver o gráfico de evolução
               </p>
             </div>
           )}

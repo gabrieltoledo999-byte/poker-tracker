@@ -59,3 +59,10 @@
 - [x] Adicionar opção para usuário incluir foto de perfil manualmente nas configurações
 
 - [x] Adicionar upload de foto de perfil via drag & drop (salvar no S3)
+
+## Melhorias de UX/Intuitividade
+
+- [x] Adicionar botão de ação rápida "Nova Sessão" no Dashboard
+- [x] Melhorar feedback visual com estados de loading e empty states
+- [x] Adicionar tooltips explicativos nos campos e métricas
+- [x] Adicionar confirmação visual ao salvar (animações sutis)
