@@ -152,3 +152,37 @@ export const invites = mysqlTable("invites", {
 
 export type Invite = typeof invites.$inferSelect;
 export type InsertInvite = typeof invites.$inferInsert;
+
+/**
+ * Fund transactions table - tracks deposits and withdrawals to bankroll
+ */
+export const fundTransactions = mysqlTable("fund_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  
+  // Transaction type
+  transactionType: mysqlEnum("transactionType", ["deposit", "withdrawal"]).notNull(),
+  
+  // Which bankroll: online or live
+  bankrollType: mysqlEnum("bankrollType", ["online", "live"]).notNull(),
+  
+  // Amount in centavos (positive for deposit, positive for withdrawal - type determines direction)
+  amount: int("amount").notNull(),
+  
+  // Currency info
+  currency: mysqlEnum("currency", ["BRL", "USD"]).default("BRL").notNull(),
+  originalAmount: int("originalAmount"), // original value if USD
+  exchangeRate: int("exchangeRate"), // rate * 10000 for precision
+  
+  // Description/notes
+  description: text("description"),
+  
+  // Date of transaction
+  transactionDate: timestamp("transactionDate").notNull(),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FundTransaction = typeof fundTransactions.$inferSelect;
+export type InsertFundTransaction = typeof fundTransactions.$inferInsert;

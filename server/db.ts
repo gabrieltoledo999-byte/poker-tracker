@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, lte, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -673,4 +673,116 @@ export async function getUserByInviteCode(code: string) {
   
   const [user] = await db.select().from(users).where(eq(users.inviteCode, code));
   return user || null;
+}
+
+// ============= Fund Transactions =============
+
+export async function createFundTransaction(
+  userId: number,
+  data: {
+    transactionType: "deposit" | "withdrawal";
+    bankrollType: "online" | "live";
+    amount: number;
+    currency?: "BRL" | "USD";
+    originalAmount?: number;
+    exchangeRate?: number;
+    description?: string;
+    transactionDate: Date;
+  }
+): Promise<FundTransaction> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(fundTransactions).values({
+    userId,
+    transactionType: data.transactionType,
+    bankrollType: data.bankrollType,
+    amount: data.amount,
+    currency: data.currency || "BRL",
+    originalAmount: data.originalAmount || null,
+    exchangeRate: data.exchangeRate || null,
+    description: data.description || null,
+    transactionDate: data.transactionDate,
+  });
+  
+  const [transaction] = await db.select().from(fundTransactions)
+    .where(eq(fundTransactions.id, (result[0] as any).insertId));
+  
+  return transaction;
+}
+
+export async function getUserFundTransactions(
+  userId: number,
+  bankrollType?: "online" | "live"
+): Promise<FundTransaction[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const conditions = [eq(fundTransactions.userId, userId)];
+  if (bankrollType) {
+    conditions.push(eq(fundTransactions.bankrollType, bankrollType));
+  }
+  
+  const result = await db.select().from(fundTransactions)
+    .where(and(...conditions))
+    .orderBy(desc(fundTransactions.transactionDate));
+  
+  return result;
+}
+
+export async function deleteFundTransaction(id: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.delete(fundTransactions)
+    .where(and(eq(fundTransactions.id, id), eq(fundTransactions.userId, userId)));
+  
+  return (result[0] as any).affectedRows > 0;
+}
+
+export async function getFundTransactionsTotals(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const transactions = await db.select().from(fundTransactions)
+    .where(eq(fundTransactions.userId, userId));
+  
+  let onlineDeposits = 0;
+  let onlineWithdrawals = 0;
+  let liveDeposits = 0;
+  let liveWithdrawals = 0;
+  
+  for (const t of transactions) {
+    if (t.bankrollType === "online") {
+      if (t.transactionType === "deposit") {
+        onlineDeposits += t.amount;
+      } else {
+        onlineWithdrawals += t.amount;
+      }
+    } else {
+      if (t.transactionType === "deposit") {
+        liveDeposits += t.amount;
+      } else {
+        liveWithdrawals += t.amount;
+      }
+    }
+  }
+  
+  return {
+    online: {
+      deposits: onlineDeposits,
+      withdrawals: onlineWithdrawals,
+      net: onlineDeposits - onlineWithdrawals,
+    },
+    live: {
+      deposits: liveDeposits,
+      withdrawals: liveWithdrawals,
+      net: liveDeposits - liveWithdrawals,
+    },
+    total: {
+      deposits: onlineDeposits + liveDeposits,
+      withdrawals: onlineWithdrawals + liveWithdrawals,
+      net: (onlineDeposits + liveDeposits) - (onlineWithdrawals + liveWithdrawals),
+    },
+  };
 }

@@ -30,6 +30,10 @@ import {
   updateUserAvatar,
   getUserInviteCode,
   getUserByInviteCode,
+  createFundTransaction,
+  getUserFundTransactions,
+  deleteFundTransaction,
+  getFundTransactionsTotals,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -425,7 +429,7 @@ export const appRouter = router({
         );
       }),
 
-    // Get current bankroll (initial + profits)
+    // Get current bankroll (initial + profits + fund transactions)
     getCurrent: protectedProcedure
       .query(async ({ ctx }) => {
         const settings = await getBankrollSettings(ctx.user.id);
@@ -434,24 +438,31 @@ export const appRouter = router({
 
         const onlineStats = await getSessionStats(ctx.user.id, "online");
         const liveStats = await getSessionStats(ctx.user.id, "live");
+        const fundTotals = await getFundTransactionsTotals(ctx.user.id);
+
+        const onlineCurrent = initialOnline + onlineStats.totalProfit + fundTotals.online.net;
+        const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
 
         return {
           online: {
             initial: initialOnline,
-            current: initialOnline + onlineStats.totalProfit,
+            current: onlineCurrent,
             profit: onlineStats.totalProfit,
+            fundNet: fundTotals.online.net,
             sessions: onlineStats.totalSessions,
           },
           live: {
             initial: initialLive,
-            current: initialLive + liveStats.totalProfit,
+            current: liveCurrent,
             profit: liveStats.totalProfit,
+            fundNet: fundTotals.live.net,
             sessions: liveStats.totalSessions,
           },
           total: {
             initial: initialOnline + initialLive,
-            current: initialOnline + initialLive + onlineStats.totalProfit + liveStats.totalProfit,
+            current: onlineCurrent + liveCurrent,
             profit: onlineStats.totalProfit + liveStats.totalProfit,
+            fundNet: fundTotals.total.net,
             sessions: onlineStats.totalSessions + liveStats.totalSessions,
           },
         };
@@ -505,6 +516,70 @@ export const appRouter = router({
         };
         
         return [initialPoint, ...history];
+      }),
+  }),
+
+  // Fund transactions router
+  funds: router({
+    // Create a new fund transaction (deposit or withdrawal)
+    create: protectedProcedure
+      .input(z.object({
+        transactionType: z.enum(["deposit", "withdrawal"]),
+        bankrollType: z.enum(["online", "live"]),
+        amount: z.number().int().positive(),
+        currency: currencyEnum.default("BRL"),
+        description: z.string().optional(),
+        transactionDate: z.date(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        let amountBrl = input.amount;
+        let originalAmount: number | undefined;
+        let exchangeRate: number | undefined;
+
+        // Convert USD to BRL if needed
+        if (input.currency === "USD") {
+          const rate = await getUsdToBrlRate();
+          originalAmount = input.amount;
+          exchangeRate = Math.round(rate * 10000);
+          amountBrl = Math.round(input.amount * rate);
+        }
+
+        return await createFundTransaction(ctx.user.id, {
+          transactionType: input.transactionType,
+          bankrollType: input.bankrollType,
+          amount: amountBrl,
+          currency: input.currency,
+          originalAmount,
+          exchangeRate,
+          description: input.description,
+          transactionDate: input.transactionDate,
+        });
+      }),
+
+    // List fund transactions
+    list: protectedProcedure
+      .input(z.object({
+        bankrollType: z.enum(["online", "live"]).optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        return await getUserFundTransactions(ctx.user.id, input?.bankrollType);
+      }),
+
+    // Delete a fund transaction
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        const success = await deleteFundTransaction(input.id, ctx.user.id);
+        if (!success) {
+          throw new Error("Transação não encontrada");
+        }
+        return { success: true };
+      }),
+
+    // Get totals (deposits, withdrawals, net) per bankroll type
+    totals: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getFundTransactionsTotals(ctx.user.id);
       }),
   }),
 });

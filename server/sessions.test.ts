@@ -14,6 +14,7 @@ vi.mock("./db", () => ({
   getBankrollSettings: vi.fn(),
   upsertBankrollSettings: vi.fn(),
   getBankrollHistory: vi.fn(),
+  getFundTransactionsTotals: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -221,7 +222,7 @@ describe("bankroll router", () => {
   });
 
   describe("bankroll.getCurrent", () => {
-    it("calculates current bankroll with profits", async () => {
+    it("calculates current bankroll with profits and fund transactions", async () => {
       vi.mocked(db.getBankrollSettings).mockResolvedValue({
         id: 1,
         userId: 1,
@@ -229,6 +230,12 @@ describe("bankroll router", () => {
         initialLive: 400000,
         createdAt: new Date(),
         updatedAt: new Date(),
+      });
+
+      vi.mocked(db.getFundTransactionsTotals).mockResolvedValue({
+        online: { deposits: 10000, withdrawals: 0, net: 10000 },
+        live: { deposits: 20000, withdrawals: 5000, net: 15000 },
+        total: { deposits: 30000, withdrawals: 5000, net: 25000 },
       });
 
       vi.mocked(db.getSessionStats)
@@ -268,9 +275,9 @@ describe("bankroll router", () => {
 
       const result = await caller.bankroll.getCurrent();
 
-      expect(result.online.current).toBe(150000); // 100000 + 50000
-      expect(result.live.current).toBe(430000); // 400000 + 30000
-      expect(result.total.current).toBe(580000); // 150000 + 430000
+      expect(result.online.current).toBe(160000); // 100000 + 50000 + 10000 (fund net)
+      expect(result.live.current).toBe(445000); // 400000 + 30000 + 15000 (fund net)
+      expect(result.total.current).toBe(605000); // 160000 + 445000
     });
   });
 });

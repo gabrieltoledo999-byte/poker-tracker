@@ -10,6 +10,7 @@ import Sessions from "./pages/Sessions";
 import Settings from "./pages/Settings";
 import Venues from "./pages/Venues";
 import Invites from "./pages/Invites";
+import Funds from "./pages/Funds";
 
 function Router() {
   return (
@@ -19,6 +20,7 @@ function Router() {
         <Route path="/sessions" component={Sessions} />
         <Route path="/venues" component={Venues} />
         <Route path="/invites" component={Invites} />
+        <Route path="/funds" component={Funds} />
         <Route path="/settings" component={Settings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

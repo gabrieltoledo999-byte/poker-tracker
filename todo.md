@@ -70,3 +70,11 @@
 ## Gráficos Separados
 
 - [x] Separar gráficos de evolução do bankroll em três seções: Online, Live e Geral
+
+## Gerenciamento de Fundos (Nova Feature)
+
+- [x] Criar tabela de transações de fundos (depósitos/saques)
+- [x] Criar rotas tRPC para CRUD de transações de fundos
+- [x] Permitir edição dos valores iniciais do bankroll (online/live)
+- [x] Criar página de gerenciamento de fundos
+- [x] Atualizar cálculo do bankroll para incluir transações externas
