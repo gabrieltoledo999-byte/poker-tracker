@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { getGameFormatLabel, getGameFormatEmoji, GameFormat } from "@shared/gameFormats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -29,7 +29,7 @@ import {
   HelpCircle,
   ArrowRight,
 } from "lucide-react";
-import { useState } from "react";
+
 import { Link } from "wouter";
 
 // Helper to format currency in BRL
@@ -293,16 +293,13 @@ function GameFormatStats() {
 }
 
 export default function Dashboard() {
-  const [chartFilter, setChartFilter] = useState<"all" | "online" | "live">("all");
 
   const { data: bankroll, isLoading: loadingBankroll } =
     trpc.bankroll.getCurrent.useQuery();
   const { data: stats, isLoading: loadingStats } =
     trpc.sessions.stats.useQuery({});
   const { data: history, isLoading: loadingHistory } =
-    trpc.bankroll.history.useQuery(
-      chartFilter === "all" ? {} : { type: chartFilter }
-    );
+    trpc.bankroll.history.useQuery({});
 
   const isLoading = loadingBankroll || loadingStats || loadingHistory;
 
@@ -501,118 +498,145 @@ export default function Dashboard() {
       {/* Stats by Game Format */}
       <GameFormatStats />
 
-      {/* Bankroll Evolution Chart */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Bankroll Evolution Charts - Separated */}
+      <div className="space-y-6">
+        <h2 className="text-xl font-bold flex items-center gap-2">
+          <BarChart3 className="h-5 w-5" />
+          Evolução do Bankroll
+        </h2>
+        
+        {/* Online Chart */}
+        <Card className="border-l-4 border-l-[oklch(0.5_0.15_250)]">
+          <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              {chartTrend === "up" ? (
-                <TrendingUp className="h-5 w-5 text-[oklch(0.6_0.2_145)]" />
-              ) : (
-                <TrendingDown className="h-5 w-5 text-[oklch(0.55_0.22_25)]" />
-              )}
-              <CardTitle>Evolução do Bankroll</CardTitle>
-              <InfoTooltip content="Gráfico mostrando como seu bankroll evoluiu ao longo do tempo com cada sessão registrada" />
+              <span className="text-xl">💻</span>
+              <CardTitle className="text-lg">Poker Online</CardTitle>
+              <InfoTooltip content="Evolução do seu bankroll nas sessões online" />
             </div>
-            <Tabs
-              value={chartFilter}
-              onValueChange={(v) => setChartFilter(v as typeof chartFilter)}
-            >
-              <TabsList>
-                <TabsTrigger value="all">Todos</TabsTrigger>
-                <TabsTrigger value="online">Online</TabsTrigger>
-                <TabsTrigger value="live">Live</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {chartData.length > 1 ? (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="oklch(0.28 0.03 150)"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    stroke="oklch(0.6 0.01 90)"
-                    fontSize={12}
-                  />
-                  <YAxis
-                    stroke="oklch(0.6 0.01 90)"
-                    fontSize={12}
-                    tickFormatter={(v) =>
-                      new Intl.NumberFormat("pt-BR", {
-                        notation: "compact",
-                        compactDisplay: "short",
-                      }).format(v)
-                    }
-                  />
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: "oklch(0.16 0.015 150)",
-                      border: "1px solid oklch(0.28 0.03 150)",
-                      borderRadius: "8px",
-                    }}
-                    labelStyle={{ color: "oklch(0.92 0.01 90)" }}
-                    formatter={(value: number) => [
-                      formatCurrency(value * 100),
-                      "",
-                    ]}
-                    labelFormatter={(label) => `Data: ${label}`}
-                  />
-                  <Legend />
-                  {(chartFilter === "all" || chartFilter === "online") && (
-                    <Line
-                      type="monotone"
-                      dataKey="online"
-                      name="Online"
-                      stroke="oklch(0.5 0.15 250)"
-                      strokeWidth={2}
-                      dot={false}
+          </CardHeader>
+          <CardContent>
+            {chartData.length > 1 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.03 150)" />
+                    <XAxis dataKey="date" stroke="oklch(0.6 0.01 90)" fontSize={12} />
+                    <YAxis
+                      stroke="oklch(0.6 0.01 90)"
+                      fontSize={12}
+                      tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { notation: "compact", compactDisplay: "short" }).format(v)}
                     />
-                  )}
-                  {(chartFilter === "all" || chartFilter === "live") && (
-                    <Line
-                      type="monotone"
-                      dataKey="live"
-                      name="Live"
-                      stroke="oklch(0.55 0.18 145)"
-                      strokeWidth={2}
-                      dot={false}
+                    <RechartsTooltip
+                      contentStyle={{ backgroundColor: "oklch(0.16 0.015 150)", border: "1px solid oklch(0.28 0.03 150)", borderRadius: "8px" }}
+                      labelStyle={{ color: "oklch(0.92 0.01 90)" }}
+                      formatter={(value: number) => [formatCurrency(value * 100), "Online"]}
+                      labelFormatter={(label) => `Data: ${label}`}
                     />
-                  )}
-                  {chartFilter === "all" && (
-                    <Line
-                      type="monotone"
-                      dataKey="total"
-                      name="Total"
-                      stroke="oklch(0.7 0.15 85)"
-                      strokeWidth={3}
-                      dot={false}
-                    />
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
+                    <Line type="monotone" dataKey="online" name="Online" stroke="oklch(0.5 0.15 250)" strokeWidth={3} dot={{ fill: "oklch(0.5 0.15 250)", r: 3 }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : hasNoSessions ? (
+              <div className="h-40 flex items-center justify-center">
+                <p className="text-muted-foreground">Registre sessões online para ver o gráfico</p>
+              </div>
+            ) : (
+              <div className="h-40 flex items-center justify-center">
+                <p className="text-muted-foreground">Registre mais sessões para ver o gráfico</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Live Chart */}
+        <Card className="border-l-4 border-l-[oklch(0.55_0.18_145)]">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎰</span>
+              <CardTitle className="text-lg">Poker Live</CardTitle>
+              <InfoTooltip content="Evolução do seu bankroll nas sessões presenciais" />
             </div>
-          ) : hasNoSessions ? (
-            <EmptyState
-              title="Nenhuma sessão registrada"
-              description="Registre sua primeira sessão de poker para começar a acompanhar a evolução do seu bankroll"
-              actionLabel="Registrar Sessão"
-              actionHref="/sessions"
-            />
-          ) : (
-            <div className="h-80 flex items-center justify-center">
-              <p className="text-muted-foreground">
-                Registre mais sessões para ver o gráfico de evolução
-              </p>
+          </CardHeader>
+          <CardContent>
+            {chartData.length > 1 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.03 150)" />
+                    <XAxis dataKey="date" stroke="oklch(0.6 0.01 90)" fontSize={12} />
+                    <YAxis
+                      stroke="oklch(0.6 0.01 90)"
+                      fontSize={12}
+                      tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { notation: "compact", compactDisplay: "short" }).format(v)}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{ backgroundColor: "oklch(0.16 0.015 150)", border: "1px solid oklch(0.28 0.03 150)", borderRadius: "8px" }}
+                      labelStyle={{ color: "oklch(0.92 0.01 90)" }}
+                      formatter={(value: number) => [formatCurrency(value * 100), "Live"]}
+                      labelFormatter={(label) => `Data: ${label}`}
+                    />
+                    <Line type="monotone" dataKey="live" name="Live" stroke="oklch(0.55 0.18 145)" strokeWidth={3} dot={{ fill: "oklch(0.55 0.18 145)", r: 3 }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : hasNoSessions ? (
+              <div className="h-40 flex items-center justify-center">
+                <p className="text-muted-foreground">Registre sessões live para ver o gráfico</p>
+              </div>
+            ) : (
+              <div className="h-40 flex items-center justify-center">
+                <p className="text-muted-foreground">Registre mais sessões para ver o gráfico</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Total Chart */}
+        <Card className="border-l-4 border-l-[oklch(0.7_0.15_85)]">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">💰</span>
+              <CardTitle className="text-lg">Bankroll Total</CardTitle>
+              <InfoTooltip content="Evolução do seu bankroll total (online + live)" />
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {chartData.length > 1 ? (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.03 150)" />
+                    <XAxis dataKey="date" stroke="oklch(0.6 0.01 90)" fontSize={12} />
+                    <YAxis
+                      stroke="oklch(0.6 0.01 90)"
+                      fontSize={12}
+                      tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { notation: "compact", compactDisplay: "short" }).format(v)}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{ backgroundColor: "oklch(0.16 0.015 150)", border: "1px solid oklch(0.28 0.03 150)", borderRadius: "8px" }}
+                      labelStyle={{ color: "oklch(0.92 0.01 90)" }}
+                      formatter={(value: number) => [formatCurrency(value * 100), "Total"]}
+                      labelFormatter={(label) => `Data: ${label}`}
+                    />
+                    <Line type="monotone" dataKey="total" name="Total" stroke="oklch(0.7 0.15 85)" strokeWidth={4} dot={{ fill: "oklch(0.7 0.15 85)", r: 4 }} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : hasNoSessions ? (
+              <EmptyState
+                title="Nenhuma sessão registrada"
+                description="Registre sua primeira sessão de poker para começar a acompanhar a evolução do seu bankroll"
+                actionLabel="Registrar Sessão"
+                actionHref="/sessions"
+              />
+            ) : (
+              <div className="h-40 flex items-center justify-center">
+                <p className="text-muted-foreground">Registre mais sessões para ver o gráfico</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

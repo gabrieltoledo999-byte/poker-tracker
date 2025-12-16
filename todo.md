@@ -66,3 +66,7 @@
 - [x] Melhorar feedback visual com estados de loading e empty states
 - [x] Adicionar tooltips explicativos nos campos e métricas
 - [x] Adicionar confirmação visual ao salvar (animações sutis)
+
+## Gráficos Separados
+
+- [x] Separar gráficos de evolução do bankroll em três seções: Online, Live e Geral
