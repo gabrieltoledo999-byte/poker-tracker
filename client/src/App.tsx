@@ -4,7 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import DashboardLayout from "./components/DashboardLayout";
+import TopNavLayout from "./components/TopNavLayout";
 import Dashboard from "./pages/Dashboard";
 import Sessions from "./pages/Sessions";
 import Settings from "./pages/Settings";
@@ -14,7 +14,7 @@ import Funds from "./pages/Funds";
 
 function Router() {
   return (
-    <DashboardLayout>
+    <TopNavLayout>
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/sessions" component={Sessions} />
@@ -25,7 +25,7 @@ function Router() {
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
-    </DashboardLayout>
+    </TopNavLayout>
   );
 }
 

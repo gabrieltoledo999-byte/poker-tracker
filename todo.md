@@ -78,3 +78,17 @@
 - [x] Permitir edição dos valores iniciais do bankroll (online/live)
 - [x] Criar página de gerenciamento de fundos
 - [x] Atualizar cálculo do bankroll para incluir transações externas
+
+## Melhorias de Navegação e Dúvidas (Nova Feature)
+
+- [ ] Criar tabela de dúvidas/anotações vinculadas às sessões
+- [ ] Adicionar campo de dúvidas no formulário de sessão
+- [ ] Exibir dúvidas na lista de sessões e detalhes
+- [ ] Melhorar navegação com breadcrumbs e indicadores visuais
+- [ ] Adicionar atalhos rápidos e fluxos mais claros
+
+## Navegação no Topo e Correção de Duração
+
+- [x] Criar navegação horizontal no topo (substituir sidebar)
+- [x] Corrigir campo de duração para aceitar horas e minutos separados (sem limite de 60min)
+- [x] Adicionar sistema de dúvidas/anotações nas sessões

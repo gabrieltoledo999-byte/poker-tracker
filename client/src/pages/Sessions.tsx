@@ -99,6 +99,7 @@ function SessionForm({
     sessionDate: Date;
     durationMinutes: number;
     notes?: string | null;
+    doubts?: string | null;
     venueId?: number | null;
     gameType?: string | null;
     stakes?: string | null;
@@ -136,6 +137,7 @@ function SessionForm({
     initialData ? String(initialData.durationMinutes % 60) : ""
   );
   const [notes, setNotes] = useState(initialData?.notes || "");
+  const [doubts, setDoubts] = useState(initialData?.doubts || "");
   const [gameType, setGameType] = useState(initialData?.gameType || "");
   const [stakes, setStakes] = useState(initialData?.stakes || "");
 
@@ -193,6 +195,7 @@ function SessionForm({
       sessionDate: new Date(sessionDate),
       durationMinutes,
       notes: notes || undefined,
+      doubts: doubts || undefined,
       venueId: venueId ? parseInt(venueId) : undefined,
       gameType: gameType || undefined,
       stakes: stakes || undefined,
@@ -369,7 +372,6 @@ function SessionForm({
           <Input
             type="number"
             min="0"
-            max="59"
             placeholder="0"
             value={minutes}
             onChange={(e) => setMinutes(e.target.value)}
@@ -461,6 +463,26 @@ function SessionForm({
         />
       </div>
 
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          Dúvidas (opcional)
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <HelpCircle className="h-3 w-3 text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Registre dúvidas ou questões sobre jogadas para revisar depois</p>
+            </TooltipContent>
+          </Tooltip>
+        </Label>
+        <Textarea
+          placeholder="Ex: Deveria ter dado call no river? Fold no turn foi correto?..."
+          value={doubts}
+          onChange={(e) => setDoubts(e.target.value)}
+          rows={3}
+        />
+      </div>
+
       <DialogFooter>
         <DialogClose asChild>
           <Button type="button" variant="outline" onClick={onCancel}>
@@ -494,6 +516,7 @@ function SessionCard({
     sessionDate: Date;
     durationMinutes: number;
     notes?: string | null;
+    doubts?: string | null;
     venueId?: number | null;
     gameType?: string | null;
     stakes?: string | null;
@@ -650,9 +673,24 @@ function SessionCard({
         </div>
 
         {session.notes && (
-          <p className="mt-3 text-sm text-muted-foreground border-t pt-3">
-            {session.notes}
-          </p>
+          <div className="mt-3 border-t pt-3">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Notas:</p>
+            <p className="text-sm text-muted-foreground">
+              {session.notes}
+            </p>
+          </div>
+        )}
+        
+        {session.doubts && (
+          <div className="mt-3 border-t pt-3 bg-[oklch(0.7_0.15_85)]/5 -mx-6 px-6 py-3">
+            <p className="text-xs font-medium text-[oklch(0.7_0.15_85)] mb-1 flex items-center gap-1">
+              <HelpCircle className="h-3 w-3" />
+              Dúvidas para revisar:
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {session.doubts}
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>

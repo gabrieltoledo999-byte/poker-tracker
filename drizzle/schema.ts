@@ -61,8 +61,9 @@ export const sessions = mysqlTable("sessions", {
   sessionDate: timestamp("sessionDate").notNull(),
   durationMinutes: int("durationMinutes").notNull(), // duration in minutes
   
-  // Optional notes
+  // Optional notes and doubts
   notes: text("notes"),
+  doubts: text("doubts"), // Dúvidas/questões sobre a sessão para revisar depois
   
   // Venue reference (optional - links to venues table)
   venueId: int("venueId"),
