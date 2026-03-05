@@ -272,12 +272,12 @@ function SharkScopeWidget() {
   };
 
   const handleOpen = () => {
-    const url = `https://www.sharkscope.com/#Player-Statistics$/networks/${encodeURIComponent(savedNetwork)}/players/${encodeURIComponent(savedNickname)}`;
+    const url = `https://pt.sharkscope.com/poker-statistics/networks/${encodeURIComponent(savedNetwork)}/players/${encodeURIComponent(savedNickname)}`;
     window.open(url, "_blank");
   };
 
   return (
-    <Card className="border border-[oklch(0.7_0.15_85)]/30 bg-gradient-to-br from-[oklch(0.16_0.015_150)] to-[oklch(0.14_0.01_150)]">
+    <Card className="border border-secondary/30">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

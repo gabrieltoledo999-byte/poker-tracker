@@ -159,12 +159,12 @@ export default function Funds() {
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]">
+            <Button className="bg-primary hover:bg-primary/90">
               <Plus className="h-4 w-4 mr-2" />
               Nova Transação
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-[oklch(0.18_0.02_150)] border-[oklch(0.28_0.03_150)]">
+          <DialogContent className="bg-popover border-border">
             <DialogHeader>
               <DialogTitle>Nova Transação</DialogTitle>
             </DialogHeader>
@@ -176,7 +176,7 @@ export default function Funds() {
                   variant={transactionType === "deposit" ? "default" : "outline"}
                   className={
                     transactionType === "deposit"
-                      ? "bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]"
+                      ? "bg-primary hover:bg-primary/90"
                       : ""
                   }
                   onClick={() => setTransactionType("deposit")}
@@ -189,7 +189,7 @@ export default function Funds() {
                   variant={transactionType === "withdrawal" ? "default" : "outline"}
                   className={
                     transactionType === "withdrawal"
-                      ? "bg-[oklch(0.55_0.22_25)] hover:bg-[oklch(0.5_0.22_25)]"
+                      ? "bg-destructive hover:bg-destructive/90"
                       : ""
                   }
                   onClick={() => setTransactionType("withdrawal")}
@@ -208,7 +208,7 @@ export default function Funds() {
                     variant={bankrollType === "online" ? "default" : "outline"}
                     className={
                       bankrollType === "online"
-                        ? "bg-[oklch(0.5_0.15_250)] hover:bg-[oklch(0.45_0.15_250)]"
+                        ? "bg-chart-4 hover:bg-chart-4/90 text-white"
                         : ""
                     }
                     onClick={() => setBankrollType("online")}
@@ -221,7 +221,7 @@ export default function Funds() {
                     variant={bankrollType === "live" ? "default" : "outline"}
                     className={
                       bankrollType === "live"
-                        ? "bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]"
+                        ? "bg-primary hover:bg-primary/90"
                         : ""
                     }
                     onClick={() => setBankrollType("live")}
@@ -241,7 +241,7 @@ export default function Funds() {
                     placeholder="0,00"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="bg-[oklch(0.14_0.01_150)] border-[oklch(0.28_0.03_150)]"
+                    className="bg-background border-border"
                   />
                 </div>
                 <div className="space-y-2">
@@ -250,7 +250,7 @@ export default function Funds() {
                     value={currency}
                     onValueChange={(v) => setCurrency(v as "BRL" | "USD")}
                   >
-                    <SelectTrigger className="bg-[oklch(0.14_0.01_150)] border-[oklch(0.28_0.03_150)]">
+                    <SelectTrigger className="bg-background border-border">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -292,7 +292,7 @@ export default function Funds() {
 
               <Button
                 type="submit"
-                className="w-full bg-[oklch(0.7_0.15_85)] hover:bg-[oklch(0.65_0.15_85)] text-black"
+                className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground"
                 disabled={createMutation.isPending}
               >
                 {createMutation.isPending ? "Salvando..." : "Salvar Transação"}
@@ -305,7 +305,7 @@ export default function Funds() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Online */}
-        <Card className="border-l-4 border-l-[oklch(0.5_0.15_250)]">
+        <Card className="border-l-4 border-l-chart-4">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Laptop className="h-4 w-4" />
@@ -323,13 +323,13 @@ export default function Funds() {
               </div>
               <div className="flex justify-between">
                 <span>Lucro sessões:</span>
-                <span className={bankroll?.online.profit && bankroll.online.profit >= 0 ? "text-[oklch(0.6_0.2_145)]" : "text-[oklch(0.55_0.22_25)]"}>
+                <span className={bankroll?.online.profit && bankroll.online.profit >= 0 ? "text-chart-1" : "text-destructive"}>
                   {formatCurrency(bankroll?.online.profit || 0)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Depósitos/Saques:</span>
-                <span className={bankroll?.online.fundNet && bankroll.online.fundNet >= 0 ? "text-[oklch(0.6_0.2_145)]" : "text-[oklch(0.55_0.22_25)]"}>
+                <span className={bankroll?.online.fundNet && bankroll.online.fundNet >= 0 ? "text-chart-1" : "text-destructive"}>
                   {formatCurrency(bankroll?.online.fundNet || 0)}
                 </span>
               </div>
@@ -338,7 +338,7 @@ export default function Funds() {
         </Card>
 
         {/* Live */}
-        <Card className="border-l-4 border-l-[oklch(0.55_0.18_145)]">
+        <Card className="border-l-4 border-l-primary">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Building2 className="h-4 w-4" />
@@ -356,13 +356,13 @@ export default function Funds() {
               </div>
               <div className="flex justify-between">
                 <span>Lucro sessões:</span>
-                <span className={bankroll?.live.profit && bankroll.live.profit >= 0 ? "text-[oklch(0.6_0.2_145)]" : "text-[oklch(0.55_0.22_25)]"}>
+                <span className={bankroll?.live.profit && bankroll.live.profit >= 0 ? "text-chart-1" : "text-destructive"}>
                   {formatCurrency(bankroll?.live.profit || 0)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Depósitos/Saques:</span>
-                <span className={bankroll?.live.fundNet && bankroll.live.fundNet >= 0 ? "text-[oklch(0.6_0.2_145)]" : "text-[oklch(0.55_0.22_25)]"}>
+                <span className={bankroll?.live.fundNet && bankroll.live.fundNet >= 0 ? "text-chart-1" : "text-destructive"}>
                   {formatCurrency(bankroll?.live.fundNet || 0)}
                 </span>
               </div>
@@ -371,7 +371,7 @@ export default function Funds() {
         </Card>
 
         {/* Total */}
-        <Card className="border-l-4 border-l-[oklch(0.7_0.15_85)]">
+        <Card className="border-l-4 border-l-chart-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
@@ -385,13 +385,13 @@ export default function Funds() {
             <div className="text-xs text-muted-foreground mt-1 space-y-1">
               <div className="flex justify-between">
                 <span>Total depósitos:</span>
-                <span className="text-[oklch(0.6_0.2_145)]">
+                <span className="text-chart-1">
                   +{formatCurrency(totals?.total.deposits || 0)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Total saques:</span>
-                <span className="text-[oklch(0.55_0.22_25)]">
+                <span className="text-destructive">
                   -{formatCurrency(totals?.total.withdrawals || 0)}
                 </span>
               </div>
@@ -412,7 +412,7 @@ export default function Funds() {
               value={filterType}
               onValueChange={(v) => setFilterType(v as typeof filterType)}
             >
-              <SelectTrigger className="w-[150px] bg-[oklch(0.14_0.01_150)] border-[oklch(0.28_0.03_150)]">
+              <SelectTrigger className="w-[150px] bg-background border-border">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -435,7 +435,7 @@ export default function Funds() {
               </p>
               <Button
                 onClick={() => setIsDialogOpen(true)}
-                className="bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]"
+                className="bg-primary hover:bg-primary/90"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Nova Transação
@@ -446,14 +446,14 @@ export default function Funds() {
               {transactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-[oklch(0.14_0.01_150)] border border-[oklch(0.28_0.03_150)]"
+                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
                 >
                   <div className="flex items-center gap-4">
                     <div
                       className={`p-2 rounded-full ${
                         transaction.transactionType === "deposit"
-                          ? "bg-[oklch(0.55_0.18_145)]/20 text-[oklch(0.6_0.2_145)]"
-                          : "bg-[oklch(0.55_0.22_25)]/20 text-[oklch(0.55_0.22_25)]"
+                          ? "bg-primary/20 text-chart-1"
+                          : "bg-destructive/20 text-destructive"
                       }`}
                     >
                       {transaction.transactionType === "deposit" ? (
@@ -470,8 +470,8 @@ export default function Funds() {
                         <span
                           className={`text-xs px-2 py-0.5 rounded ${
                             transaction.bankrollType === "online"
-                              ? "bg-[oklch(0.5_0.15_250)]/20 text-[oklch(0.6_0.15_250)]"
-                              : "bg-[oklch(0.55_0.18_145)]/20 text-[oklch(0.6_0.2_145)]"
+                              ? "bg-chart-4/20 text-chart-4"
+                              : "bg-primary/20 text-chart-1"
                           }`}
                         >
                           {transaction.bankrollType === "online"
@@ -494,8 +494,8 @@ export default function Funds() {
                     <div
                       className={`text-lg font-bold ${
                         transaction.transactionType === "deposit"
-                          ? "text-[oklch(0.6_0.2_145)]"
-                          : "text-[oklch(0.55_0.22_25)]"
+                          ? "text-chart-1"
+                          : "text-destructive"
                       }`}
                     >
                       {transaction.transactionType === "deposit" ? "+" : "-"}
@@ -509,7 +509,7 @@ export default function Funds() {
                           deleteMutation.mutate({ id: transaction.id });
                         }
                       }}
-                      className="text-muted-foreground hover:text-[oklch(0.55_0.22_25)]"
+                      className="text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
