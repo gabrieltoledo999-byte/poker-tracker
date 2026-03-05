@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Espada de poker - lâmina -->
+  <polygon points="50,8 56,42 44,42" fill="#10b981"/>
+  <!-- Guarda da espada -->
+  <rect x="30" y="42" width="40" height="8" rx="3" fill="#10b981"/>
+  <!-- Cabo da espada -->
+  <rect x="46" y="50" width="8" height="22" rx="2" fill="#10b981"/>
+  <!-- Pomo da espada -->
+  <ellipse cx="50" cy="76" rx="10" ry="6" fill="#10b981"/>
+  <!-- Brilho na lâmina -->
+  <polygon points="50,12 52,38 50,36" fill="#34d399" opacity="0.5"/>
+</svg>
