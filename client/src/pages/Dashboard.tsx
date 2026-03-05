@@ -28,9 +28,14 @@ import {
   Plus,
   HelpCircle,
   ArrowRight,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
-
 import { Link } from "wouter";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 // Helper to format currency in BRL
 function formatCurrency(centavos: number): string {
@@ -113,6 +118,7 @@ function BankrollCard({
   profit,
   sessions,
   type,
+  onUpdateInitial,
 }: {
   title: string;
   current: number;
@@ -120,9 +126,12 @@ function BankrollCard({
   profit: number;
   sessions: number;
   type: "online" | "live" | "total";
+  onUpdateInitial?: (value: number) => void;
 }) {
   const isPositive = profit >= 0;
   const percentChange = initial > 0 ? ((profit / initial) * 100) : 0;
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
 
   const typeColors = {
     online: "from-[oklch(0.5_0.15_250)] to-[oklch(0.4_0.12_250)]",
@@ -134,6 +143,25 @@ function BankrollCard({
     online: "Bankroll para jogos em sites e apps",
     live: "Bankroll para jogos presenciais",
     total: "Soma de todos os bankrolls",
+  };
+
+  const handleStartEdit = () => {
+    setEditValue(String(initial / 100));
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    const val = parseFloat(editValue);
+    if (isNaN(val) || val < 0) {
+      toast.error("Valor inválido");
+      return;
+    }
+    onUpdateInitial?.(Math.round(val * 100));
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
   };
 
   return (
@@ -153,9 +181,46 @@ function BankrollCard({
       <CardContent className="space-y-3">
         <div>
           <p className="text-3xl font-bold">{formatCurrency(current)}</p>
-          <p className="text-xs text-muted-foreground">
-            Inicial: {formatCurrency(initial)}
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            {editing ? (
+              <div className="flex items-center gap-1 w-full">
+                <span className="text-xs text-muted-foreground">Inicial: R$</span>
+                <Input
+                  type="number"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  className="h-6 text-xs w-28 px-1"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave();
+                    if (e.key === "Escape") handleCancel();
+                  }}
+                />
+                <Button size="icon" variant="ghost" className="h-5 w-5 p-0" onClick={handleSave}>
+                  <Check className="h-3 w-3 text-[oklch(0.6_0.2_145)]" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-5 w-5 p-0" onClick={handleCancel}>
+                  <X className="h-3 w-3 text-[oklch(0.55_0.22_25)]" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 group/edit">
+                <p className="text-xs text-muted-foreground">
+                  Inicial: {formatCurrency(initial)}
+                </p>
+                {type !== "total" && onUpdateInitial && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-4 w-4 p-0 opacity-0 group-hover/edit:opacity-100 transition-opacity"
+                    onClick={handleStartEdit}
+                  >
+                    <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isPositive ? (
@@ -206,6 +271,104 @@ function EmptyState({
         </Button>
       </Link>
     </div>
+  );
+}
+
+// Sharkscope widget component
+function SharkScopeWidget() {
+  const [nickname, setNickname] = useState("");
+  const [network, setNetwork] = useState("PokerStars");
+  const [savedNickname, setSavedNickname] = useState(() => localStorage.getItem("sharkscope_nickname") || "");
+  const [savedNetwork, setSavedNetwork] = useState(() => localStorage.getItem("sharkscope_network") || "PokerStars");
+  const [editing, setEditing] = useState(!localStorage.getItem("sharkscope_nickname"));
+
+  const networks = [
+    "PokerStars", "GGPoker", "888poker", "partypoker", "WPT Global",
+    "KKPoker", "CoinPoker", "Winamax", "iPoker", "Bodog"
+  ];
+
+  const handleSave = () => {
+    if (!nickname.trim()) { toast.error("Digite seu nickname"); return; }
+    localStorage.setItem("sharkscope_nickname", nickname.trim());
+    localStorage.setItem("sharkscope_network", network);
+    setSavedNickname(nickname.trim());
+    setSavedNetwork(network);
+    setEditing(false);
+    toast.success("Nickname salvo!");
+  };
+
+  const handleOpen = () => {
+    const url = `https://www.sharkscope.com/#Player-Statistics$/networks/${encodeURIComponent(savedNetwork)}/players/${encodeURIComponent(savedNickname)}`;
+    window.open(url, "_blank");
+  };
+
+  return (
+    <Card className="border border-[oklch(0.7_0.15_85)]/30 bg-gradient-to-br from-[oklch(0.16_0.015_150)] to-[oklch(0.14_0.01_150)]">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🦈</span>
+            <CardTitle className="text-lg">SharkScope</CardTitle>
+            <InfoTooltip content="Acesse rapidamente suas estatísticas no SharkScope pelo seu nickname" />
+          </div>
+          {!editing && savedNickname && (
+            <Button size="sm" variant="ghost" onClick={() => { setNickname(savedNickname); setNetwork(savedNetwork); setEditing(true); }}>
+              <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {editing ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Seu Nickname</label>
+                <Input
+                  placeholder="Ex: G_TTeixeira999"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Rede</label>
+                <select
+                  value={network}
+                  onChange={(e) => setNetwork(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                >
+                  {networks.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSave} className="gap-1">
+                <Check className="h-3.5 w-3.5" /> Salvar
+              </Button>
+              {savedNickname && (
+                <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
+                  Cancelar
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <p className="font-semibold text-lg">{savedNickname}</p>
+              <p className="text-sm text-muted-foreground">{savedNetwork}</p>
+            </div>
+            <Button onClick={handleOpen} className="gap-2 bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]">
+              <Target className="h-4 w-4" />
+              Ver Estatísticas
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -294,12 +457,36 @@ function GameFormatStats() {
 
 export default function Dashboard() {
 
+  const utils = trpc.useUtils();
   const { data: bankroll, isLoading: loadingBankroll } =
     trpc.bankroll.getCurrent.useQuery();
   const { data: stats, isLoading: loadingStats } =
     trpc.sessions.stats.useQuery({});
   const { data: history, isLoading: loadingHistory } =
     trpc.bankroll.history.useQuery({});
+
+  const updateBankrollMutation = trpc.bankroll.updateSettings.useMutation({
+    onSuccess: () => {
+      utils.bankroll.getCurrent.invalidate();
+      utils.bankroll.history.invalidate();
+      toast.success("Bankroll atualizado!");
+    },
+    onError: () => toast.error("Erro ao atualizar bankroll"),
+  });
+
+  const handleUpdateOnline = (val: number) => {
+    updateBankrollMutation.mutate({
+      initialOnline: val,
+      initialLive: bankroll?.live.initial ?? 400000,
+    });
+  };
+
+  const handleUpdateLive = (val: number) => {
+    updateBankrollMutation.mutate({
+      initialOnline: bankroll?.online.initial ?? 100000,
+      initialLive: val,
+    });
+  };
 
   const isLoading = loadingBankroll || loadingStats || loadingHistory;
 
@@ -371,6 +558,7 @@ export default function Dashboard() {
           profit={bankroll?.online.profit || 0}
           sessions={bankroll?.online.sessions || 0}
           type="online"
+          onUpdateInitial={handleUpdateOnline}
         />
         <BankrollCard
           title="Poker Live"
@@ -379,6 +567,7 @@ export default function Dashboard() {
           profit={bankroll?.live.profit || 0}
           sessions={bankroll?.live.sessions || 0}
           type="live"
+          onUpdateInitial={handleUpdateLive}
         />
         <BankrollCard
           title="Total"
@@ -494,6 +683,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Sharkscope Quick Access */}
+      <SharkScopeWidget />
 
       {/* Stats by Game Format */}
       <GameFormatStats />

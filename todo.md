@@ -92,3 +92,23 @@
 - [x] Criar navegação horizontal no topo (substituir sidebar)
 - [x] Corrigir campo de duração para aceitar horas e minutos separados (sem limite de 60min)
 - [x] Adicionar sistema de dúvidas/anotações nas sessões
+
+## Edição de Bankroll e Importação por Nickname
+
+- [ ] Tornar bankroll Online/Live editável diretamente no dashboard (inline edit)
+- [ ] Pesquisar APIs de poker para importação automática por nickname
+- [ ] Implementar importação de sessões por nickname (se API disponível)
+
+## Integração Sharkscope
+
+- [ ] Criar rota backend para buscar torneios do Sharkscope por nickname/rede
+- [ ] Criar página de importação Sharkscope com campo de nickname e rede
+- [ ] Converter torneios do Sharkscope em sessões no tracker
+- [ ] Exibir prévia dos torneios antes de importar
+- [x] Edição inline do bankroll no dashboard
+
+## Sharkscope e Correções
+
+- [x] Corrigir erro de importação duplicada de trpc no Dashboard
+- [x] Adicionar widget de acesso rápido ao Sharkscope (busca por nickname/rede)
+- [x] Edição inline do bankroll no dashboard
