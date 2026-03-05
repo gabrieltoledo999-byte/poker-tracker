@@ -18,7 +18,11 @@ import {
   Users,
   Wallet,
   Menu,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
@@ -42,6 +46,7 @@ export default function TopNavLayout({
   const { loading, user } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       window.location.href = getLoginUrl();
@@ -128,8 +133,18 @@ export default function TopNavLayout({
             })}
           </nav>
 
-          {/* User Menu */}
+            {/* User Menu */}
           <div className="flex items-center gap-2">
+            {/* Theme Toggle Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            </Button>
             {/* Mobile Menu */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
@@ -194,6 +209,18 @@ export default function TopNavLayout({
                     </p>
                   </div>
                 </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={toggleTheme}
+                  className="cursor-pointer"
+                >
+                  {theme === "dark" ? (
+                    <><Sun className="mr-2 h-4 w-4" />Tema Claro</>
+                  ) : (
+                    <><Moon className="mr-2 h-4 w-4" />Tema Escuro</>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => logoutMutation.mutate()}
                   className="cursor-pointer text-[oklch(0.55_0.22_25)]"

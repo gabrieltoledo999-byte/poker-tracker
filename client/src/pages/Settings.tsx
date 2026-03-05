@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 
 // Helper to format currency
 function formatCurrency(centavos: number): string {
@@ -192,6 +193,8 @@ export default function Settings() {
       fileInputRef.current.value = "";
     }
   };
+
+  const { theme, toggleTheme } = useTheme();
 
   if (isLoading) {
     return (
@@ -424,6 +427,42 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Theme Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+            Aparência
+          </CardTitle>
+          <CardDescription>
+            Escolha entre o tema claro ou escuro. A preferência é salva automaticamente no seu navegador.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 rounded-lg border">
+            <div className="flex items-center gap-3">
+              {theme === "dark" ? (
+                <Moon className="h-8 w-8 text-[oklch(0.6_0.15_250)]" />
+              ) : (
+                <Sun className="h-8 w-8 text-[oklch(0.7_0.15_85)]" />
+              )}
+              <div>
+                <p className="font-medium">{theme === "dark" ? "Tema Escuro" : "Tema Claro"}</p>
+                <p className="text-sm text-muted-foreground">
+                  {theme === "dark" ? "Interface escura, ideal para uso noturno" : "Interface clara, ideal para uso diurno"}
+                </p>
+              </div>
+            </div>
+            <Button onClick={toggleTheme} variant="outline" className="gap-2">
+              {theme === "dark" ? (
+                <><Sun className="h-4 w-4" />Mudar para Claro</>
+              ) : (
+                <><Moon className="h-4 w-4" />Mudar para Escuro</>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Sobre o Aplicativo</CardTitle>
