@@ -93,7 +93,7 @@ export default function TopNavLayout({
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-50 w-full border-b border-[oklch(0.28_0.03_150)] bg-[oklch(0.14_0.01_150)]/95 backdrop-blur supports-[backdrop-filter]:bg-[oklch(0.14_0.01_150)]/60">
+      <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
           {/* Logo */}
           <button
@@ -154,7 +154,7 @@ export default function TopNavLayout({
               </SheetTrigger>
               <SheetContent
                 side="left"
-                className="bg-[oklch(0.14_0.01_150)] border-[oklch(0.28_0.03_150)]"
+                className="bg-background border-border"
               >
                 <div className="flex flex-col gap-2 mt-8">
                   {menuItems.map((item) => {
@@ -199,7 +199,7 @@ export default function TopNavLayout({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="bg-[oklch(0.18_0.02_150)] border-[oklch(0.28_0.03_150)]"
+                className="bg-popover border-border"
               >
                 <div className="flex items-center justify-start gap-2 p-2">
                   <div className="flex flex-col space-y-1">
