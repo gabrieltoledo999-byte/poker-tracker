@@ -299,7 +299,7 @@ function SharkScopeWidget() {
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground font-medium">Seu Nickname</label>
                 <Input
-                  placeholder="Ex: G_TTeixeira999"
+                  placeholder="Ex: PokerPro2024"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSave()}
