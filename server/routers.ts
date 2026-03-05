@@ -443,8 +443,10 @@ export const appRouter = router({
         const liveStats = await getSessionStats(ctx.user.id, "live");
         const fundTotals = await getFundTransactionsTotals(ctx.user.id);
 
-        const onlineCurrent = initialOnline + onlineStats.totalProfit + fundTotals.online.net;
-        const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
+        const onlineRaw = initialOnline + onlineStats.totalProfit + fundTotals.online.net;
+        const liveRaw = initialLive + liveStats.totalProfit + fundTotals.live.net;
+        const onlineCurrent = Math.max(0, onlineRaw);
+        const liveCurrent = Math.max(0, liveRaw);
 
         return {
           online: {
