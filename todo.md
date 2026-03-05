@@ -112,3 +112,9 @@
 - [x] Corrigir erro de importação duplicada de trpc no Dashboard
 - [x] Adicionar widget de acesso rápido ao Sharkscope (busca por nickname/rede)
 - [x] Edição inline do bankroll no dashboard
+
+## Simplificação do Bankroll
+
+- [x] Zerar valor inicial do bankroll (começar do zero)
+- [x] Criar botões simples de Depositar/Sacar nos cards do dashboard
+- [x] Remover complexidade de "valor inicial" — só mostrar saldo atual

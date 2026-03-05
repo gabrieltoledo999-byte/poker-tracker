@@ -114,24 +114,23 @@ function StatCard({
 function BankrollCard({
   title,
   current,
-  initial,
   profit,
   sessions,
   type,
-  onUpdateInitial,
+  onDeposit,
+  onWithdraw,
 }: {
   title: string;
   current: number;
-  initial: number;
   profit: number;
   sessions: number;
   type: "online" | "live" | "total";
-  onUpdateInitial?: (value: number) => void;
+  onDeposit?: (value: number) => void;
+  onWithdraw?: (value: number) => void;
 }) {
   const isPositive = profit >= 0;
-  const percentChange = initial > 0 ? ((profit / initial) * 100) : 0;
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState("");
+  const [showInput, setShowInput] = useState<"deposit" | "withdraw" | null>(null);
+  const [inputValue, setInputValue] = useState("");
 
   const typeColors = {
     online: "from-[oklch(0.5_0.15_250)] to-[oklch(0.4_0.12_250)]",
@@ -139,107 +138,82 @@ function BankrollCard({
     total: "from-[oklch(0.65_0.15_85)] to-[oklch(0.55_0.12_85)]",
   };
 
-  const typeDescriptions = {
-    online: "Bankroll para jogos em sites e apps",
-    live: "Bankroll para jogos presenciais",
-    total: "Soma de todos os bankrolls",
-  };
-
-  const handleStartEdit = () => {
-    setEditValue(String(initial / 100));
-    setEditing(true);
-  };
-
-  const handleSave = () => {
-    const val = parseFloat(editValue);
-    if (isNaN(val) || val < 0) {
-      toast.error("Valor inválido");
-      return;
-    }
-    onUpdateInitial?.(Math.round(val * 100));
-    setEditing(false);
-  };
-
-  const handleCancel = () => {
-    setEditing(false);
+  const handleConfirm = () => {
+    const val = parseFloat(inputValue.replace(",", "."));
+    if (isNaN(val) || val <= 0) { toast.error("Digite um valor válido"); return; }
+    const centavos = Math.round(val * 100);
+    if (showInput === "deposit") onDeposit?.(centavos);
+    else onWithdraw?.(centavos);
+    setShowInput(null);
+    setInputValue("");
   };
 
   return (
-    <Card className="overflow-hidden group hover:shadow-lg transition-shadow">
+    <Card className="overflow-hidden hover:shadow-lg transition-shadow">
       <div className={`h-2 bg-gradient-to-r ${typeColors[type]}`} />
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg flex items-center gap-2">
-            {type === "online" && "🖥️"}
-            {type === "live" && "🎰"}
-            {type === "total" && "💰"}
-            {title}
-          </CardTitle>
-          <InfoTooltip content={typeDescriptions[type]} />
-        </div>
+        <CardTitle className="text-lg flex items-center gap-2">
+          {type === "online" && "🖥️"}
+          {type === "live" && "🎰"}
+          {type === "total" && "💰"}
+          {title}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div>
-          <p className="text-3xl font-bold">{formatCurrency(current)}</p>
-          <div className="flex items-center gap-2 mt-1">
-            {editing ? (
-              <div className="flex items-center gap-1 w-full">
-                <span className="text-xs text-muted-foreground">Inicial: R$</span>
-                <Input
-                  type="number"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  className="h-6 text-xs w-28 px-1"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSave();
-                    if (e.key === "Escape") handleCancel();
-                  }}
-                />
-                <Button size="icon" variant="ghost" className="h-5 w-5 p-0" onClick={handleSave}>
-                  <Check className="h-3 w-3 text-[oklch(0.6_0.2_145)]" />
-                </Button>
-                <Button size="icon" variant="ghost" className="h-5 w-5 p-0" onClick={handleCancel}>
-                  <X className="h-3 w-3 text-[oklch(0.55_0.22_25)]" />
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 group/edit">
-                <p className="text-xs text-muted-foreground">
-                  Inicial: {formatCurrency(initial)}
-                </p>
-                {type !== "total" && onUpdateInitial && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-4 w-4 p-0 opacity-0 group-hover/edit:opacity-100 transition-opacity"
-                    onClick={handleStartEdit}
-                  >
-                    <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <p className="text-3xl font-bold">{formatCurrency(current)}</p>
         <div className="flex items-center gap-2">
           {isPositive ? (
             <TrendingUp className="h-4 w-4 text-[oklch(0.6_0.2_145)]" />
           ) : (
             <TrendingDown className="h-4 w-4 text-[oklch(0.55_0.22_25)]" />
           )}
-          <span
-            className={`text-sm font-medium ${
-              isPositive
-                ? "text-[oklch(0.6_0.2_145)]"
-                : "text-[oklch(0.55_0.22_25)]"
-            }`}
-          >
-            {isPositive ? "+" : ""}
-            {formatCurrency(profit)} ({formatPercent(percentChange)})
+          <span className={`text-sm font-medium ${isPositive ? "text-[oklch(0.6_0.2_145)]" : "text-[oklch(0.55_0.22_25)]"}`}>
+            {isPositive ? "+" : ""}{formatCurrency(profit)} nas sessões
           </span>
         </div>
         <p className="text-xs text-muted-foreground">{sessions} sessões</p>
+        {type !== "total" && (
+          <>
+            {showInput ? (
+              <div className="flex gap-2 items-center pt-1">
+                <span className="text-sm text-muted-foreground">R$</span>
+                <Input
+                  type="number"
+                  placeholder="0,00"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleConfirm(); if (e.key === "Escape") setShowInput(null); }}
+                  className="h-8 text-sm"
+                  autoFocus
+                />
+                <Button size="sm" className="h-8 px-3 bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]" onClick={handleConfirm}>
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => { setShowInput(null); setInputValue(""); }}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  className="flex-1 h-9 gap-1.5 bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)] text-white font-semibold"
+                  onClick={() => setShowInput("deposit")}
+                >
+                  <Plus className="h-4 w-4" /> Depositar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-9 gap-1.5 border-[oklch(0.55_0.22_25)]/50 text-[oklch(0.55_0.22_25)] hover:bg-[oklch(0.55_0.22_25)]/10 font-semibold"
+                  onClick={() => setShowInput("withdraw")}
+                >
+                  <TrendingDown className="h-4 w-4" /> Sacar
+                </Button>
+              </div>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -465,26 +439,24 @@ export default function Dashboard() {
   const { data: history, isLoading: loadingHistory } =
     trpc.bankroll.history.useQuery({});
 
-  const updateBankrollMutation = trpc.bankroll.updateSettings.useMutation({
-    onSuccess: () => {
+  const fundMutation = trpc.funds.create.useMutation({
+    onSuccess: (_, vars) => {
       utils.bankroll.getCurrent.invalidate();
       utils.bankroll.history.invalidate();
-      toast.success("Bankroll atualizado!");
+      utils.funds.list.invalidate();
+      const action = vars.transactionType === "deposit" ? "Depósito" : "Saque";
+      toast.success(`${action} realizado com sucesso!`);
     },
-    onError: () => toast.error("Erro ao atualizar bankroll"),
+    onError: () => toast.error("Erro ao processar transação"),
   });
 
-  const handleUpdateOnline = (val: number) => {
-    updateBankrollMutation.mutate({
-      initialOnline: val,
-      initialLive: bankroll?.live.initial ?? 400000,
-    });
-  };
-
-  const handleUpdateLive = (val: number) => {
-    updateBankrollMutation.mutate({
-      initialOnline: bankroll?.online.initial ?? 100000,
-      initialLive: val,
+  const handleFundTransaction = (bankrollType: "online" | "live", transactionType: "deposit" | "withdrawal", amount: number) => {
+    fundMutation.mutate({
+      transactionType,
+      bankrollType,
+      amount,
+      currency: "BRL",
+      transactionDate: new Date(),
     });
   };
 
@@ -554,25 +526,24 @@ export default function Dashboard() {
         <BankrollCard
           title="Poker Online"
           current={bankroll?.online.current || 0}
-          initial={bankroll?.online.initial || 100000}
           profit={bankroll?.online.profit || 0}
           sessions={bankroll?.online.sessions || 0}
           type="online"
-          onUpdateInitial={handleUpdateOnline}
+          onDeposit={(val) => handleFundTransaction("online", "deposit", val)}
+          onWithdraw={(val) => handleFundTransaction("online", "withdrawal", val)}
         />
         <BankrollCard
           title="Poker Live"
           current={bankroll?.live.current || 0}
-          initial={bankroll?.live.initial || 400000}
           profit={bankroll?.live.profit || 0}
           sessions={bankroll?.live.sessions || 0}
           type="live"
-          onUpdateInitial={handleUpdateLive}
+          onDeposit={(val) => handleFundTransaction("live", "deposit", val)}
+          onWithdraw={(val) => handleFundTransaction("live", "withdrawal", val)}
         />
         <BankrollCard
           title="Total"
           current={bankroll?.total.current || 0}
-          initial={bankroll?.total.initial || 500000}
           profit={bankroll?.total.profit || 0}
           sessions={bankroll?.total.sessions || 0}
           type="total"

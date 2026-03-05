@@ -89,8 +89,8 @@ export const bankrollSettings = mysqlTable("bankroll_settings", {
   userId: int("userId").notNull().unique(),
   
   // Initial bankroll values (in centavos)
-  initialOnline: int("initialOnline").notNull().default(100000), // R$ 1.000,00
-  initialLive: int("initialLive").notNull().default(400000), // R$ 4.000,00
+  initialOnline: int("initialOnline").notNull().default(0), // começa zerado
+  initialLive: int("initialLive").notNull().default(0), // começa zerado
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

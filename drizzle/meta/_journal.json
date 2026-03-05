@@ -57,6 +57,13 @@
       "when": 1766399979162,
       "tag": "0007_needy_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1772737063747,
+      "tag": "0008_daily_makkari",
+      "breakpoints": true
     }
   ]
 }
