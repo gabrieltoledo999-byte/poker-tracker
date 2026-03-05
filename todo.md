@@ -118,3 +118,7 @@
 - [x] Zerar valor inicial do bankroll (começar do zero)
 - [x] Criar botões simples de Depositar/Sacar nos cards do dashboard
 - [x] Remover complexidade de "valor inicial" — só mostrar saldo atual
+
+## Favicon
+
+- [x] Corrigir favicon para aparecer no Google Chrome (usar CDN externo)
