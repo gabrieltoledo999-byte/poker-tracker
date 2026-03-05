@@ -64,6 +64,13 @@
       "when": 1772737063747,
       "tag": "0008_daily_makkari",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1772744651224,
+      "tag": "0009_medical_revanche",
+      "breakpoints": true
     }
   ]
 }

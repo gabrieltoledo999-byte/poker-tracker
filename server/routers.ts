@@ -2,6 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { getLeaderboard, getFriendIds, addFriendship, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment } from "./db";
 import { z } from "zod";
 import {
   createSession,
@@ -587,6 +588,73 @@ export const appRouter = router({
         return await getFundTransactionsTotals(ctx.user.id);
       }),
   }),
-});
 
+  // Ranking routerr
+  ranking: router({
+    leaderboard: protectedProcedure
+      .input(z.object({ friendsOnly: z.boolean().default(false) }).optional())
+      .query(async ({ ctx, input }) => {
+        return await getLeaderboard(ctx.user.id, input?.friendsOnly ?? false);
+      }),
+  }),
+
+  // Community feed router
+  feed: router({
+    list: protectedProcedure
+      .input(z.object({ limit: z.number().int().optional(), offset: z.number().int().optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        return await getPublicFeed(ctx.user.id, input?.limit ?? 30, input?.offset ?? 0);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        content: z.string().min(1).max(1000),
+        imageUrl: z.string().url().optional(),
+        imageKey: z.string().optional(),
+        sessionId: z.number().int().optional(),
+        visibility: z.enum(["public", "friends"]).default("public"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createPost({ ...input, userId: ctx.user.id });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        return await deletePost(input.id, ctx.user.id);
+      }),
+    toggleLike: protectedProcedure
+      .input(z.object({ postId: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        return await toggleLike(input.postId, ctx.user.id);
+      }),
+    getComments: protectedProcedure
+      .input(z.object({ postId: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        return await getPostComments(input.postId);
+      }),
+    addComment: protectedProcedure
+      .input(z.object({ postId: z.number().int(), content: z.string().min(1).max(500) }))
+      .mutation(async ({ ctx, input }) => {
+        return await createComment({ postId: input.postId, userId: ctx.user.id, content: input.content });
+      }),
+    deleteComment: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        return await deleteComment(input.id, ctx.user.id);
+      }),
+  }),
+
+  // Upload image for posts
+  upload: router({
+    postImage: protectedProcedure
+      .input(z.object({ base64: z.string(), mimeType: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const { storagePut } = await import("./storage");
+        const buffer = Buffer.from(input.base64, "base64");
+        const ext = input.mimeType.split("/")[1] || "jpg";
+        const key = `posts/${ctx.user.id}-${Date.now()}.${ext}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        return { url, key };
+      }),
+  }),
+});
 export type AppRouter = typeof appRouter;

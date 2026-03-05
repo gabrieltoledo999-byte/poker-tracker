@@ -786,3 +786,186 @@ export async function getFundTransactionsTotals(userId: number) {
     },
   };
 }
+
+// ============================================================
+// RANKING helpers
+// ============================================================
+import { posts, postLikes, postComments, friendships, Post, PostComment } from "../drizzle/schema";
+import { count } from "drizzle-orm";
+
+export async function getLeaderboard(currentUserId: number, friendsOnly: boolean = false) {
+  const db = await getDb();
+  if (!db) return [];
+
+  let userIds: number[] = [];
+  if (friendsOnly) {
+    const friends = await db
+      .select({ friendId: friendships.friendId })
+      .from(friendships)
+      .where(eq(friendships.userId, currentUserId));
+    userIds = friends.map((f) => f.friendId);
+    userIds.push(currentUserId);
+    if (userIds.length === 0) return [];
+  }
+
+  const allUsers = await db.select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl }).from(users);
+  const targetUsers = friendsOnly ? allUsers.filter((u) => userIds.includes(u.id)) : allUsers;
+
+  const results = await Promise.all(
+    targetUsers.map(async (user) => {
+      const stats = await getSessionStats(user.id);
+      const totalBuyIn = stats.totalBuyIn ?? 0;
+      const totalProfit = stats.totalProfit ?? 0;
+      const roi = totalBuyIn > 0 ? (totalProfit / totalBuyIn) * 100 : 0;
+      return {
+        userId: user.id,
+        name: user.name ?? "Jogador",
+        avatarUrl: user.avatarUrl,
+        totalProfit,
+        roi,
+        winRate: stats.winRate ?? 0,
+        bestSession: stats.bestSession ?? 0,
+        totalSessions: stats.totalSessions ?? 0,
+      };
+    })
+  );
+
+  return results.sort((a, b) => b.roi - a.roi);
+}
+
+export async function getFriendIds(userId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const friends = await db
+    .select({ friendId: friendships.friendId })
+    .from(friendships)
+    .where(eq(friendships.userId, userId));
+  return friends.map((f) => f.friendId);
+}
+
+export async function addFriendship(userId: number, friendId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(friendships).ignore().values({ userId, friendId });
+  await db.insert(friendships).ignore().values({ userId: friendId, friendId: userId });
+}
+
+// ============================================================
+// POSTS helpers
+// ============================================================
+
+export async function createPost(data: {
+  userId: number;
+  content: string;
+  imageUrl?: string;
+  imageKey?: string;
+  sessionId?: number;
+  visibility: "public" | "friends";
+}): Promise<Post> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(posts).values(data);
+  const post = await db.select().from(posts).where(eq(posts.id, (result as any).insertId)).limit(1);
+  return post[0];
+}
+
+export async function getPublicFeed(currentUserId: number, limit: number = 30, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  const friendIds = await getFriendIds(currentUserId);
+  const allAllowedIds = [...friendIds, currentUserId];
+
+  const allPosts = await db
+    .select({
+      post: posts,
+      author: { id: users.id, name: users.name, avatarUrl: users.avatarUrl },
+    })
+    .from(posts)
+    .innerJoin(users, eq(posts.userId, users.id))
+    .where(
+      sql`(${posts.visibility} = 'public' OR (${posts.visibility} = 'friends' AND ${posts.userId} IN (${sql.raw(allAllowedIds.join(','))})))`
+    )
+    .orderBy(desc(posts.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const enriched = await Promise.all(
+    allPosts.map(async (p) => {
+      const [likeRow] = await db
+        .select({ cnt: count() })
+        .from(postLikes)
+        .where(eq(postLikes.postId, p.post.id));
+      const [commentRow] = await db
+        .select({ cnt: count() })
+        .from(postComments)
+        .where(eq(postComments.postId, p.post.id));
+      const myLike = await db
+        .select()
+        .from(postLikes)
+        .where(and(eq(postLikes.postId, p.post.id), eq(postLikes.userId, currentUserId)))
+        .limit(1);
+      return {
+        ...p.post,
+        author: p.author,
+        likeCount: likeRow?.cnt ?? 0,
+        commentCount: commentRow?.cnt ?? 0,
+        likedByMe: myLike.length > 0,
+      };
+    })
+  );
+
+  return enriched;
+}
+
+export async function deletePost(postId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const [result] = await db.delete(posts).where(and(eq(posts.id, postId), eq(posts.userId, userId)));
+  return (result as any).affectedRows > 0;
+}
+
+export async function toggleLike(postId: number, userId: number): Promise<{ liked: boolean }> {
+  const db = await getDb();
+  if (!db) return { liked: false };
+  const existing = await db
+    .select()
+    .from(postLikes)
+    .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)))
+    .limit(1);
+  if (existing.length > 0) {
+    await db.delete(postLikes).where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
+    return { liked: false };
+  } else {
+    await db.insert(postLikes).values({ postId, userId });
+    return { liked: true };
+  }
+}
+
+export async function getPostComments(postId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      comment: postComments,
+      author: { id: users.id, name: users.name, avatarUrl: users.avatarUrl },
+    })
+    .from(postComments)
+    .innerJoin(users, eq(postComments.userId, users.id))
+    .where(eq(postComments.postId, postId))
+    .orderBy(postComments.createdAt);
+}
+
+export async function createComment(data: { postId: number; userId: number; content: string }): Promise<PostComment> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(postComments).values(data);
+  const comment = await db.select().from(postComments).where(eq(postComments.id, (result as any).insertId)).limit(1);
+  return comment[0];
+}
+
+export async function deleteComment(commentId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const [result] = await db.delete(postComments).where(and(eq(postComments.id, commentId), eq(postComments.userId, userId)));
+  return (result as any).affectedRows > 0;
+}

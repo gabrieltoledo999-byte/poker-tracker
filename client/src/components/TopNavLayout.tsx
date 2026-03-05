@@ -20,6 +20,8 @@ import {
   Menu,
   Sun,
   Moon,
+  Trophy,
+  Globe,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -33,6 +35,8 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ListChecks, label: "Sessões", path: "/sessions" },
   { icon: Wallet, label: "Fundos", path: "/funds" },
+  { icon: Trophy, label: "Ranking", path: "/ranking" },
+  { icon: Globe, label: "Feed", path: "/feed" },
   { icon: MapPin, label: "Locais", path: "/venues" },
   { icon: Users, label: "Convites", path: "/invites" },
   { icon: Settings, label: "Configurações", path: "/settings" },

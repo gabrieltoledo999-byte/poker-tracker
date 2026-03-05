@@ -11,6 +11,8 @@ import Settings from "./pages/Settings";
 import Venues from "./pages/Venues";
 import Invites from "./pages/Invites";
 import Funds from "./pages/Funds";
+import Ranking from "./pages/Ranking";
+import Feed from "./pages/Feed";
 
 function Router() {
   return (
@@ -21,6 +23,8 @@ function Router() {
         <Route path="/venues" component={Venues} />
         <Route path="/invites" component={Invites} />
         <Route path="/funds" component={Funds} />
+        <Route path="/ranking" component={Ranking} />
+        <Route path="/feed" component={Feed} />
         <Route path="/settings" component={Settings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

@@ -187,3 +187,71 @@ export const fundTransactions = mysqlTable("fund_transactions", {
 
 export type FundTransaction = typeof fundTransactions.$inferSelect;
 export type InsertFundTransaction = typeof fundTransactions.$inferInsert;
+
+/**
+ * Community posts table - public feed where users share results
+ */
+export const posts = mysqlTable("posts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+
+  // Post content
+  content: text("content").notNull(),
+
+  // Optional attached image URL (stored in S3)
+  imageUrl: varchar("imageUrl", { length: 512 }),
+  imageKey: varchar("imageKey", { length: 256 }),
+
+  // Optional attached session result
+  sessionId: int("sessionId"),
+
+  // Visibility: public = all users, friends = only friends
+  visibility: mysqlEnum("visibility", ["public", "friends"]).default("public").notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Post = typeof posts.$inferSelect;
+export type InsertPost = typeof posts.$inferInsert;
+
+/**
+ * Post likes table
+ */
+export const postLikes = mysqlTable("post_likes", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),
+  userId: int("userId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PostLike = typeof postLikes.$inferSelect;
+export type InsertPostLike = typeof postLikes.$inferInsert;
+
+/**
+ * Post comments table
+ */
+export const postComments = mysqlTable("post_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),
+  userId: int("userId").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PostComment = typeof postComments.$inferSelect;
+export type InsertPostComment = typeof postComments.$inferInsert;
+
+/**
+ * Friendships table - tracks accepted friend connections
+ */
+export const friendships = mysqlTable("friendships", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  friendId: int("friendId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Friendship = typeof friendships.$inferSelect;
+export type InsertFriendship = typeof friendships.$inferInsert;

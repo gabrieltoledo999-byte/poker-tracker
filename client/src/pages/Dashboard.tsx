@@ -592,6 +592,49 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* ROI Card */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-sm font-medium text-muted-foreground">ROI — Retorno sobre Investimento</CardTitle>
+              <InfoTooltip content="ROI = (Lucro Total ÷ Total Investido) × 100. O indicador mais importante no poker de torneios. ROI positivo significa que você está lucrando sobre o que investe." />
+            </div>
+            <Target className={`h-4 w-4 ${((stats?.totalBuyIn ?? 0) > 0 && (stats?.totalProfit ?? 0) >= 0) ? 'text-[oklch(0.6_0.2_145)]' : 'text-[oklch(0.55_0.22_25)]'}`} />
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const totalBuyIn = stats?.totalBuyIn ?? 0;
+              const totalProfit = stats?.totalProfit ?? 0;
+              const roi = totalBuyIn > 0 ? (totalProfit / totalBuyIn) * 100 : 0;
+              const isPositive = roi >= 0;
+              return (
+                <div>
+                  <div className={`text-2xl font-bold ${isPositive ? 'text-[oklch(0.6_0.2_145)]' : 'text-[oklch(0.55_0.22_25)]'}`}>
+                    {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatCurrency(totalProfit)} de lucro sobre {formatCurrency(totalBuyIn)} investidos
+                  </p>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Investimento Total</CardTitle>
+            </div>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(stats?.totalBuyIn ?? 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">em {stats?.totalSessions ?? 0} sessões</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Best/Worst Sessions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="hover:shadow-lg transition-shadow">
