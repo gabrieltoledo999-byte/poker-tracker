@@ -122,3 +122,7 @@
 ## Favicon
 
 - [x] Corrigir favicon para aparecer no Google Chrome (usar CDN externo)
+
+## Feed e Imagens
+
+- [x] Corrigir exibição de imagens no Feed para não cortar (object-fit: contain)

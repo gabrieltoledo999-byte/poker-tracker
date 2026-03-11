@@ -190,11 +190,11 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
 
         {/* Image */}
         {post.imageUrl && (
-          <div className="rounded-lg overflow-hidden mb-3 max-h-80">
+          <div className="rounded-lg overflow-hidden mb-3 bg-muted flex items-center justify-center">
             <img
               src={post.imageUrl}
               alt="Imagem do post"
-              className="w-full h-full object-cover"
+              className="w-full max-h-[480px] object-contain"
             />
           </div>
         )}
