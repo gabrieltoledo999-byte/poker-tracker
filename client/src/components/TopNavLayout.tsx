@@ -67,9 +67,13 @@ export default function TopNavLayout({
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center gap-2 mb-2">
-              <Spade className="h-8 w-8 text-primary" />
+              <img
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663029227103/mhejrpwpFXkgMVbD.PNG"
+                alt="The Rail"
+                className="h-12 w-12 object-contain"
+              />
               <span className="text-3xl font-bold gradient-text">
-                Poker Tracker
+                The Rail
               </span>
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-center">
@@ -85,7 +89,7 @@ export default function TopNavLayout({
               window.location.href = getLoginUrl();
             }}
             size="lg"
-            className="w-full bg-[oklch(0.55_0.18_145)] hover:bg-[oklch(0.5_0.18_145)]"
+            className="w-full bg-primary hover:opacity-90"
           >
             Entrar com Manus
           </Button>
@@ -98,24 +102,24 @@ export default function TopNavLayout({
     <div className="min-h-screen flex flex-col">
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
+        <div className="container flex h-16 items-center gap-4">
           {/* Logo */}
           <button
             onClick={() => setLocation("/")}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer shrink-0 min-w-[120px]"
           >
             <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663029227103/qHQkRbZpnSRQVTtI.png"
-              alt="Poker Tracker"
+              src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663029227103/mhejrpwpFXkgMVbD.PNG"
+              alt="The Rail"
               className="h-9 w-9 object-contain"
             />
-            <span className="text-xl font-bold gradient-text hidden sm:inline">
-              Poker Tracker
+            <span className="text-xl font-bold gradient-text">
+              The Rail
             </span>
           </button>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
             {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = location === item.path;
@@ -125,7 +129,7 @@ export default function TopNavLayout({
                   variant="ghost"
                   className={`gap-2 ${
                     isActive
-                      ? "bg-[oklch(0.55_0.18_145)]/20 text-[oklch(0.6_0.2_145)]"
+                      ? "bg-primary/20 text-primary"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                   onClick={() => setLocation(item.path)}
@@ -138,7 +142,7 @@ export default function TopNavLayout({
           </nav>
 
             {/* User Menu */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             {/* Theme Toggle Button */}
             <Button
               variant="ghost"
@@ -170,7 +174,7 @@ export default function TopNavLayout({
                         variant="ghost"
                         className={`justify-start gap-2 ${
                           isActive
-                            ? "bg-[oklch(0.55_0.18_145)]/20 text-[oklch(0.6_0.2_145)]"
+                            ? "bg-primary/20 text-primary"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                         onClick={() => {
@@ -195,7 +199,7 @@ export default function TopNavLayout({
                 >
                   <Avatar className="h-10 w-10">
                     <AvatarImage src={user.avatarUrl || undefined} />
-                    <AvatarFallback className="bg-[oklch(0.55_0.18_145)] text-white">
+                    <AvatarFallback className="bg-primary text-primary-foreground">
                       {user.name?.charAt(0).toUpperCase() || "U"}
                     </AvatarFallback>
                   </Avatar>

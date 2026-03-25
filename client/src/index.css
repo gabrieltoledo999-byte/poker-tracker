@@ -43,80 +43,80 @@
 }
 
 :root {
-  /* Poker LIGHT theme - clean white/gray with green accents */
-  --primary: oklch(0.45 0.18 145); /* Darker felt green for light bg */
+  /* The Rail LIGHT theme - white/lavender with purple+cyan accents */
+  --primary: oklch(0.52 0.22 290);     /* Purple */
   --primary-foreground: oklch(0.98 0 0);
-  --sidebar-primary: oklch(0.45 0.18 145);
+  --sidebar-primary: oklch(0.52 0.22 290);
   --sidebar-primary-foreground: oklch(0.98 0 0);
-  --chart-1: oklch(0.45 0.18 145); /* Green */
-  --chart-2: oklch(0.6 0.15 85);  /* Gold */
-  --chart-3: oklch(0.5 0.2 25);   /* Red */
-  --chart-4: oklch(0.45 0.15 250); /* Blue */
-  --chart-5: oklch(0.5 0.15 320); /* Purple */
+  --chart-1: oklch(0.52 0.22 290);    /* Purple */
+  --chart-2: oklch(0.75 0.18 195);    /* Cyan */
+  --chart-3: oklch(0.55 0.2 25);      /* Red */
+  --chart-4: oklch(0.55 0.18 250);    /* Blue */
+  --chart-5: oklch(0.65 0.15 320);    /* Pink */
   --radius: 0.65rem;
-  --background: oklch(0.97 0.005 90);  /* Near white */
-  --foreground: oklch(0.15 0.01 150);  /* Dark text */
-  --card: oklch(1 0 0);                /* White cards */
-  --card-foreground: oklch(0.15 0.01 150);
+  --background: oklch(0.97 0.005 270);  /* Near white with slight lavender */
+  --foreground: oklch(0.15 0.02 270);   /* Dark text */
+  --card: oklch(1 0 0);                 /* White cards */
+  --card-foreground: oklch(0.15 0.02 270);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.01 150);
-  --secondary: oklch(0.55 0.12 85);    /* Muted gold */
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted: oklch(0.93 0.005 90);       /* Light gray */
-  --muted-foreground: oklch(0.45 0.01 90);
-  --accent: oklch(0.9 0.02 145);       /* Very light green tint */
-  --accent-foreground: oklch(0.15 0.01 150);
+  --popover-foreground: oklch(0.15 0.02 270);
+  --secondary: oklch(0.75 0.18 195);    /* Cyan */
+  --secondary-foreground: oklch(0.1 0.02 270);
+  --muted: oklch(0.93 0.01 270);        /* Light lavender gray */
+  --muted-foreground: oklch(0.45 0.02 270);
+  --accent: oklch(0.9 0.04 290);        /* Very light purple tint */
+  --accent-foreground: oklch(0.15 0.02 270);
   --destructive: oklch(0.5 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --success: oklch(0.45 0.18 145);
+  --success: oklch(0.6 0.18 165);
   --success-foreground: oklch(0.98 0 0);
-  --border: oklch(0.85 0.01 90);       /* Light border */
-  --input: oklch(0.92 0.005 90);
-  --ring: oklch(0.45 0.18 145);
-  --sidebar: oklch(0.95 0.008 145);    /* Very light green sidebar */
-  --sidebar-foreground: oklch(0.15 0.01 150);
-  --sidebar-accent: oklch(0.88 0.02 145);
-  --sidebar-accent-foreground: oklch(0.15 0.01 150);
-  --sidebar-border: oklch(0.85 0.01 90);
-  --sidebar-ring: oklch(0.45 0.18 145);
+  --border: oklch(0.85 0.02 270);       /* Light lavender border */
+  --input: oklch(0.92 0.01 270);
+  --ring: oklch(0.52 0.22 290);
+  --sidebar: oklch(0.95 0.01 270);
+  --sidebar-foreground: oklch(0.15 0.02 270);
+  --sidebar-accent: oklch(0.88 0.03 290);
+  --sidebar-accent-foreground: oklch(0.15 0.02 270);
+  --sidebar-border: oklch(0.85 0.02 270);
+  --sidebar-ring: oklch(0.52 0.22 290);
 }
 
 .dark {
-  /* Same as root - always dark poker theme */
-  --primary: oklch(0.55 0.18 145);
+  /* The Rail DARK theme - deep navy/purple with cyan neon accents */
+  --primary: oklch(0.62 0.22 290);     /* Vibrant purple */
   --primary-foreground: oklch(0.98 0 0);
-  --sidebar-primary: oklch(0.55 0.18 145);
+  --sidebar-primary: oklch(0.62 0.22 290);
   --sidebar-primary-foreground: oklch(0.98 0 0);
-  --background: oklch(0.12 0.01 150);
-  --foreground: oklch(0.92 0.01 90);
-  --card: oklch(0.16 0.015 150);
-  --card-foreground: oklch(0.92 0.01 90);
-  --popover: oklch(0.16 0.015 150);
-  --popover-foreground: oklch(0.92 0.01 90);
-  --secondary: oklch(0.7 0.15 85);
-  --secondary-foreground: oklch(0.12 0.01 150);
-  --muted: oklch(0.22 0.02 150);
-  --muted-foreground: oklch(0.6 0.01 90);
-  --accent: oklch(0.5 0.12 85);
+  --background: oklch(0.13 0.03 270);  /* Deep navy-purple */
+  --foreground: oklch(0.93 0.01 200);  /* Slightly cyan-tinted white */
+  --card: oklch(0.17 0.04 270);        /* Dark purple card */
+  --card-foreground: oklch(0.93 0.01 200);
+  --popover: oklch(0.17 0.04 270);
+  --popover-foreground: oklch(0.93 0.01 200);
+  --secondary: oklch(0.72 0.2 195);    /* Cyan neon */
+  --secondary-foreground: oklch(0.1 0.03 270);
+  --muted: oklch(0.23 0.04 270);       /* Muted purple */
+  --muted-foreground: oklch(0.62 0.02 270);
+  --accent: oklch(0.55 0.2 290);       /* Purple accent */
   --accent-foreground: oklch(0.98 0 0);
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --success: oklch(0.6 0.2 145);
+  --success: oklch(0.65 0.18 165);
   --success-foreground: oklch(0.98 0 0);
-  --border: oklch(0.28 0.03 150);
-  --input: oklch(0.2 0.02 150);
-  --ring: oklch(0.55 0.18 145);
-  --chart-1: oklch(0.55 0.18 145);
-  --chart-2: oklch(0.7 0.15 85);
-  --chart-3: oklch(0.55 0.2 25);
-  --chart-4: oklch(0.5 0.15 250);
-  --chart-5: oklch(0.6 0.15 320);
-  --sidebar: oklch(0.1 0.01 150);
-  --sidebar-foreground: oklch(0.92 0.01 90);
-  --sidebar-accent: oklch(0.22 0.03 150);
-  --sidebar-accent-foreground: oklch(0.92 0.01 90);
-  --sidebar-border: oklch(0.22 0.02 150);
-  --sidebar-ring: oklch(0.55 0.18 145);
+  --border: oklch(0.3 0.05 270);       /* Purple border */
+  --input: oklch(0.21 0.04 270);
+  --ring: oklch(0.72 0.2 195);         /* Cyan ring */
+  --chart-1: oklch(0.62 0.22 290);    /* Purple */
+  --chart-2: oklch(0.72 0.2 195);     /* Cyan */
+  --chart-3: oklch(0.6 0.2 25);       /* Red */
+  --chart-4: oklch(0.55 0.18 250);    /* Blue */
+  --chart-5: oklch(0.65 0.15 320);    /* Pink */
+  --sidebar: oklch(0.11 0.03 270);    /* Darker navy sidebar */
+  --sidebar-foreground: oklch(0.93 0.01 200);
+  --sidebar-accent: oklch(0.23 0.05 270);
+  --sidebar-accent-foreground: oklch(0.93 0.01 200);
+  --sidebar-border: oklch(0.25 0.04 270);
+  --sidebar-ring: oklch(0.62 0.22 290);
 }
 
 @layer base {
@@ -128,7 +128,7 @@
   }
   
   .gradient-text {
-    background: linear-gradient(135deg, oklch(0.55 0.18 145) 0%, oklch(0.7 0.15 85) 100%);
+    background: linear-gradient(135deg, oklch(0.62 0.22 290) 0%, oklch(0.72 0.2 195) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

@@ -85,8 +85,8 @@ export default function Invites() {
     if (navigator.share && inviteUrl) {
       try {
         await navigator.share({
-          title: "Convite para Poker Tracker",
-          text: `${user?.name || "Um amigo"} está te convidando para usar o Poker Tracker!`,
+          title: "Convite para The Rail",
+          text: `${user?.name || "Um amigo"} está te convidando para usar o The Rail!`,
           url: inviteUrl,
         });
       } catch (e) {

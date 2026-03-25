@@ -126,3 +126,60 @@
 ## Feed e Imagens
 
 - [x] Corrigir exibição de imagens no Feed para não cortar (object-fit: contain)
+
+## Notificações e Privacidade
+
+- [ ] Badge de notificação no ícone do Feed (contador de posts não lidos)
+- [ ] Notificação de curtidas e comentários nos posts do usuário
+- [ ] Ranking: pedir autorização ao jogador (ranking geral / só amigos / não participar)
+
+## Clubes e Plataformas
+
+- [ ] Adicionar Suprema Poker e PPPoker como opções de plataforma/local
+
+## Sessões — Melhorias
+
+- [ ] Permitir abrir sessão sem preencher horas e ganhos (preencher depois ao encerrar)
+- [ ] Suporte a múltiplas mesas por sessão (até 20 mesas simultâneas)
+- [ ] Torneio Online deve aparecer antes de Live no formulário de nova sessão
+- [ ] Sistema de memória: sugerir o tipo de torneio mais jogado ao criar nova sessão
+- [ ] Freeroll: buy-in = R$ 0,00 automático ao selecionar freeroll
+- [ ] Corrigir data no formulário de nova sessão (não atualiza automaticamente após a primeira)
+
+## Moedas e Conversão
+
+- [ ] Cotação do dólar atualizada automaticamente com base no dia atual
+- [ ] Conversão automática de saldo em USD para BRL no bankroll (ex: US$ 10 no PokerStars → converte para o total do site)
+- [ ] Adicionar Iene japonês (JPY) como opção de moeda (para GGPoker e WPT)
+
+## Amigos e Social
+
+- [ ] Adicionar amigo pelo nickname no Ranking, Feed e Convites
+
+## Filtros e Visualização
+
+- [ ] Corrigir ordenação do filtro de sessões (não aparecem em ordem correta)
+- [ ] Mostrar torneios jogados no dia com lucro/prejuízo (resumo diário)
+
+## Segurança
+
+- [ ] Confirmar se o sistema de login e senha está implementado corretamente
+
+## Rebrand para The Rail
+
+- [ ] Atualizar nome do app para "The Rail" em todo o projeto
+- [ ] Aplicar nova paleta de cores: fundo azul-escuro, roxo, ciano neon
+- [ ] Atualizar logo no header com a imagem do The Rail
+- [ ] Atualizar favicon para o logo do The Rail
+- [ ] Atualizar meta tags Open Graph com novo nome e logo
+
+## Lista de Grind
+
+- [ ] Criar tabela de torneios favoritos (grind list) no schema
+- [ ] Criar procedures CRUD para lista de grind
+- [ ] Criar página de Lista de Grind
+- [ ] Integrar lista de grind ao formulário de nova sessão (seleção rápida)
+
+## Avatares Pré-definidos
+
+- [ ] Adicionar galeria de avatares pré-definidos na página de perfil/configurações

@@ -1,0 +1,43 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user UTq9yfJAu56Cosf.ee2cb8494ba1 --database D9ekUW97UoPRMShDJUiuZL --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "bankroll_settings"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "friendships"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "fund_transactions"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "invites"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "post_comments"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "post_likes"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "posts"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "sessions"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "users"
+    },
+    {
+      "Tables_in_D9ekUW97UoPRMShDJUiuZL": "venues"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_D9ekUW97UoPRMShDJUiuZL\n__drizzle_migrations\nbankroll_settings\nfriendships\nfund_transactions\ninvites\npost_comments\npost_likes\nposts\nsessions\nusers\nvenues\n",
+  "stderr": "",
+  "execution_time_ms": 127
+}

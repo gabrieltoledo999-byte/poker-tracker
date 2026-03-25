@@ -67,7 +67,7 @@ export default function DashboardLayout({
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center gap-2 mb-2">
                 <Spade className="h-8 w-8 text-primary" />
-                <span className="text-3xl font-bold gradient-text">Poker Tracker</span>
+                <span className="text-3xl font-bold gradient-text">The Rail</span>
               </div>
               <h1 className="text-2xl font-semibold tracking-tight text-center">
               Entre para continuar
@@ -180,7 +180,7 @@ function DashboardLayoutContent({
                 <div className="flex items-center gap-2 min-w-0">
                   <Spade className="h-5 w-5 text-primary" />
                   <span className="font-semibold tracking-tight truncate">
-                    Poker Tracker
+                    The Rail
                   </span>
                 </div>
               ) : null}

@@ -1,0 +1,9 @@
+{
+  "query": "\nDELETE FROM post_comments WHERE userId = 1;\nDELETE FROM post_likes WHERE userId = 1;\nDELETE FROM posts WHERE userId = 1;\nDELETE FROM fund_transactions WHERE userId = 1;\nDELETE FROM bankroll_settings WHERE userId = 1;\nDELETE FROM sessions WHERE userId = 1;\nDELETE FROM venues WHERE userId = 1;\nDELETE FROM friendships WHERE userId = 1 OR friendId = 1;\nDELETE FROM invites WHERE inviterId = 1 OR inviteeId = 1;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user UTq9yfJAu56Cosf.ee2cb8494ba1 --database D9ekUW97UoPRMShDJUiuZL --execute \nDELETE FROM post_comments WHERE userId = 1;\nDELETE FROM post_likes WHERE userId = 1;\nDELETE FROM posts WHERE userId = 1;\nDELETE FROM fund_transactions WHERE userId = 1;\nDELETE FROM bankroll_settings WHERE userId = 1;\nDELETE FROM sessions WHERE userId = 1;\nDELETE FROM venues WHERE userId = 1;\nDELETE FROM friendships WHERE userId = 1 OR friendId = 1;\nDELETE FROM invites WHERE inviterId = 1 OR inviteeId = 1;\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 110
+}
