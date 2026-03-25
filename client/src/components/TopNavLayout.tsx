@@ -27,6 +27,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import { SplashScreen } from "./SplashScreen";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -57,7 +58,7 @@ export default function TopNavLayout({
   });
 
   if (loading) {
-    return <DashboardLayoutSkeleton />;
+    return <SplashScreen />;
   }
 
   if (!user) {

@@ -134,8 +134,8 @@ function BankrollCard({
 
   const typeColors = {
     online: "from-cyan-400 via-blue-500 to-blue-700",
-    live: "from-[oklch(0.55_0.18_145)] to-[oklch(0.45_0.15_145)]",
-    total: "from-[oklch(0.65_0.15_85)] to-[oklch(0.55_0.12_85)]",
+    live: "from-cyan-400 via-blue-500 to-blue-700",
+    total: "from-cyan-400 via-blue-500 to-blue-700",
   };
 
   const handleConfirm = () => {
