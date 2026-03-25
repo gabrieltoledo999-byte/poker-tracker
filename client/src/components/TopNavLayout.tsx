@@ -105,15 +105,15 @@ export default function TopNavLayout({
           {/* Logo */}
           <button
             onClick={() => setLocation("/")}
-            className="group relative flex items-center cursor-pointer shrink-0 transition-all duration-300"
+            className="group relative flex items-center cursor-pointer shrink-0 transition-all duration-500"
             title="Voltar ao Dashboard"
           >
             <img
               src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
               alt="The Rail"
-              className="h-40 w-40 object-contain relative z-10 transition-all duration-300 group-hover:scale-110 group-hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]"
+              className="h-40 w-40 object-contain relative z-10 transition-all duration-500 group-hover:scale-[1.04] group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]"
             />
-            <span className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/0 via-purple-500/0 to-cyan-400/0 group-hover:from-cyan-400/30 group-hover:via-purple-500/20 group-hover:to-cyan-400/30 blur-md transition-all duration-300" />
+            <span className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/0 via-purple-500/0 to-cyan-400/0 group-hover:from-cyan-400/10 group-hover:via-purple-500/10 group-hover:to-cyan-400/10 blur-md transition-all duration-500" />
           </button>
 
           {/* Desktop Navigation */}
