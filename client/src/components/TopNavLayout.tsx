@@ -67,7 +67,7 @@ export default function TopNavLayout({
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center gap-2 mb-2">
               <img
-                src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663029227103/mhejrpwpFXkgMVbD.PNG"
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
                 alt="The Rail"
                 className="h-12 w-12 object-contain"
               />
@@ -109,7 +109,7 @@ export default function TopNavLayout({
             title="Voltar ao Dashboard"
           >
             <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663029227103/mhejrpwpFXkgMVbD.PNG"
+              src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
               alt="The Rail"
               className="h-10 w-10 object-contain relative z-10 transition-all duration-300 group-hover:scale-110 group-hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]"
             />
