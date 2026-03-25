@@ -32,7 +32,6 @@ import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ListChecks, label: "Sessões", path: "/sessions" },
   { icon: Wallet, label: "Fundos", path: "/funds" },
   { icon: Trophy, label: "Ranking", path: "/ranking" },
@@ -106,16 +105,15 @@ export default function TopNavLayout({
           {/* Logo */}
           <button
             onClick={() => setLocation("/")}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer shrink-0 min-w-[120px]"
+            className="group relative flex items-center cursor-pointer shrink-0 transition-all duration-300"
+            title="Voltar ao Dashboard"
           >
             <img
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663029227103/mhejrpwpFXkgMVbD.PNG"
               alt="The Rail"
-              className="h-9 w-9 object-contain"
+              className="h-10 w-10 object-contain relative z-10 transition-all duration-300 group-hover:scale-110 group-hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]"
             />
-            <span className="text-xl font-bold gradient-text">
-              The Rail
-            </span>
+            <span className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/0 via-purple-500/0 to-cyan-400/0 group-hover:from-cyan-400/30 group-hover:via-purple-500/20 group-hover:to-cyan-400/30 blur-md transition-all duration-300" />
           </button>
 
           {/* Desktop Navigation */}
