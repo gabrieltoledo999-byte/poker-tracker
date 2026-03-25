@@ -133,7 +133,7 @@ function BankrollCard({
   const [inputValue, setInputValue] = useState("");
 
   const typeColors = {
-    online: "from-[oklch(0.5_0.15_250)] to-[oklch(0.4_0.12_250)]",
+    online: "from-cyan-400 via-blue-500 to-blue-700",
     live: "from-[oklch(0.55_0.18_145)] to-[oklch(0.45_0.15_145)]",
     total: "from-[oklch(0.65_0.15_85)] to-[oklch(0.55_0.12_85)]",
   };
