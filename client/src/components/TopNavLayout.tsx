@@ -101,7 +101,7 @@ export default function TopNavLayout({
     <div className="min-h-screen flex flex-col">
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center gap-4">
+        <div className="container flex h-24 items-center gap-4">
           {/* Logo */}
           <button
             onClick={() => setLocation("/")}
@@ -111,7 +111,7 @@ export default function TopNavLayout({
             <img
               src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
               alt="The Rail"
-              className="h-24 w-24 object-contain relative z-10 transition-all duration-300 group-hover:scale-110 group-hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]"
+              className="h-40 w-40 object-contain relative z-10 transition-all duration-300 group-hover:scale-110 group-hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]"
             />
             <span className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/0 via-purple-500/0 to-cyan-400/0 group-hover:from-cyan-400/30 group-hover:via-purple-500/20 group-hover:to-cyan-400/30 blur-md transition-all duration-300" />
           </button>
