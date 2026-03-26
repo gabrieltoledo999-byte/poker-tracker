@@ -17,7 +17,7 @@ export function SplashScreen() {
         <img
           src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/IMG_6443(1)_c98c5553.webp"
           alt="The Rail"
-          className="w-72 h-72 sm:w-80 sm:h-80 md:w-96 md:h-96 object-contain drop-shadow-[0_0_32px_rgba(34,211,238,0.7)]"
+          className="w-[320px] h-[320px] sm:w-[420px] sm:h-[420px] md:w-[520px] md:h-[520px] object-contain drop-shadow-[0_0_32px_rgba(34,211,238,0.7)]"
         />
 
         {/* Barra de loading */}
