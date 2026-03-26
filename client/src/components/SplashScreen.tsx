@@ -15,7 +15,7 @@ export function SplashScreen() {
       {/* Logo grande centralizado */}
       <div className="relative z-10 flex flex-col items-center animate-fade-in">
         <img
-          src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/IMG_6443(1)_c98c5553.webp"
+          src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/favicon-icon-only_790197ec.png"
           alt="The Rail"
           className="w-[85vw] h-[85vw] max-w-[600px] max-h-[600px] sm:w-[70vw] sm:h-[70vw] md:w-[60vw] md:h-[60vw] object-contain drop-shadow-[0_0_40px_rgba(34,211,238,0.8)]"
         />
