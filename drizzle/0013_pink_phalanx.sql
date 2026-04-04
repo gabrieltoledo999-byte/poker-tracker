@@ -1,0 +1,2 @@
+ALTER TABLE `venue_balance_history` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY') NOT NULL DEFAULT 'BRL';--> statement-breakpoint
+ALTER TABLE `venues` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY') NOT NULL DEFAULT 'BRL';

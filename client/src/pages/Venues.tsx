@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -48,17 +49,234 @@ import {
   Lock,
   Upload,
   X,
+  History,
+  Pencil,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Info,
+  DollarSign,
+  Check,
 } from "lucide-react";
 
-// Helper to format currency
-function formatCurrency(centavos: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(centavos / 100);
+type Currency = "BRL" | "USD" | "CAD" | "JPY";
+
+const CURRENCY_SYMBOLS: Record<Currency, string> = {
+  BRL: "R$",
+  USD: "US$",
+  CAD: "CA$",
+  JPY: "¥",
+};
+
+const CURRENCY_DECIMALS: Record<Currency, number> = {
+  BRL: 2,
+  USD: 2,
+  CAD: 2,
+  JPY: 0,
+};
+
+function formatInCurrency(centavos: number, currency: Currency): string {
+  const decimals = CURRENCY_DECIMALS[currency];
+  const value = centavos / 100;
+  return `${CURRENCY_SYMBOLS[currency]} ${value.toLocaleString("pt-BR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
 }
 
-// Venue form component
+function formatBrl(centavos: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(centavos / 100);
+}
+
+function formatDate(d: Date | string): string {
+  return new Date(d).toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+// ─── Balance History Panel ────────────────────────────────────────────────────
+
+function BalanceHistoryPanel({ venueId, currency }: { venueId: number; currency: Currency }) {
+  const { data: history, isLoading } = trpc.venues.getBalanceHistory.useQuery({ id: venueId, limit: 30 });
+
+  if (isLoading) return <div className="py-4 text-center text-xs text-muted-foreground">Carregando histórico...</div>;
+  if (!history || history.length === 0)
+    return (
+      <div className="py-6 text-center text-xs text-muted-foreground">
+        Nenhum ajuste registrado ainda.<br />
+        <span className="opacity-60">O histórico é criado automaticamente ao editar o saldo ou registrar sessões.</span>
+      </div>
+    );
+
+  return (
+    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+      {history.map((entry: any) => {
+        const isPositive = entry.delta >= 0;
+        const changeLabel =
+          entry.changeType === "session" ? "Sessão" :
+          entry.changeType === "initial" ? "Saldo inicial" : "Ajuste manual";
+        const changeCurrency = (entry.currency || currency) as Currency;
+        return (
+          <div key={entry.id} className="flex items-start gap-3 py-2 border-b border-border/20 last:border-0">
+            <div className={`mt-0.5 h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
+              isPositive ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
+            }`}>
+              {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium">{changeLabel}</span>
+                <span className={`text-xs font-bold shrink-0 ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
+                  {isPositive ? "+" : ""}{formatInCurrency(entry.delta, changeCurrency)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-muted-foreground">
+                  {formatInCurrency(entry.balanceBefore, changeCurrency)} → {formatInCurrency(entry.balanceAfter, changeCurrency)}
+                </span>
+              </div>
+              {entry.note && (
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5 italic">"{entry.note}"</p>
+              )}
+              <p className="text-[10px] text-muted-foreground/50 mt-0.5">{formatDate(entry.changedAt)}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Balance Editor ───────────────────────────────────────────────────────────
+
+function BalanceEditor({
+  venue,
+  rates,
+  onSave,
+  isSaving,
+}: {
+  venue: any;
+  rates: any;
+  onSave: (balance: number, currency: Currency, note: string) => void;
+  isSaving: boolean;
+}) {
+  const [balanceInput, setBalanceInput] = useState(String(venue.balance / 100));
+  const [currency, setCurrency] = useState<Currency>((venue.currency as Currency) || "BRL");
+  const [note, setNote] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+
+  const rate = currency === "USD" ? rates?.USD?.rate :
+               currency === "CAD" ? rates?.CAD?.rate :
+               currency === "JPY" ? rates?.JPY?.rate : 1;
+
+  const parsedBalance = parseFloat(balanceInput.replace(",", "."));
+  const balanceCents = isNaN(parsedBalance) ? 0 : Math.round(parsedBalance * 100);
+  const balanceBrl = rate ? Math.round(balanceCents * rate) : balanceCents;
+
+  const handleSave = () => {
+    if (isNaN(parsedBalance) || parsedBalance < 0) {
+      toast.error("Valor inválido");
+      return;
+    }
+    onSave(balanceCents, currency, note);
+    setNote("");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Current balance display */}
+      <div className="bg-muted/30 rounded-xl p-4">
+        <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wide">Saldo atual</p>
+        <p className="text-2xl font-bold">{formatInCurrency(venue.balance, venue.currency as Currency)}</p>
+        {venue.currency !== "BRL" && rate && (
+          <p className="text-xs text-muted-foreground mt-1">
+            ≈ {formatBrl(Math.round(venue.balance * rate))} (cotação: {CURRENCY_SYMBOLS[venue.currency as Currency]} 1 = {formatBrl(Math.round(rate * 100))})
+          </p>
+        )}
+      </div>
+
+      {/* Edit section */}
+      <div className="space-y-3">
+        <Label className="text-sm font-semibold">Definir novo saldo</Label>
+        <div className="flex gap-2">
+          <Select value={currency} onValueChange={(v) => setCurrency(v as Currency)}>
+            <SelectTrigger className="w-24 h-9 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="BRL">BRL (R$)</SelectItem>
+              <SelectItem value="USD">USD (US$)</SelectItem>
+              <SelectItem value="CAD">CAD (CA$)</SelectItem>
+              <SelectItem value="JPY">JPY (¥)</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            step={currency === "JPY" ? "1" : "0.01"}
+            min="0"
+            placeholder="0.00"
+            value={balanceInput}
+            onChange={(e) => setBalanceInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            className="flex-1 h-9 text-sm"
+          />
+        </div>
+
+        {/* Converted value preview */}
+        {currency !== "BRL" && rate && balanceCents > 0 && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 rounded-lg px-3 py-2">
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span>≈ {formatBrl(balanceBrl)} na cotação de hoje</span>
+          </div>
+        )}
+
+        {/* Note */}
+        <div>
+          <Label className="text-xs text-muted-foreground">Nota (opcional)</Label>
+          <Input
+            placeholder="Ex: Depósito, retirada, correção..."
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="h-8 text-sm mt-1"
+            maxLength={256}
+          />
+        </div>
+
+        <Button onClick={handleSave} disabled={isSaving} className="w-full h-9 gap-2">
+          {isSaving ? (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          ) : (
+            <Check className="h-4 w-4" />
+          )}
+          Salvar saldo
+        </Button>
+      </div>
+
+      {/* History toggle */}
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full h-8 text-xs gap-1.5 text-muted-foreground"
+          onClick={() => setShowHistory(!showHistory)}
+        >
+          <History className="h-3.5 w-3.5" />
+          {showHistory ? "Ocultar histórico" : "Ver histórico de ajustes"}
+          {showHistory ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </Button>
+        {showHistory && (
+          <div className="mt-2 border border-border/30 rounded-lg p-3">
+            <BalanceHistoryPanel venueId={venue.id} currency={venue.currency as Currency} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Venue Form ───────────────────────────────────────────────────────────────
+
 function VenueForm({
   initialData,
   onSubmit,
@@ -91,19 +309,13 @@ function VenueForm({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Imagem muito grande. Máximo 5MB.");
-      return;
-    }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 5MB."); return; }
     setIsUploading(true);
     try {
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const base64 = (ev.target?.result as string).split(",")[1];
-        const result = await uploadLogoMutation.mutateAsync({
-          base64,
-          mimeType: file.type,
-        });
+        const result = await uploadLogoMutation.mutateAsync({ base64, mimeType: file.type });
         setLogoUrl(result.url);
         toast.success("Logo enviada com sucesso!");
         setIsUploading(false);
@@ -117,261 +329,143 @@ function VenueForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!name.trim()) {
-      toast.error("Nome é obrigatório");
-      return;
-    }
-
-    onSubmit({
-      id: initialData?.id,
-      name: name.trim(),
-      type,
-      logoUrl: logoUrl || undefined,
-      website: website || undefined,
-      address: address || undefined,
-      notes: notes || undefined,
-    });
+    if (!name.trim()) { toast.error("Nome é obrigatório"); return; }
+    onSubmit({ id: initialData?.id, name: name.trim(), type, logoUrl: logoUrl || undefined, website: website || undefined, address: address || undefined, notes: notes || undefined });
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label>Nome *</Label>
-        <Input
-          placeholder="Ex: PokerStars, H2 Club"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
+        <Input placeholder="Ex: PokerStars, H2 Club" value={name} onChange={(e) => setName(e.target.value)} required />
       </div>
-
       <div className="space-y-2">
         <Label>Tipo</Label>
         <Select value={type} onValueChange={(v) => setType(v as "online" | "live")}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="online">
-              <span className="flex items-center gap-2">
-                <Monitor className="h-4 w-4" /> Online
-              </span>
-            </SelectItem>
-            <SelectItem value="live">
-              <span className="flex items-center gap-2">
-                <Users className="h-4 w-4" /> Live
-              </span>
-            </SelectItem>
+            <SelectItem value="online"><span className="flex items-center gap-2"><Monitor className="h-4 w-4" /> Online</span></SelectItem>
+            <SelectItem value="live"><span className="flex items-center gap-2"><Users className="h-4 w-4" /> Live</span></SelectItem>
           </SelectContent>
         </Select>
       </div>
-
       <div className="space-y-2">
-        <Label>Logo do Clube (opcional)</Label>
+        <Label>Logo (opcional)</Label>
         <div className="flex gap-2">
-          <Input
-            placeholder="Cole uma URL ou clique em 📎 para enviar do dispositivo"
-            value={logoUrl}
-            onChange={(e) => setLogoUrl(e.target.value)}
-            className="flex-1"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            title="Enviar imagem do seu dispositivo"
-            className="shrink-0"
-          >
-            {isUploading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
+          <Input placeholder="Cole uma URL ou clique em 📎" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} className="flex-1" />
+          <Button type="button" variant="outline" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="shrink-0">
+            {isUploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Upload className="h-4 w-4" />}
           </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
         </div>
         {logoUrl && (
           <div className="flex items-center gap-3 mt-2">
             <div className="relative">
-              <img 
-                src={logoUrl} 
-                alt="Preview" 
-                className="h-14 w-14 rounded-lg object-contain bg-muted p-1"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setLogoUrl("")}
-                className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 hover:opacity-80"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <img src={logoUrl} alt="Preview" className="h-14 w-14 rounded-lg object-contain bg-muted p-1" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <button type="button" onClick={() => setLogoUrl("")} className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 hover:opacity-80"><X className="h-3 w-3" /></button>
             </div>
-            <span className="text-sm text-muted-foreground">Preview da logo</span>
+            <span className="text-sm text-muted-foreground">Preview</span>
           </div>
         )}
       </div>
-
       <div className="space-y-2">
         <Label>Website (opcional)</Label>
-        <Input
-          placeholder="https://..."
-          value={website}
-          onChange={(e) => setWebsite(e.target.value)}
-        />
+        <Input placeholder="https://..." value={website} onChange={(e) => setWebsite(e.target.value)} />
       </div>
-
       {type === "live" && (
         <div className="space-y-2">
           <Label>Endereço (opcional)</Label>
-          <Input
-            placeholder="Rua, número, cidade..."
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-          />
+          <Input placeholder="Rua, número, cidade..." value={address} onChange={(e) => setAddress(e.target.value)} />
         </div>
       )}
-
       <div className="space-y-2">
         <Label>Notas (opcional)</Label>
-        <Textarea
-          placeholder="Observações sobre o local..."
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-        />
+        <Textarea placeholder="Observações..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
       </div>
-
       <DialogFooter>
-        <DialogClose asChild>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancelar
-          </Button>
-        </DialogClose>
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? "Salvando..." : initialData?.id ? "Atualizar" : "Criar"}
-        </Button>
+        <DialogClose asChild><Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button></DialogClose>
+        <Button type="submit" disabled={isLoading}>{isLoading ? "Salvando..." : initialData?.id ? "Atualizar" : "Criar"}</Button>
       </DialogFooter>
     </form>
   );
 }
 
-// Venue card component
+// ─── Venue Card ───────────────────────────────────────────────────────────────
+
 function VenueCard({
   venue,
   stats,
+  rates,
   onEdit,
   onDelete,
+  onBalanceSave,
+  isSavingBalance,
 }: {
-  venue: {
-    id: number;
-    name: string;
-    type: "online" | "live";
-    logoUrl?: string | null;
-    website?: string | null;
-    address?: string | null;
-    notes?: string | null;
-    isPreset: number;
-  };
-  stats?: {
-    sessions: number;
-    totalProfit: number;
-    winRate: number;
-    avgHourlyRate: number;
-  };
+  venue: any;
+  stats?: any;
+  rates: any;
   onEdit: () => void;
   onDelete: () => void;
+  onBalanceSave: (balance: number, currency: Currency, note: string) => void;
+  isSavingBalance: boolean;
 }) {
+  const [showBalance, setShowBalance] = useState(false);
   const isPreset = venue.isPreset === 1;
   const hasStats = stats && stats.sessions > 0;
-  const isPositive = hasStats && stats.totalProfit >= 0;
+  const currency = (venue.currency || "BRL") as Currency;
+
+  const rate = currency === "USD" ? rates?.USD?.rate :
+               currency === "CAD" ? rates?.CAD?.rate :
+               currency === "JPY" ? rates?.JPY?.rate : 1;
+  const balanceBrl = rate ? Math.round(venue.balance * rate) : venue.balance;
 
   return (
     <Card className="overflow-hidden">
-      <CardContent className="pt-4">
-        <div className="flex items-start justify-between">
+      <CardContent className="pt-4 space-y-3">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
             {venue.logoUrl ? (
-              <img 
-                src={venue.logoUrl} 
-                alt={venue.name} 
-                className="h-12 w-12 rounded-lg object-contain bg-muted p-1"
-              />
+              <img src={venue.logoUrl} alt={venue.name} className="h-12 w-12 rounded-lg object-contain bg-muted p-1" />
             ) : (
               <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
-                {venue.type === "online" ? (
-                  <Monitor className="h-6 w-6 text-muted-foreground" />
-                ) : (
-                  <MapPin className="h-6 w-6 text-muted-foreground" />
-                )}
+                {venue.type === "online" ? <Monitor className="h-6 w-6 text-muted-foreground" /> : <MapPin className="h-6 w-6 text-muted-foreground" />}
               </div>
             )}
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold">{venue.name}</h3>
-                {isPreset && (
-                  <Lock className="h-3 w-3 text-muted-foreground" />
-                )}
+                {isPreset && <Lock className="h-3 w-3 text-muted-foreground" />}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {venue.type === "online" ? (
-                  <span className="flex items-center gap-1">
-                    <Monitor className="h-3 w-3" /> Online
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" /> Live
-                  </span>
-                )}
+                <span className="flex items-center gap-1">
+                  {venue.type === "online" ? <Monitor className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                  {venue.type === "online" ? "Online" : "Live"}
+                </span>
                 {venue.website && (
-                  <a 
-                    href={venue.website} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 hover:text-primary"
-                  >
+                  <a href={venue.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary">
                     <Globe className="h-3 w-3" /> Site
                   </a>
                 )}
               </div>
             </div>
           </div>
-
           <div className="flex items-center gap-1">
             {!isPreset && (
               <>
-                <Button variant="ghost" size="icon" onClick={onEdit}>
-                  <Edit className="h-4 w-4" />
-                </Button>
+                <Button variant="ghost" size="icon" onClick={onEdit}><Edit className="h-4 w-4" /></Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-destructive" /></Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Excluir local?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Esta ação não pode ser desfeita. O local será removido permanentemente.
-                      </AlertDialogDescription>
+                      <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={onDelete}>
-                        Excluir
-                      </AlertDialogAction>
+                      <AlertDialogAction onClick={onDelete}>Excluir</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -380,27 +474,55 @@ function VenueCard({
           </div>
         </div>
 
+        {/* Balance summary row */}
+        {venue.type === "online" && (
+          <div className="bg-muted/20 rounded-lg px-3 py-2.5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Saldo na plataforma</p>
+              <p className="text-lg font-bold">{formatInCurrency(venue.balance, currency)}</p>
+              {currency !== "BRL" && rate && (
+                <p className="text-xs text-muted-foreground">≈ {formatBrl(balanceBrl)}</p>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant={showBalance ? "default" : "outline"}
+              className="h-8 gap-1.5 text-xs shrink-0"
+              onClick={() => setShowBalance(!showBalance)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {showBalance ? "Fechar" : "Editar"}
+            </Button>
+          </div>
+        )}
+
+        {/* Balance editor (expandable) */}
+        {venue.type === "online" && showBalance && (
+          <div className="border border-border/40 rounded-xl p-4 bg-card/60">
+            <BalanceEditor
+              venue={venue}
+              rates={rates}
+              onSave={(balance, cur, note) => {
+                onBalanceSave(balance, cur, note);
+                setShowBalance(false);
+              }}
+              isSaving={isSavingBalance}
+            />
+          </div>
+        )}
+
+        {/* Session stats */}
         {hasStats && (
-          <div className="mt-4 grid grid-cols-4 gap-2 text-center border-t pt-4">
+          <div className="grid grid-cols-4 gap-2 text-center border-t pt-3">
             <div>
               <p className="text-xs text-muted-foreground">Sessões</p>
               <p className="font-medium">{stats.sessions}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Lucro</p>
-              <p
-                className={`font-bold flex items-center justify-center gap-1 ${
-                  isPositive
-                    ? "text-[oklch(0.6_0.2_145)]"
-                    : "text-[oklch(0.55_0.22_25)]"
-                }`}
-              >
-                {isPositive ? (
-                  <TrendingUp className="h-3 w-3" />
-                ) : (
-                  <TrendingDown className="h-3 w-3" />
-                )}
-                {formatCurrency(stats.totalProfit)}
+              <p className={`font-bold text-sm flex items-center justify-center gap-0.5 ${stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {stats.totalProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {formatBrl(stats.totalProfit)}
               </p>
             </div>
             <div>
@@ -408,15 +530,9 @@ function VenueCard({
               <p className="font-medium">{stats.winRate}%</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">R$/hora</p>
-              <p
-                className={`font-medium ${
-                  stats.avgHourlyRate >= 0
-                    ? "text-[oklch(0.6_0.2_145)]"
-                    : "text-[oklch(0.55_0.22_25)]"
-                }`}
-              >
-                {formatCurrency(stats.avgHourlyRate)}
+              <p className="text-xs text-muted-foreground">R$/h</p>
+              <p className={`font-medium ${stats.avgHourlyRate >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {formatBrl(stats.avgHourlyRate)}
               </p>
             </div>
           </div>
@@ -425,6 +541,57 @@ function VenueCard({
     </Card>
   );
 }
+
+// ─── Exchange Rates Banner ────────────────────────────────────────────────────
+
+function ExchangeRatesBanner({ rates, onRefresh, isRefreshing }: { rates: any; onRefresh: () => void; isRefreshing: boolean }) {
+  if (!rates) return null;
+
+  const fetchedAt = rates.USD?.fetchedAt ? new Date(rates.USD.fetchedAt) : null;
+  const isFromApi = rates.USD?.source === "api";
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 bg-muted/30 border border-border/30 rounded-xl px-4 py-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <DollarSign className="h-3.5 w-3.5" />
+        <span className="font-medium">Cotações do dia</span>
+        {fetchedAt && (
+          <span className="opacity-60">· {fetchedAt.toLocaleDateString("pt-BR")}</span>
+        )}
+        {!isFromApi && (
+          <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">estimada</Badge>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-3 flex-1">
+        <div className="flex items-center gap-1.5 text-sm">
+          <span className="text-muted-foreground text-xs">USD</span>
+          <span className="font-semibold">{formatBrl(Math.round((rates.USD?.rate || 0) * 100))}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-sm">
+          <span className="text-muted-foreground text-xs">CAD</span>
+          <span className="font-semibold">{formatBrl(Math.round((rates.CAD?.rate || 0) * 100))}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-sm">
+          <span className="text-muted-foreground text-xs">JPY</span>
+          <span className="font-semibold">{formatBrl(Math.round((rates.JPY?.rate || 0) * 100))} <span className="text-xs text-muted-foreground">/100¥</span></span>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2 text-xs gap-1 text-muted-foreground"
+        onClick={onRefresh}
+        disabled={isRefreshing}
+        title="Atualizar cotações agora"
+      >
+        <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+        Atualizar
+      </Button>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Venues() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -435,56 +602,39 @@ export default function Venues() {
 
   const { data: venues, isLoading } = trpc.venues.list.useQuery({});
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
+  const { data: rates } = trpc.currency.getRates.useQuery();
 
   const createMutation = trpc.venues.create.useMutation({
-    onSuccess: () => {
-      toast.success("Local criado com sucesso!");
-      setIsCreateOpen(false);
-      utils.venues.list.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Erro ao criar local: ${error.message}`);
-    },
+    onSuccess: () => { toast.success("Local criado!"); setIsCreateOpen(false); utils.venues.list.invalidate(); },
+    onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 
   const updateMutation = trpc.venues.update.useMutation({
-    onSuccess: () => {
-      toast.success("Local atualizado com sucesso!");
-      setEditingVenue(null);
-      utils.venues.list.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Erro ao atualizar local: ${error.message}`);
-    },
+    onSuccess: () => { toast.success("Local atualizado!"); setEditingVenue(null); utils.venues.list.invalidate(); },
+    onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 
   const deleteMutation = trpc.venues.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Local excluído com sucesso!");
-      utils.venues.list.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Erro ao excluir local: ${error.message}`);
-    },
+    onSuccess: () => { toast.success("Local excluído!"); utils.venues.list.invalidate(); },
+    onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 
-  const handleCreate = (data: any) => {
-    createMutation.mutate(data);
-  };
+  const updateBalanceMutation = trpc.venues.updateBalance.useMutation({
+    onSuccess: () => {
+      toast.success("Saldo atualizado!");
+      utils.venues.list.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+    },
+    onError: (e) => toast.error(`Erro: ${e.message}`),
+  });
 
-  const handleUpdate = (data: any) => {
-    updateMutation.mutate(data);
-  };
+  const refreshRatesMutation = trpc.currency.refresh.useMutation({
+    onSuccess: () => { toast.success("Cotações atualizadas!"); utils.currency.getRates.invalidate(); },
+    onError: () => toast.error("Não foi possível atualizar as cotações agora."),
+  });
 
-  const handleDelete = (id: number) => {
-    deleteMutation.mutate({ id });
-  };
-
-  const getVenueStats = (venueId: number) => {
-    return venueStats?.find(s => s.venueId === venueId);
-  };
-
-  const filteredVenues = venues?.filter(v => v.type === activeTab) || [];
+  const getVenueStats = (venueId: number) => venueStats?.find((s: any) => s.venueId === venueId);
+  const filteredVenues = venues?.filter((v: any) => v.type === activeTab) || [];
 
   if (isLoading) {
     return (
@@ -494,9 +644,7 @@ export default function Venues() {
           <Skeleton className="h-10 w-32" />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32" />)}
         </div>
       </div>
     );
@@ -508,29 +656,34 @@ export default function Venues() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold">Locais & Plataformas</h1>
-          <p className="text-muted-foreground">
-            Gerencie onde você joga poker
-          </p>
+          <p className="text-muted-foreground text-sm">Gerencie onde você joga e acompanhe seu saldo em cada plataforma</p>
         </div>
-
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Local
-            </Button>
+            <Button><Plus className="h-4 w-4 mr-2" />Novo Local</Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Novo Local</DialogTitle>
-            </DialogHeader>
-            <VenueForm
-              onSubmit={handleCreate}
-              onCancel={() => setIsCreateOpen(false)}
-              isLoading={createMutation.isPending}
-            />
+            <DialogHeader><DialogTitle>Novo Local</DialogTitle></DialogHeader>
+            <VenueForm onSubmit={(d) => createMutation.mutate(d)} onCancel={() => setIsCreateOpen(false)} isLoading={createMutation.isPending} />
           </DialogContent>
         </Dialog>
+      </div>
+
+      {/* Exchange rates banner */}
+      <ExchangeRatesBanner
+        rates={rates}
+        onRefresh={() => refreshRatesMutation.mutate()}
+        isRefreshing={refreshRatesMutation.isPending}
+      />
+
+      {/* How balance works info box */}
+      <div className="flex gap-3 bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-sm">
+        <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+        <div className="space-y-1 text-muted-foreground">
+          <p><strong className="text-foreground">Como funciona o saldo inteligente:</strong></p>
+          <p>O saldo de cada plataforma é atualizado automaticamente quando você registra uma sessão. Você também pode ajustar manualmente a qualquer momento — por exemplo, para corrigir um erro ou registrar um depósito/saque. Cada alteração fica salva no histórico com data, valor e nota.</p>
+          <p>Valores em USD, CAD ou JPY são convertidos automaticamente para BRL usando a cotação do dia, e o total consolidado na tela inicial reflete sempre o valor real em reais.</p>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -538,33 +691,36 @@ export default function Venues() {
         <TabsList>
           <TabsTrigger value="online" className="flex items-center gap-2">
             <Monitor className="h-4 w-4" />
-            Online ({venues?.filter(v => v.type === "online").length || 0})
+            Online ({venues?.filter((v: any) => v.type === "online").length || 0})
           </TabsTrigger>
           <TabsTrigger value="live" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Live ({venues?.filter(v => v.type === "live").length || 0})
+            Live ({venues?.filter((v: any) => v.type === "live").length || 0})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="online" className="mt-4">
           {filteredVenues.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
-              {filteredVenues.map((venue) => (
+              {filteredVenues.map((venue: any) => (
                 <VenueCard
                   key={venue.id}
                   venue={venue}
                   stats={getVenueStats(venue.id)}
+                  rates={rates}
                   onEdit={() => setEditingVenue(venue)}
-                  onDelete={() => handleDelete(venue.id)}
+                  onDelete={() => deleteMutation.mutate({ id: venue.id })}
+                  onBalanceSave={(balance, currency, note) =>
+                    updateBalanceMutation.mutate({ id: venue.id, balance, currency, note: note || undefined })
+                  }
+                  isSavingBalance={updateBalanceMutation.isPending}
                 />
               ))}
             </div>
           ) : (
             <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  Nenhuma plataforma online cadastrada.
-                </p>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                Nenhuma plataforma online cadastrada.
               </CardContent>
             </Card>
           )}
@@ -573,22 +729,25 @@ export default function Venues() {
         <TabsContent value="live" className="mt-4">
           {filteredVenues.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
-              {filteredVenues.map((venue) => (
+              {filteredVenues.map((venue: any) => (
                 <VenueCard
                   key={venue.id}
                   venue={venue}
                   stats={getVenueStats(venue.id)}
+                  rates={rates}
                   onEdit={() => setEditingVenue(venue)}
-                  onDelete={() => handleDelete(venue.id)}
+                  onDelete={() => deleteMutation.mutate({ id: venue.id })}
+                  onBalanceSave={(balance, currency, note) =>
+                    updateBalanceMutation.mutate({ id: venue.id, balance, currency, note: note || undefined })
+                  }
+                  isSavingBalance={updateBalanceMutation.isPending}
                 />
               ))}
             </div>
           ) : (
             <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  Nenhum local live cadastrado.
-                </p>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                Nenhum local live cadastrado.
               </CardContent>
             </Card>
           )}
@@ -598,13 +757,11 @@ export default function Venues() {
       {/* Edit Dialog */}
       <Dialog open={!!editingVenue} onOpenChange={(open) => !open && setEditingVenue(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Editar Local</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Editar Local</DialogTitle></DialogHeader>
           {editingVenue && (
             <VenueForm
               initialData={editingVenue}
-              onSubmit={handleUpdate}
+              onSubmit={(d) => updateMutation.mutate(d)}
               onCancel={() => setEditingVenue(null)}
               isLoading={updateMutation.isPending}
             />

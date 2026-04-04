@@ -124,7 +124,8 @@ function VenueRow({
 
   const displayBalance = () => {
     if (venue.type === "live") return formatCurrencyCompact(venue.balanceBrl);
-    if (venue.currency === "USD") return `$${(venue.balance / 100).toFixed(2)}`;
+    if (venue.currency === "USD") return `US$${(venue.balance / 100).toFixed(2)}`;
+    if (venue.currency === "CAD") return `CA$${(venue.balance / 100).toFixed(2)}`;
     if (venue.currency === "JPY") return `¥${(venue.balance / 100).toFixed(0)}`;
     return formatCurrencyCompact(venue.balance);
   };
@@ -181,6 +182,7 @@ function VenueRow({
                     <SelectContent>
                       <SelectItem value="BRL">BRL</SelectItem>
                       <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="CAD">CAD</SelectItem>
                       <SelectItem value="JPY">JPY</SelectItem>
                     </SelectContent>
                   </Select>
@@ -670,7 +672,7 @@ export default function Dashboard() {
                     totalBrl={consolidatedTotal}
                     colorIdx={i}
                     onEditBalance={(id, balance, currency) => {
-                      updateBalanceMutation.mutate({ id, balance, currency: currency as "BRL" | "USD" | "JPY" });
+                      updateBalanceMutation.mutate({ id, balance, currency: currency as "BRL" | "USD" | "CAD" | "JPY" });
                     }}
                   />
                 ))

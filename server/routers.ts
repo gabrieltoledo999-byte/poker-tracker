@@ -35,8 +35,10 @@ import {
   getUserFundTransactions,
   deleteFundTransaction,
   getFundTransactionsTotals,
+  updateVenueBalance,
+  getVenueBalanceHistory,
 } from "./db";
-import { getUsdToBrlRate, convertUsdToBrl, convertToBrl } from "./currency";
+import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
 
 // Game format enum for validation
@@ -253,16 +255,32 @@ export const appRouter = router({
         const { id, ...data } = input;
         return await updateVenue(id, ctx.user.id, data);
       }),
-    // Update venue balance only (quick update for dashboard)
+    // Update venue balance with history tracking
     updateBalance: protectedProcedure
       .input(z.object({
         id: z.number().int(),
         balance: z.number().int().min(0),
-        currency: z.enum(["BRL", "USD", "JPY"]).optional(),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY"]).default("BRL"),
+        note: z.string().max(256).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await updateVenue(id, ctx.user.id, data);
+        return await updateVenueBalance(
+          input.id,
+          ctx.user.id,
+          input.balance,
+          input.currency,
+          "manual",
+          { note: input.note }
+        );
+      }),
+    // Get balance history for a venue
+    getBalanceHistory: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        limit: z.number().int().min(1).max(200).default(50),
+      }))
+      .query(async ({ ctx, input }) => {
+        return await getVenueBalanceHistory(input.id, ctx.user.id, input.limit);
       }),
     // Get venues with stats (for TradeMap-style dashboard)
     listWithStats: protectedProcedure
@@ -311,11 +329,21 @@ export const appRouter = router({
 
   // Currency router
   currency: router({
-    // Get current USD/BRL rate
+    // Get current USD/BRL rate (legacy)
     getRate: protectedProcedure
       .query(async () => {
         const rate = await getUsdToBrlRate();
         return { rate };
+      }),
+    // Get all exchange rates (USD and JPY → BRL)
+    getRates: publicProcedure
+      .query(async () => {
+        return await getAllRates();
+      }),
+    // Force refresh all rates (ignores cache)
+    refresh: protectedProcedure
+      .mutation(async () => {
+        return await refreshRates();
       }),
   }),
 
@@ -517,7 +545,7 @@ export const appRouter = router({
         // Convert venue balances to BRL
         const venuesWithBrl = await Promise.all(
           allVenues.map(async (v) => {
-            const balanceBrl = await convertToBrl(v.balance, v.currency as "BRL" | "USD" | "JPY");
+            const balanceBrl = await convertToBrl(v.balance, v.currency as "BRL" | "USD" | "CAD" | "JPY");
             return {
               ...v,
               balanceBrl,

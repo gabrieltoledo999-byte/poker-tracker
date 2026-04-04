@@ -116,8 +116,8 @@ export const venues = mysqlTable("venues", {
   // Is this a preset venue (not deletable by user)
   isPreset: int("isPreset").default(0).notNull(), // 0 = false, 1 = true
   
-  // Currency for this venue's balance (BRL, USD, JPY)
-  currency: mysqlEnum("currency", ["BRL", "USD", "JPY"]).default("BRL").notNull(),
+  // Currency for this venue's balance (BRL, USD, CAD, JPY)
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY"]).default("BRL").notNull(),
   
   // Current balance in the venue (in original currency cents/units)
   // For online venues: money deposited on the platform
@@ -289,3 +289,45 @@ export const clubs = mysqlTable("clubs", {
 });
 export type Club = typeof clubs.$inferSelect;
 export type InsertClub = typeof clubs.$inferInsert;
+
+/**
+ * Venue balance history table - tracks every balance change per venue
+ * This powers the "smart bankroll" feature: automatic updates from sessions
+ * plus manual adjustments with notes.
+ */
+export const venueBalanceHistory = mysqlTable("venue_balance_history", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  venueId: int("venueId").notNull(),
+
+  // Type of change
+  // "manual"  → user manually set/adjusted the balance
+  // "session" → automatically recorded when a session is saved
+  // "initial" → first balance set when venue is created
+  changeType: mysqlEnum("changeType", ["manual", "session", "initial"]).notNull(),
+
+  // Balance BEFORE this change (in original currency cents)
+  balanceBefore: int("balanceBefore").notNull().default(0),
+
+  // Balance AFTER this change (in original currency cents)
+  balanceAfter: int("balanceAfter").notNull(),
+
+  // The delta (balanceAfter - balanceBefore), can be negative
+  delta: int("delta").notNull(),
+
+  // Currency at time of change
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY"]).default("BRL").notNull(),
+
+  // Optional: linked session id (for changeType = "session")
+  sessionId: int("sessionId"),
+
+  // Optional: user note for manual adjustments
+  note: text("note"),
+
+  // When this change happened
+  changedAt: timestamp("changedAt").defaultNow().notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type VenueBalanceHistory = typeof venueBalanceHistory.$inferSelect;
+export type InsertVenueBalanceHistory = typeof venueBalanceHistory.$inferInsert;

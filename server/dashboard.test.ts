@@ -16,6 +16,8 @@ vi.mock("./db", () => ({
     { venueId: 1, venueName: "PokerStars", sessions: 5, totalProfit: 3000, winRate: 60, avgProfit: 600 },
   ]),
   updateVenue: vi.fn().mockResolvedValue({ id: 1, name: "PokerStars", balance: 75000, currency: "USD" }),
+  updateVenueBalance: vi.fn().mockResolvedValue({ id: 1, name: "PokerStars", balance: 75000, currency: "USD" }),
+  getVenueBalanceHistory: vi.fn().mockResolvedValue([]),
   initializePresetVenues: vi.fn().mockResolvedValue(undefined),
   getBankrollHistory: vi.fn().mockResolvedValue([]),
 }));
@@ -23,11 +25,23 @@ vi.mock("./db", () => ({
 vi.mock("./currency", () => ({
   convertToBrl: vi.fn().mockImplementation(async (amount: number, currency: string) => {
     if (currency === "USD") return Math.round(amount * 580);
+    if (currency === "CAD") return Math.round(amount * 420);
     if (currency === "JPY") return Math.round(amount * 4);
     return amount;
   }),
   getUsdToBrlRate: vi.fn().mockResolvedValue(5.8),
+  getCadToBrlRate: vi.fn().mockResolvedValue(4.2),
   convertUsdToBrl: vi.fn().mockImplementation(async (amount: number) => Math.round(amount * 580)),
+  getAllRates: vi.fn().mockResolvedValue({
+    USD: { rate: 5.8, source: "api", fetchedAt: new Date().toISOString() },
+    CAD: { rate: 4.2, source: "api", fetchedAt: new Date().toISOString() },
+    JPY: { rate: 0.033, source: "api", fetchedAt: new Date().toISOString() },
+  }),
+  refreshRates: vi.fn().mockResolvedValue({
+    USD: { rate: 5.8, source: "api", fetchedAt: new Date().toISOString() },
+    CAD: { rate: 4.2, source: "api", fetchedAt: new Date().toISOString() },
+    JPY: { rate: 0.033, source: "api", fetchedAt: new Date().toISOString() },
+  }),
 }));
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;

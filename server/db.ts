@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, lte, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1069,4 +1069,110 @@ export async function getClubsWithStats(userId: number) {
       chartPoints,
     };
   }).sort((a, b) => b.allocatedAmount - a.allocatedAmount);
+}
+
+// ─── Venue Balance History ───────────────────────────────────────────────────
+
+/**
+ * Records a balance change for a venue.
+ * Always call this alongside any update to venues.balance.
+ */
+export async function recordVenueBalanceChange(data: {
+  userId: number;
+  venueId: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  currency: "BRL" | "USD" | "CAD" | "JPY";
+  changeType: "manual" | "session" | "initial";
+  sessionId?: number;
+  note?: string;
+  changedAt?: Date;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(venueBalanceHistory).values({
+    userId: data.userId,
+    venueId: data.venueId,
+    balanceBefore: data.balanceBefore,
+    balanceAfter: data.balanceAfter,
+    delta: data.balanceAfter - data.balanceBefore,
+    currency: data.currency,
+    changeType: data.changeType,
+    sessionId: data.sessionId ?? null,
+    note: data.note ?? null,
+    changedAt: data.changedAt ?? new Date(),
+  });
+}
+
+/**
+ * Returns the full balance history for a venue, newest first.
+ */
+export async function getVenueBalanceHistory(
+  venueId: number,
+  userId: number,
+  limit = 50
+): Promise<VenueBalanceHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(venueBalanceHistory)
+    .where(
+      and(
+        eq(venueBalanceHistory.venueId, venueId),
+        eq(venueBalanceHistory.userId, userId)
+      )
+    )
+    .orderBy(desc(venueBalanceHistory.changedAt))
+    .limit(limit);
+}
+
+/**
+ * Updates a venue's balance and records the change in history.
+ * This is the single entry point for all balance mutations.
+ */
+export async function updateVenueBalance(
+  venueId: number,
+  userId: number,
+  newBalance: number,
+  currency: "BRL" | "USD" | "CAD" | "JPY",
+  changeType: "manual" | "session" | "initial",
+  opts?: { sessionId?: number; note?: string; changedAt?: Date }
+): Promise<Venue | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get current balance before updating
+  const [current] = await db
+    .select()
+    .from(venues)
+    .where(and(eq(venues.id, venueId), eq(venues.userId, userId)));
+
+  if (!current) return null;
+
+  const balanceBefore = current.balance;
+
+  // Update the venue balance and currency
+  await db
+    .update(venues)
+    .set({ balance: newBalance, currency, updatedAt: new Date() })
+    .where(and(eq(venues.id, venueId), eq(venues.userId, userId)));
+
+  // Record the change in history
+  await recordVenueBalanceChange({
+    userId,
+    venueId,
+    balanceBefore,
+    balanceAfter: newBalance,
+    currency,
+    changeType,
+    sessionId: opts?.sessionId,
+    note: opts?.note,
+    changedAt: opts?.changedAt,
+  });
+
+  const [updated] = await db.select().from(venues).where(eq(venues.id, venueId));
+  return updated ?? null;
 }
