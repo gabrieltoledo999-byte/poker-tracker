@@ -314,6 +314,12 @@
 - [x] Aplicar efeito hover CSS no logo (scale + drop-shadow vermelho)
 - [x] Adicionar gráfico de evolução do bankroll no card Meu Desempenho da tela inicial
 
+## Sessões — Local e Edição
+
+- [x] Exibir o local (venue) onde a sessão foi jogada na lista de sessões
+- [x] Permitir editar sessão já registrada (local, buy-in, cash-out, notas, formato, stakes)
+- [x] Campo de seleção de local ao registrar nova sessão (já existia)
+
 ## Moeda Padrão nas Plataformas
 
 - [x] Definir USD como moeda padrão nos presets internacionais (PokerStars, GGPoker, WPT, 888poker, KKPoker, X-Poker, PPPoker, ClubGG, PokerBros)

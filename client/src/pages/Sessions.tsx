@@ -723,33 +723,77 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
 // ─── Session History Card ──────────────────────────────────────────────────────
 function SessionCard({ session }: { session: any }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const utils = trpc.useUtils();
   const { data: tables } = trpc.sessions.getTables.useQuery(
     { sessionId: session.id },
     { enabled: expanded }
   );
+  const { data: venues } = trpc.venues.list.useQuery({});
+
+  // Edit form state
+  const [editVenueId, setEditVenueId] = useState(session.venueId?.toString() ?? "");
+  const [editBuyIn, setEditBuyIn] = useState(((session.originalBuyIn ?? session.buyIn) / 100).toFixed(2));
+  const [editCashOut, setEditCashOut] = useState(((session.originalCashOut ?? session.cashOut) / 100).toFixed(2));
+  const [editNotes, setEditNotes] = useState(session.notes ?? "");
+  const [editFormat, setEditFormat] = useState(session.gameFormat);
+  const [editStakes, setEditStakes] = useState(session.stakes ?? "");
+
+  const updateMutation = trpc.sessions.update.useMutation({
+    onSuccess: () => {
+      utils.sessions.list.invalidate();
+      toast.success("Sessão atualizada!");
+      setEditing(false);
+    },
+    onError: (err) => toast.error("Erro ao atualizar", { description: err.message }),
+  });
 
   const profit = session.cashOut - session.buyIn;
   const profitPct = session.buyIn > 0 ? ((profit / session.buyIn) * 100).toFixed(1) : "0";
   const fmt = GAME_FORMATS.find(f => f.value === session.gameFormat);
   const date = new Date(session.sessionDate);
+  const venueName = session.venueName;
+  const venueLogoUrl = session.venueLogoUrl;
+
+  function handleSaveEdit() {
+    const buyInCents = Math.round(parseFloat(editBuyIn) * 100);
+    const cashOutCents = Math.round(parseFloat(editCashOut) * 100);
+    updateMutation.mutate({
+      id: session.id,
+      venueId: editVenueId ? parseInt(editVenueId) : undefined,
+      buyIn: buyInCents,
+      cashOut: cashOutCents,
+      notes: editNotes || undefined,
+      gameFormat: editFormat as any,
+      stakes: editStakes || undefined,
+      currency: session.currency ?? "BRL",
+    });
+  }
 
   return (
+    <>
     <Card className="overflow-hidden">
       <div
         className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/20 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-lg shrink-0 ${profit >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
-          {fmt?.emoji ?? "🃏"}
+          {venueLogoUrl ? (
+            <img src={venueLogoUrl} alt={venueName ?? ""} className="h-8 w-8 rounded object-contain" />
+          ) : (
+            fmt?.emoji ?? "🃏"
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm truncate">{fmt?.label ?? session.gameFormat}</span>
             <Badge variant="outline" className="text-xs shrink-0">{session.type === "online" ? "Online" : "Live"}</Badge>
+            {venueName && <span className="text-xs text-muted-foreground truncate hidden sm:inline">{venueName}</span>}
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
             <span>{date.toLocaleDateString("pt-BR")}</span>
             <span>{Math.floor(session.durationMinutes / 60)}h{session.durationMinutes % 60}m</span>
+            {venueName && <span className="sm:hidden flex items-center gap-0.5"><MapPin className="h-3 w-3" />{venueName}</span>}
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -801,9 +845,88 @@ function SessionCard({ session }: { session: any }) {
           {session.notes && (
             <p className="text-xs text-muted-foreground italic">"{session.notes}"</p>
           )}
+
+          {/* Botão de edição */}
+          <div className="flex justify-end pt-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-7 text-xs"
+              onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            >
+              <Edit2 className="h-3 w-3" /> Editar sessão
+            </Button>
+          </div>
         </div>
       )}
     </Card>
+
+    {/* Modal de edição */}
+    <Dialog open={editing} onOpenChange={setEditing}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Editar Sessão</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Local / Plataforma</Label>
+            <Select value={editVenueId} onValueChange={setEditVenueId}>
+              <SelectTrigger className="h-8 text-sm mt-1">
+                <SelectValue placeholder="Selecione o local" />
+              </SelectTrigger>
+              <SelectContent>
+                {venues?.map(v => (
+                  <SelectItem key={v.id} value={v.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
+                      {v.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Formato</Label>
+            <Select value={editFormat} onValueChange={setEditFormat}>
+              <SelectTrigger className="h-8 text-sm mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GAME_FORMATS.map(f => (
+                  <SelectItem key={f.value} value={f.value}>{f.emoji} {f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Buy-in ({session.currency ?? "BRL"})</Label>
+              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={editBuyIn} onChange={e => setEditBuyIn(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Cash-out ({session.currency ?? "BRL"})</Label>
+              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={editCashOut} onChange={e => setEditCashOut(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Stakes (ex: 1/2)</Label>
+            <Input className="h-8 text-sm mt-1" placeholder="1/2" value={editStakes} onChange={e => setEditStakes(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Notas</Label>
+            <Textarea className="text-sm mt-1 resize-none" rows={2} value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter className="mt-2">
+          <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancelar</Button>
+          <Button size="sm" onClick={handleSaveEdit} disabled={updateMutation.isPending}>
+            {updateMutation.isPending ? "Salvando..." : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

@@ -144,7 +144,7 @@ export async function getUserSessions(
     orderBy?: "date" | "profit" | "duration";
     orderDir?: "asc" | "desc";
   }
-): Promise<Session[]> {
+): Promise<(Session & { venueName?: string | null; venueLogoUrl?: string | null })[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
@@ -163,11 +163,37 @@ export async function getUserSessions(
     conditions.push(lte(sessions.sessionDate, filters.endDate));
   }
   
-  const result = await db.select().from(sessions)
+  const result = await db
+    .select({
+      id: sessions.id,
+      userId: sessions.userId,
+      type: sessions.type,
+      gameFormat: sessions.gameFormat,
+      buyIn: sessions.buyIn,
+      cashOut: sessions.cashOut,
+      currency: sessions.currency,
+      originalBuyIn: sessions.originalBuyIn,
+      originalCashOut: sessions.originalCashOut,
+      exchangeRate: sessions.exchangeRate,
+      sessionDate: sessions.sessionDate,
+      durationMinutes: sessions.durationMinutes,
+      notes: sessions.notes,
+      doubts: sessions.doubts,
+      venueId: sessions.venueId,
+      gameType: sessions.gameType,
+      stakes: sessions.stakes,
+      location: sessions.location,
+      createdAt: sessions.createdAt,
+      updatedAt: sessions.updatedAt,
+      venueName: venues.name,
+      venueLogoUrl: venues.logoUrl,
+    })
+    .from(sessions)
+    .leftJoin(venues, eq(sessions.venueId, venues.id))
     .where(and(...conditions))
     .orderBy(desc(sessions.sessionDate));
   
-  return result;
+  return result as any;
 }
 
 export async function getSessionStats(userId: number, type?: "online" | "live", gameFormat?: GameFormat) {
