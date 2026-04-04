@@ -124,29 +124,36 @@ export default function DashboardLayout({
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <div className="flex items-center gap-2 mb-2">
-                <Spade className="h-8 w-8 text-primary" />
-                <span className="text-3xl font-bold gradient-text">The Rail</span>
-              </div>
-              <h1 className="text-2xl font-semibold tracking-tight text-center">
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="flex flex-col items-center gap-10 p-8 max-w-sm w-full">
+          {/* Logo grande */}
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-24 w-24 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-xl">
+              <Spade className="h-14 w-14 text-primary" />
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-5xl font-bold gradient-text tracking-tight">The Rail</span>
+              <span className="text-sm text-muted-foreground tracking-widest uppercase">Poker Bankroll Tracker</span>
+            </div>
+          </div>
+          {/* Texto e botão */}
+          <div className="flex flex-col items-center gap-4 w-full">
+            <h1 className="text-xl font-semibold tracking-tight text-center">
               Entre para continuar
             </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Faça login para acessar seu painel de controle de poker e gerenciar seu bankroll.
+            <p className="text-sm text-muted-foreground text-center max-w-xs">
+              Gerencie seu bankroll, registre sessões e acompanhe sua evolução no poker.
             </p>
+            <Button
+              onClick={() => {
+                window.location.href = getLoginUrl();
+              }}
+              size="lg"
+              className="w-full shadow-lg hover:shadow-xl transition-all mt-2"
+            >
+              Entrar
+            </Button>
           </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Entrar
-          </Button>
         </div>
       </div>
     );
