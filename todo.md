@@ -283,4 +283,11 @@
 - [x] Eixo Y dos gráficos deve se adaptar ao bankroll real do usuário (não ficar na casa de milhão se o saldo é baixo)
 - [x] Gráfico de área de evolução: domínio Y baseado nos valores mínimo e máximo dos dados reais
 - [ ] Gráfico de barras de desempenho: escala proporcional ao maior valor presente
+
+## Gráfico de Pizza — Correção
+
+- [x] Gráfico de pizza deve mostrar cada plataforma individualmente (não só Online vs Live)
+- [x] Cada plataforma deve ter sua própria cor (mesmas cores do VENUE_COLORS)
+- [x] Saldo Live deve entrar no gráfico de pizza corretamente
+- [x] Legenda do gráfico deve listar cada plataforma com nome e valor
 - [x] Formatação do eixo Y deve usar a mesma função formatCurrencyCompact para exibir valores legíveis

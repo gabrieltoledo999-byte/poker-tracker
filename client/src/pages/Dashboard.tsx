@@ -491,25 +491,36 @@ export default function Dashboard() {
   // Donut: Live vs Online (2 fatias)
   const donutData = useMemo(() => {
     if (!consolidated) return [];
-    const onlineVal = consolidated.online.current;
-    const liveVal = consolidated.live.current;
-    const total = onlineVal + liveVal;
+    const total = consolidated.total.current;
     if (total === 0) return [];
-    const result = [];
-    if (onlineVal > 0) result.push({
-      name: "Online",
-      fullName: "Poker Online",
-      value: onlineVal / 100,
-      color: "#06b6d4",
-      pct: Math.round((onlineVal / total) * 100),
+
+    const result: { name: string; fullName: string; value: number; color: string; pct: number; logoUrl?: string }[] = [];
+
+    // Adicionar cada plataforma online com saldo > 0
+    const onlineVenues = (consolidated.allVenues || []).filter((v: any) => v.type === "online" && v.balanceBrl > 0);
+    onlineVenues.forEach((v: any, idx: number) => {
+      result.push({
+        name: v.name.length > 12 ? v.name.substring(0, 12) + "…" : v.name,
+        fullName: v.name,
+        value: v.balanceBrl / 100,
+        color: VENUE_COLORS[idx % VENUE_COLORS.length],
+        pct: Math.round((v.balanceBrl / total) * 100),
+        logoUrl: v.logoUrl,
+      });
     });
-    if (liveVal > 0) result.push({
-      name: "Live",
-      fullName: "Poker Live",
-      value: liveVal / 100,
-      color: "#8b5cf6",
-      pct: Math.round((liveVal / total) * 100),
-    });
+
+    // Adicionar Live como uma fatia única (saldo total live)
+    const liveVal = consolidated.live.current;
+    if (liveVal > 0) {
+      result.push({
+        name: "Live",
+        fullName: "Poker Live (presencial)",
+        value: liveVal / 100,
+        color: VENUE_COLORS[(onlineVenues.length) % VENUE_COLORS.length],
+        pct: Math.round((liveVal / total) * 100),
+      });
+    }
+
     return result;
   }, [consolidated]);
 
@@ -761,18 +772,22 @@ export default function Dashboard() {
                       </div>
                     </div>
                     {/* Legenda */}
-                    <div className="w-full space-y-2 mt-2">
+                    <div className="w-full space-y-1.5 mt-3">
                       {donutData.map((d: any) => (
-                        <div key={d.name} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                            <span className="text-sm font-medium">{d.fullName}</span>
+                        <div key={d.name} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {d.logoUrl ? (
+                              <img src={d.logoUrl} alt={d.fullName} className="w-5 h-5 rounded object-contain shrink-0" />
+                            ) : (
+                              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                            )}
+                            <span className="text-xs font-medium truncate">{d.fullName}</span>
                           </div>
-                          <div className="text-right">
-                            <span className="text-sm font-bold" style={{ color: d.color }}>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs font-bold" style={{ color: d.color }}>
                               {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.value)}
                             </span>
-                            <span className="text-xs text-muted-foreground ml-2">{d.pct}%</span>
+                            <span className="text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-full">{d.pct}%</span>
                           </div>
                         </div>
                       ))}
