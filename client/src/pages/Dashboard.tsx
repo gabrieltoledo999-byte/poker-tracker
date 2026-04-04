@@ -174,7 +174,7 @@ function VenueRow({
 export default function Dashboard() {
   const utils = trpc.useUtils();
   const [chartPeriod, setChartPeriod] = useState<"online" | "live" | "all">("all");
-  const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions">("roi");
+  const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("roi");
   const [showOnlineModal, setShowOnlineModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [onlineInputValue, setOnlineInputValue] = useState("");
@@ -602,10 +602,10 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-semibold">Desempenho</CardTitle>
                   <div className="flex gap-1">
-                    {(["roi", "winrate", "sessions"] as const).map((m) => (
+                    {(["roi", "winrate", "sessions", "profit"] as const).map((m) => (
                       <Button key={m} size="sm" variant={perfMetric === m ? "default" : "ghost"}
                         className="h-6 px-2 text-[10px]" onClick={() => setPerfMetric(m)}>
-                        {m === "roi" ? "ROI" : m === "winrate" ? "Win%" : "Sess."}
+                        {m === "roi" ? "ROI" : m === "winrate" ? "Win%" : m === "sessions" ? "Sess." : "R$"}
                       </Button>
                     ))}
                   </div>
@@ -667,15 +667,20 @@ export default function Dashboard() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={perfData} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
                         <XAxis type="number" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false}
-                          tickFormatter={(v) => perfMetric === "sessions" ? String(v) : `${v}%`} />
+                          tickFormatter={(v) => {
+                            if (perfMetric === "sessions") return String(v);
+                            if (perfMetric === "profit") return new Intl.NumberFormat("pt-BR", { notation: "compact", style: "currency", currency: "BRL" }).format(v);
+                            return `${v}%`;
+                          }} />
                         <YAxis type="category" dataKey="name" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false} width={70} />
                         <RechartsTooltip
-                          content={({ active, payload }: any) => {
+                              content={({ active, payload }: any) => {
                             if (!active || !payload?.length) return null;
                             const d = payload[0].payload;
                             return (
                               <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
                                 <p className="font-semibold mb-1">{d.fullName}</p>
+                                <p>Resultado: <span className={d.profit >= 0 ? "text-emerald-400" : "text-red-400"}>{d.profit >= 0 ? "+" : ""}{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.profit)}</span></p>
                                 <p>ROI: <span className={d.roi >= 0 ? "text-emerald-400" : "text-red-400"}>{d.roi}%</span></p>
                                 <p>Win Rate: <span className="text-primary">{d.winrate}%</span></p>
                                 <p>Sessões: <span className="font-semibold">{d.sessions}</span></p>
@@ -683,11 +688,12 @@ export default function Dashboard() {
                             );
                           }}
                         />
-                        <Bar dataKey={perfMetric === "roi" ? "roi" : perfMetric === "winrate" ? "winrate" : "sessions"} radius={[0, 4, 4, 0]}>
+                        <Bar dataKey={perfMetric === "roi" ? "roi" : perfMetric === "winrate" ? "winrate" : perfMetric === "sessions" ? "sessions" : "profit"} radius={[0, 4, 4, 0]}>
                           {perfData.map((entry: any, index: number) => (
                             <Cell key={`cell-${index}`}
                               fill={perfMetric === "sessions" ? VENUE_COLORS[index % VENUE_COLORS.length]
                                 : perfMetric === "winrate" ? (entry.winrate >= 50 ? "#10b981" : "#f59e0b")
+                                : perfMetric === "profit" ? (entry.profit >= 0 ? "#10b981" : "#ef4444")
                                 : entry.color}
                             />
                           ))}
