@@ -29,39 +29,48 @@ import { Button } from "./ui/button";
 import { useTheme, ACCENT_COLORS, AccentColor } from "@/contexts/ThemeContext";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 function ColorPickerButton({ isCollapsed, compact = false }: { isCollapsed: boolean; compact?: boolean }) {
   const { accentColor } = useTheme();
   const currentColor = ACCENT_COLORS[accentColor];
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className={`flex items-center gap-2 rounded-lg hover:bg-accent/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-            compact ? "p-1.5 shrink-0" : "w-full px-2 py-2 text-left"
-          }`}
-          title="Mudar cor de destaque"
-        >
-          <span
-            className="h-5 w-5 rounded-full border-2 border-white/30 shrink-0 flex items-center justify-center"
-            style={{ backgroundColor: currentColor.hex }}
-          >
-            <Palette className="h-2.5 w-2.5 text-white" />
-          </span>
-          {!isCollapsed && !compact && (
-            <span className="text-xs text-muted-foreground truncate">
-              Cor: <span className="font-medium" style={{ color: currentColor.hex }}>{currentColor.label}</span>
-            </span>
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-52 p-3">
-        <p className="text-xs font-medium mb-3 flex items-center gap-1.5">
-          <Palette className="h-3.5 w-3.5" /> Cor de destaque
-        </p>
-        <ColorPicker />
-      </PopoverContent>
-    </Popover>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <Popover>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                className={`flex items-center gap-2 rounded-lg hover:bg-accent/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  compact ? "p-1.5 shrink-0" : "w-full px-2 py-2 text-left"
+                }`}
+              >
+                <span
+                  className="h-5 w-5 rounded-full border-2 border-white/30 shrink-0 flex items-center justify-center"
+                  style={{ backgroundColor: currentColor.hex }}
+                >
+                  <Palette className="h-2.5 w-2.5 text-white" />
+                </span>
+                {!isCollapsed && !compact && (
+                  <span className="text-xs text-muted-foreground truncate">
+                    Cor: <span className="font-medium" style={{ color: currentColor.hex }}>{currentColor.label}</span>
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>Mudar cor de destaque</p>
+          </TooltipContent>
+          <PopoverContent side="bottom" align="end" className="w-52 p-3">
+            <p className="text-xs font-medium mb-3 flex items-center gap-1.5">
+              <Palette className="h-3.5 w-3.5" /> Cor de destaque
+            </p>
+            <ColorPicker />
+          </PopoverContent>
+        </Popover>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -246,15 +255,12 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <>
-                  <div className="logo flex items-center gap-2 min-w-0 flex-1 cursor-pointer" onClick={() => setLocation("/")}>
-                    <Spade className="h-9 w-9 text-primary shrink-0" />
-                    <span className="text-2xl font-extrabold tracking-tight gradient-text truncate">
-                      The Rail
-                    </span>
-                  </div>
-                  <ColorPickerButton isCollapsed={false} compact />
-                </>
+                <div className="logo flex items-center gap-2 min-w-0 flex-1 cursor-pointer" onClick={() => setLocation("/")}>
+                  <Spade className="h-9 w-9 text-primary shrink-0" />
+                  <span className="text-2xl font-extrabold tracking-tight gradient-text truncate">
+                    The Rail
+                  </span>
+                </div>
               ) : (
                 <div className="logo flex justify-center cursor-pointer" onClick={() => setLocation("/")}>
                   <Spade className="h-9 w-9 text-primary" />
@@ -335,23 +341,18 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 pr-2">
-              <ColorPicker />
-            </div>
+        {/* Topbar — desktop e mobile */}
+        <div className="flex border-b h-14 items-center justify-between bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+          <div className="flex items-center gap-2">
+            {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />}
+            <span className="tracking-tight text-foreground font-medium">
+              {activeMenuItem?.label ?? ""}
+            </span>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <ColorPickerButton isCollapsed={false} compact />
+          </div>
+        </div>
         <main className="flex-1 p-4">{children}</main>
       </SidebarInset>
     </>
