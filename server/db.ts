@@ -436,24 +436,44 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // Check if user already has preset venues
+  // Get existing preset venues
   const existingPresets = await db.select().from(venues)
     .where(and(eq(venues.userId, userId), eq(venues.isPreset, 1)));
   
-  if (existingPresets.length > 0) {
-    return; // Already initialized
-  }
-  
-  // Insert preset venues for this user
+  const existingNames = new Set(existingPresets.map(v => v.name));
+  const presetNames = new Set(presets.map(p => p.name));
+
+  // Update logos/websites for existing presets
   for (const preset of presets) {
-    await db.insert(venues).values({
-      userId,
-      name: preset.name,
-      type: preset.type,
-      logoUrl: preset.logoUrl,
-      website: preset.website || null,
-      isPreset: 1,
-    });
+    const existing = existingPresets.find(v => v.name === preset.name);
+    if (existing) {
+      // Update logo and website if changed
+      await db.update(venues)
+        .set({ logoUrl: preset.logoUrl, website: preset.website || null })
+        .where(eq(venues.id, existing.id));
+    } else {
+      // Insert new preset
+      await db.insert(venues).values({
+        userId,
+        name: preset.name,
+        type: preset.type,
+        logoUrl: preset.logoUrl,
+        website: preset.website || null,
+        isPreset: 1,
+      });
+    }
+  }
+
+  // Remove old presets that are no longer in the list (no sessions attached)
+  for (const existing of existingPresets) {
+    if (!presetNames.has(existing.name)) {
+      // Only delete if no sessions reference this venue
+      const sessionCount = await db.select().from(sessions)
+        .where(and(eq(sessions.userId, userId), eq(sessions.venueId, existing.id)));
+      if (sessionCount.length === 0) {
+        await db.delete(venues).where(eq(venues.id, existing.id));
+      }
+    }
   }
 }
 

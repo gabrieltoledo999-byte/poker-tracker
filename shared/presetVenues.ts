@@ -7,74 +7,134 @@ export interface PresetVenue {
   website?: string;
 }
 
+const CDN = "https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL";
+
 export const PRESET_VENUES: PresetVenue[] = [
   // Online Poker Sites
   {
+    name: "Suprema Poker",
+    type: "online",
+    logoUrl: `${CDN}/suprema_94f6102b.jpg`,
+    website: "https://www.supremapoker.com",
+  },
+  {
+    name: "PPPoker",
+    type: "online",
+    logoUrl: `${CDN}/pppoker_10f8e436.jpg`,
+    website: "https://www.pppoker.net",
+  },
+  {
+    name: "ClubGG",
+    type: "online",
+    logoUrl: `${CDN}/clubgg_2a202d12.jpg`,
+    website: "https://www.clubgg.net",
+  },
+  {
+    name: "PokerBros",
+    type: "online",
+    logoUrl: `${CDN}/pokerbros_6f897e64.jpg`,
+    website: "https://www.pokerbros.net",
+  },
+  {
     name: "PokerStars",
     type: "online",
-    logoUrl: "/logos/pokerstars.png",
+    logoUrl: `${CDN}/pokerstars_fc2715c4.jpg`,
     website: "https://www.pokerstars.com",
   },
   {
     name: "GGPoker",
     type: "online",
-    logoUrl: "/logos/ggpoker.jpg",
+    logoUrl: `${CDN}/ggpoker_be9ba8c6.png`,
     website: "https://www.ggpoker.com",
-  },
-  {
-    name: "888poker",
-    type: "online",
-    logoUrl: "/logos/888poker.jpg",
-    website: "https://www.888poker.com",
-  },
-  {
-    name: "partypoker",
-    type: "online",
-    logoUrl: "/logos/partypoker.jpg",
-    website: "https://www.partypoker.com",
   },
   {
     name: "WPT Global",
     type: "online",
-    logoUrl: "/logos/wptglobal.jpg",
+    logoUrl: `${CDN}/wpt_e37beb09.png`,
     website: "https://wptglobal.com",
+  },
+  {
+    name: "888poker",
+    type: "online",
+    logoUrl: `${CDN}/888poker_17ad04a6.jpg`,
+    website: "https://www.888poker.com",
   },
   {
     name: "KKPoker",
     type: "online",
-    logoUrl: "/logos/kkpoker.jpg",
+    logoUrl: "https://play-lh.googleusercontent.com/RRnFJGRGiJPmWZQFq0kBSWXHHqBEGLPJCJBGNMEVHVSRqEYFJrFT3zFuOJE0VqQ8w=s512",
     website: "https://www.kkpoker.net",
   },
   {
-    name: "CoinPoker",
+    name: "X-Poker",
     type: "online",
-    logoUrl: "/logos/coinpoker.jpg",
-    website: "https://coinpoker.com",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/X_logo_2023_%28white%29.png/240px-X_logo_2023_%28white%29.png",
+    website: "https://www.xpoker.com",
   },
   // Live Poker Clubs - Brazil
   {
+    name: "Monte Carlo Poker Club",
+    type: "live",
+    logoUrl: `${CDN}/montecarlo_acc5f978.jpg`,
+    website: "https://www.montecarlopoker.com.br",
+  },
+  {
     name: "H2 Club São Paulo",
     type: "live",
-    logoUrl: "/logos/h2club.jpg",
+    logoUrl: `${CDN}/h2club_58b7eae7.png`,
     website: "https://sp.h2club.com.br",
   },
   {
     name: "H2 Club Curitiba",
     type: "live",
-    logoUrl: "/logos/h2club.jpg",
+    logoUrl: `${CDN}/h2club_58b7eae7.png`,
     website: "https://curitiba.h2club.com.br",
   },
   {
     name: "H2 Club Campinas",
     type: "live",
-    logoUrl: "/logos/h2club.jpg",
+    logoUrl: `${CDN}/h2club_58b7eae7.png`,
     website: "https://campinas.h2club.com.br",
   },
   {
-    name: "BSOP (Evento)",
+    name: "BHZ Poker Clube",
     type: "live",
-    logoUrl: "/logos/bsop.webp",
-    website: "https://bsop.com.br",
+    logoUrl: "https://pbs.twimg.com/profile_images/1629516614823849984/lfpJHVJo_400x400.jpg",
+  },
+  {
+    name: "Fold Poker Club",
+    type: "live",
+    logoUrl: "https://pbs.twimg.com/profile_images/1673759843285913600/Gq2QLPXF_400x400.jpg",
+  },
+  {
+    name: "Acaraí Poker Club",
+    type: "live",
+    logoUrl: "https://pbs.twimg.com/profile_images/1611783542743334913/gWbQHGBh_400x400.jpg",
+  },
+  {
+    name: "QG Masters Club",
+    type: "live",
+    logoUrl: "https://pbs.twimg.com/profile_images/1578822394985492480/wGkQABpQ_400x400.jpg",
+  },
+  {
+    name: "HiJack Poker Club",
+    type: "live",
+    logoUrl: `${CDN}/hijack_3fb66810.jpg`,
+  },
+  {
+    name: "Stars Club Poker Room",
+    type: "live",
+    logoUrl: "https://pbs.twimg.com/profile_images/1624162034538283010/5Yl9Hy7m_400x400.jpg",
+  },
+  {
+    name: "Players Poker Club",
+    type: "live",
+    logoUrl: "https://pbs.twimg.com/profile_images/1624162034538283010/5Yl9Hy7m_400x400.jpg",
+  },
+  {
+    name: "Home Game",
+    type: "live",
+    logoUrl: "",
   },
 ];
 
