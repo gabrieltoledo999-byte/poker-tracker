@@ -309,6 +309,9 @@
 - [x] Mover seletor de cor de acento para o DashboardLayout (acessível em todas as abas)
 - [x] Botão de paleta de cores visível diretamente no layout (não escondido no dropdown) em todas as abas
 - [x] Aumentar logo na tela inicial (tela de login)
+- [x] Aumentar ainda mais o logo The Rail na sidebar (muito pequeno ainda)
+- [x] Adicionar botão de cor na topbar superior do conteúdo principal
+- [x] Aplicar efeito hover CSS no logo (scale + drop-shadow vermelho)
 
 ## Moeda Padrão nas Plataformas
 

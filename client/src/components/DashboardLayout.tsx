@@ -247,16 +247,18 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <>
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <Spade className="h-7 w-7 text-primary" />
-                    <span className="text-xl font-bold tracking-tight gradient-text truncate">
+                  <div className="logo flex items-center gap-2 min-w-0 flex-1 cursor-pointer" onClick={() => setLocation("/")}>
+                    <Spade className="h-9 w-9 text-primary shrink-0" />
+                    <span className="text-2xl font-extrabold tracking-tight gradient-text truncate">
                       The Rail
                     </span>
                   </div>
                   <ColorPickerButton isCollapsed={false} compact />
                 </>
               ) : (
-                <ColorPickerButton isCollapsed={true} compact />
+                <div className="logo flex justify-center cursor-pointer" onClick={() => setLocation("/")}>
+                  <Spade className="h-9 w-9 text-primary" />
+                </div>
               )}
             </div>
           </SidebarHeader>
