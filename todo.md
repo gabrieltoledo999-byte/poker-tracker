@@ -220,3 +220,12 @@
 
 - [x] Banner de onboarding deve desaparecer automaticamente quando ao menos uma plataforma tiver saldo definido
 - [x] Ordenar plataformas por valor de banca (maior para menor) no Dashboard e na página de Locais
+
+## Priorização Inteligente de Sessões
+
+- [x] Criar procedure getUserPreferences que analisa histórico de sessões e retorna preferências ordenadas (plataforma, tipo de jogo, buy-in, formato)
+- [x] Reordenar automaticamente plataformas na criação de sessão com base no histórico do usuário
+- [x] Reordenar automaticamente tipo de jogo (MTT, cash, SNG) com base na frequência de uso
+- [x] Pré-preencher buy-in sugerido com base no buy-in mais frequente por plataforma
+- [x] Pré-selecionar modo online/live com base no perfil predominante do usuário
+- [x] Exibir "Últimas mesas usadas" como atalho rápido na adição de mesa

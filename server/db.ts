@@ -1176,3 +1176,103 @@ export async function updateVenueBalance(
   const [updated] = await db.select().from(venues).where(eq(venues.id, venueId));
   return updated ?? null;
 }
+
+// ─── User Preferences (Smart Suggestions) ────────────────────────────────────
+/**
+ * Analyzes the user's session history to extract personalized preferences.
+ * Returns ordered lists of venues, game formats, buy-ins and session types
+ * based on actual frequency of use — no fixed logic, purely data-driven.
+ */
+export async function getUserPreferences(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Fetch last 200 sessions to build preference profile
+  const recentSessions = await db
+    .select({
+      type: sessions.type,
+      gameFormat: sessions.gameFormat,
+      buyIn: sessions.buyIn,
+      venueId: sessions.venueId,
+      gameType: sessions.gameType,
+      currency: sessions.currency,
+    })
+    .from(sessions)
+    .where(eq(sessions.userId, userId))
+    .orderBy(desc(sessions.sessionDate))
+    .limit(200);
+
+  if (recentSessions.length === 0) return null;
+
+  // Count frequencies
+  const typeCount: Record<string, number> = {};
+  const gameFormatCount: Record<string, number> = {};
+  const venueCount: Record<number, number> = {};
+  const buyInCount: Record<number, number> = {};
+  const gameTypeCount: Record<string, number> = {};
+  const currencyCount: Record<string, number> = {};
+
+  for (const s of recentSessions) {
+    // Session type (online/live)
+    typeCount[s.type] = (typeCount[s.type] || 0) + 1;
+    // Game format
+    if (s.gameFormat) gameFormatCount[s.gameFormat] = (gameFormatCount[s.gameFormat] || 0) + 1;
+    // Venue
+    if (s.venueId) venueCount[s.venueId] = (venueCount[s.venueId] || 0) + 1;
+    // Buy-in (rounded to nearest common value)
+    if (s.buyIn > 0) {
+      const rounded = Math.round(s.buyIn / 500) * 500; // round to nearest R$5
+      buyInCount[rounded] = (buyInCount[rounded] || 0) + 1;
+    }
+    // Game type (NL Hold'em, PLO, etc.)
+    if (s.gameType) gameTypeCount[s.gameType] = (gameTypeCount[s.gameType] || 0) + 1;
+    // Currency
+    if (s.currency) currencyCount[s.currency] = (currencyCount[s.currency] || 0) + 1;
+  }
+
+  // Sort by frequency descending
+  const preferredType = Object.entries(typeCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const preferredGameFormats = Object.entries(gameFormatCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const preferredVenueIds = Object.entries(venueCount).sort((a, b) => b[1] - a[1]).map(([k]) => Number(k));
+  const preferredBuyIns = Object.entries(buyInCount).sort((a, b) => b[1] - a[1]).map(([k]) => Number(k));
+  const preferredGameTypes = Object.entries(gameTypeCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const preferredCurrency = Object.entries(currencyCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+
+  // Last 5 unique combinations used (for "quick repeat" suggestions)
+  const seen = new Set<string>();
+  const recentCombos: Array<{
+    type: string;
+    gameFormat: string;
+    venueId: number | null;
+    buyIn: number;
+    gameType: string | null;
+    currency: string | null;
+  }> = [];
+  for (const s of recentSessions) {
+    const key = `${s.type}|${s.gameFormat}|${s.venueId}|${s.buyIn}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      recentCombos.push({
+        type: s.type,
+        gameFormat: s.gameFormat,
+        venueId: s.venueId ?? null,
+        buyIn: s.buyIn,
+        gameType: s.gameType ?? null,
+        currency: s.currency ?? null,
+      });
+      if (recentCombos.length >= 5) break;
+    }
+  }
+
+  return {
+    totalSessions: recentSessions.length,
+    preferredType: preferredType[0] || "online",
+    preferredGameFormats,
+    preferredVenueIds,
+    preferredBuyIns: preferredBuyIns.slice(0, 5),
+    preferredGameTypes,
+    preferredCurrency: preferredCurrency[0] || "BRL",
+    recentCombos,
+    isOnlinePlayer: (typeCount["online"] || 0) >= (typeCount["live"] || 0),
+  };
+}

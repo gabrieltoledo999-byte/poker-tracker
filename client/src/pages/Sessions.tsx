@@ -148,14 +148,61 @@ function SessionForm({
   const { data: rateData, refetch: refetchRate } = trpc.currency.getRate.useQuery();
   const exchangeRate = rateData?.rate || 5.0;
 
+  // Fetch user preferences (smart suggestions based on history)
+  const { data: prefs } = trpc.sessions.getUserPreferences.useQuery(undefined, {
+    enabled: !initialData, // Only for new sessions
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Apply smart defaults when preferences load (only for new sessions)
+  const [prefsApplied, setPrefsApplied] = useState(false);
+  useEffect(() => {
+    if (prefs && !initialData && !prefsApplied) {
+      setPrefsApplied(true);
+      setType(prefs.preferredType as "online" | "live");
+      if (prefs.preferredGameFormats.length > 0) {
+        setGameFormat(prefs.preferredGameFormats[0] as GameFormat);
+      }
+      if (prefs.preferredBuyIns.length > 0) {
+        setBuyIn(String(prefs.preferredBuyIns[0] / 100));
+      }
+    }
+  }, [prefs, initialData, prefsApplied]);
+
+  // Sort venues by user preference (most used first)
+  const sortedVenues = venues ? [...venues].sort((a, b) => {
+    if (!prefs) return 0;
+    const aIdx = prefs.preferredVenueIds.indexOf(a.id);
+    const bIdx = prefs.preferredVenueIds.indexOf(b.id);
+    if (aIdx === -1 && bIdx === -1) return 0;
+    if (aIdx === -1) return 1;
+    if (bIdx === -1) return -1;
+    return aIdx - bIdx;
+  }) : venues;
+
+  // Sort game formats by user preference
+  const sortedGameFormats = prefs && prefs.preferredGameFormats.length > 0
+    ? [...GAME_FORMATS].sort((a, b) => {
+        const aIdx = prefs.preferredGameFormats.indexOf(a.value);
+        const bIdx = prefs.preferredGameFormats.indexOf(b.value);
+        if (aIdx === -1 && bIdx === -1) return 0;
+        if (aIdx === -1) return 1;
+        if (bIdx === -1) return -1;
+        return aIdx - bIdx;
+      })
+    : GAME_FORMATS;
+
+  // Suggested buy-ins from history
+  const suggestedBuyIns = prefs?.preferredBuyIns?.slice(0, 4) || [];
+
   // Auto-set currency to USD for online
   useEffect(() => {
-    if (type === "online" && !initialData) {
+    if (type === "online" && !initialData && !prefsApplied) {
       setCurrency("USD");
-    } else if (type === "live" && !initialData) {
+    } else if (type === "live" && !initialData && !prefsApplied) {
       setCurrency("BRL");
     }
-  }, [type, initialData]);
+  }, [type, initialData, prefsApplied]);
 
   // Reset venue when type changes
   useEffect(() => {
@@ -247,6 +294,37 @@ function SessionForm({
         </div>
       </div>
 
+      {/* Smart suggestion: recent combos (only for new sessions with history) */}
+      {!initialData && prefs && prefs.recentCombos.length > 0 && (
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Sparkles className="h-3 w-3" /> Repetir sessão recente
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {prefs.recentCombos.slice(0, 3).map((combo, i) => {
+              const venueName = venues?.find(v => v.id === combo.venueId)?.name;
+              const fmtLabel = GAME_FORMATS.find(f => f.value === combo.gameFormat)?.label || combo.gameFormat;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setType(combo.type as "online" | "live");
+                    setGameFormat(combo.gameFormat as GameFormat);
+                    if (combo.venueId) setVenueId(combo.venueId.toString());
+                    setBuyIn(String(combo.buyIn / 100));
+                    if (combo.gameType) setGameType(combo.gameType);
+                  }}
+                  className="text-xs px-2 py-1 rounded-full border border-border bg-muted/50 hover:bg-muted transition-colors text-left"
+                >
+                  {venueName ? `${venueName} · ` : ""}{fmtLabel} · {combo.currency === "USD" ? "$" : "R$"}{(combo.buyIn / 100).toFixed(0)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label>Tipo de Jogo</Label>
         <Select value={gameFormat} onValueChange={(v) => setGameFormat(v as GameFormat)}>
@@ -254,10 +332,13 @@ function SessionForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {GAME_FORMATS.map((format) => (
+            {sortedGameFormats.map((format, i) => (
               <SelectItem key={format.value} value={format.value}>
                 <span className="flex items-center gap-2">
                   <span>{format.emoji}</span> {format.label}
+                  {i === 0 && prefs && prefs.preferredGameFormats[0] === format.value && (
+                    <span className="text-xs text-muted-foreground ml-1">(mais usado)</span>
+                  )}
                 </span>
               </SelectItem>
             ))}
@@ -276,7 +357,7 @@ function SessionForm({
             <SelectValue placeholder={`Selecione ${type === "online" ? "a plataforma" : "o local"}`} />
           </SelectTrigger>
           <SelectContent>
-            {venues?.map((venue) => (
+            {sortedVenues?.map((venue, i) => (
               <SelectItem key={venue.id} value={venue.id.toString()}>
                 <span className="flex items-center gap-2">
                   {venue.logoUrl && (
@@ -287,6 +368,9 @@ function SessionForm({
                     />
                   )}
                   {venue.name}
+                  {i === 0 && prefs && prefs.preferredVenueIds[0] === venue.id && (
+                    <span className="text-xs text-muted-foreground">(favorita)</span>
+                  )}
                 </span>
               </SelectItem>
             ))}
@@ -339,6 +423,21 @@ function SessionForm({
             onChange={(e) => setBuyIn(e.target.value)}
             required
           />
+          {/* Suggested buy-ins from history */}
+          {suggestedBuyIns.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {suggestedBuyIns.map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setBuyIn(String(val / 100))}
+                  className="text-xs px-2 py-0.5 rounded border border-border bg-muted/30 hover:bg-muted transition-colors"
+                >
+                  {currency === "USD" ? "$" : "R$"}{(val / 100).toFixed(0)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">

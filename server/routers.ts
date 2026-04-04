@@ -37,6 +37,7 @@ import {
   getFundTransactionsTotals,
   updateVenueBalance,
   getVenueBalanceHistory,
+  getUserPreferences,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -204,13 +205,17 @@ export const appRouter = router({
         return await getSessionStats(ctx.user.id, input?.type, input?.gameFormat);
       }),
 
-    // Get statistics grouped by game format
+     // Get statistics grouped by game format
     statsByFormat: protectedProcedure
       .query(async ({ ctx }) => {
         return await getStatsByGameFormat(ctx.user.id);
       }),
+    // Get user preferences based on session history (smart suggestions)
+    getUserPreferences: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getUserPreferences(ctx.user.id);
+      }),
   }),
-
   // Venues router
   venues: router({
     // Initialize preset venues for user
