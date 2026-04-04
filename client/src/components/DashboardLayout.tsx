@@ -30,14 +30,16 @@ import { useTheme, ACCENT_COLORS, AccentColor } from "@/contexts/ThemeContext";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-function ColorPickerButton({ isCollapsed }: { isCollapsed: boolean }) {
+function ColorPickerButton({ isCollapsed, compact = false }: { isCollapsed: boolean; compact?: boolean }) {
   const { accentColor } = useTheme();
   const currentColor = ACCENT_COLORS[accentColor];
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
-          className="flex items-center gap-2 w-full rounded-lg px-2 py-2 hover:bg-accent/50 transition-colors text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={`flex items-center gap-2 rounded-lg hover:bg-accent/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            compact ? "p-1.5 shrink-0" : "w-full px-2 py-2 text-left"
+          }`}
           title="Mudar cor de destaque"
         >
           <span
@@ -46,7 +48,7 @@ function ColorPickerButton({ isCollapsed }: { isCollapsed: boolean }) {
           >
             <Palette className="h-2.5 w-2.5 text-white" />
           </span>
-          {!isCollapsed && (
+          {!isCollapsed && !compact && (
             <span className="text-xs text-muted-foreground truncate">
               Cor: <span className="font-medium" style={{ color: currentColor.hex }}>{currentColor.label}</span>
             </span>
@@ -228,7 +230,7 @@ function DashboardLayoutContent({
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
+            <div className="flex items-center gap-2 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
                 className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
@@ -237,13 +239,18 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <Spade className="h-5 w-5 text-primary" />
-                  <span className="font-semibold tracking-tight truncate">
-                    The Rail
-                  </span>
-                </div>
-              ) : null}
+                <>
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Spade className="h-5 w-5 text-primary" />
+                    <span className="font-semibold tracking-tight truncate">
+                      The Rail
+                    </span>
+                  </div>
+                  <ColorPickerButton isCollapsed={false} compact />
+                </>
+              ) : (
+                <ColorPickerButton isCollapsed={true} compact />
+              )}
             </div>
           </SidebarHeader>
 
@@ -270,10 +277,6 @@ function DashboardLayoutContent({
             </SidebarMenu>
           </SidebarContent>
 
-          {/* Botão de cor de destaque — visível em todas as abas */}
-          <div className="px-3 pb-2">
-            <ColorPickerButton isCollapsed={isCollapsed} />
-          </div>
 
           <SidebarFooter className="p-3">
             <DropdownMenu>
