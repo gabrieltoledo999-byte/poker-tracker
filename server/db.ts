@@ -432,7 +432,7 @@ export async function getVenueById(id: number, userId: number): Promise<Venue | 
   return venue || null;
 }
 
-export async function initializePresetVenues(userId: number, presets: Array<{ name: string; type: "online" | "live"; logoUrl: string; website?: string }>): Promise<void> {
+export async function initializePresetVenues(userId: number, presets: Array<{ name: string; type: "online" | "live"; logoUrl: string; defaultCurrency?: string; website?: string }>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
@@ -447,12 +447,12 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
   for (const preset of presets) {
     const existing = existingPresets.find(v => v.name === preset.name);
     if (existing) {
-      // Update logo and website if changed
+      // Update logo, website if changed (do not override user-set currency)
       await db.update(venues)
         .set({ logoUrl: preset.logoUrl, website: preset.website || null })
         .where(eq(venues.id, existing.id));
     } else {
-      // Insert new preset
+      // Insert new preset with default currency
       await db.insert(venues).values({
         userId,
         name: preset.name,
@@ -460,6 +460,7 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
         logoUrl: preset.logoUrl,
         website: preset.website || null,
         isPreset: 1,
+        currency: (preset.defaultCurrency as "BRL" | "USD" | "CAD" | "JPY") || "BRL",
       });
     }
   }

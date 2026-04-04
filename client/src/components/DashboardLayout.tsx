@@ -32,14 +32,19 @@ import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 function ColorPicker() {
   const { accentColor, setAccentColor } = useTheme();
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      {(Object.entries(ACCENT_COLORS) as [AccentColor, { label: string; hex: string }][]).map(([key, val]) => (
+    <div className="flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+      {(Object.entries(ACCENT_COLORS) as [AccentColor, { label: string; hex: string; hue: number; chroma: number }][]).map(([key, val]) => (
         <button
           key={key}
           title={val.label}
-          onClick={() => setAccentColor(key)}
-          className={`h-5 w-5 rounded-full border-2 transition-all ${
-            accentColor === key ? "border-white scale-110" : "border-transparent opacity-70 hover:opacity-100"
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setAccentColor(key);
+          }}
+          className={`h-6 w-6 rounded-full border-2 transition-all ${
+            accentColor === key ? "border-white scale-110 shadow-lg" : "border-transparent opacity-70 hover:opacity-100 hover:scale-105"
           }`}
           style={{ backgroundColor: val.hex }}
         />

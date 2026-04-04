@@ -5,6 +5,7 @@ export interface PresetVenue {
   type: "online" | "live";
   logoUrl: string;
   logoFit?: "contain" | "cover";
+  defaultCurrency?: "BRL" | "USD" | "CAD" | "JPY";
   website?: string;
 }
 
@@ -23,30 +24,35 @@ export const PRESET_VENUES: PresetVenue[] = [
     name: "PPPoker",
     type: "online",
     logoUrl: `${CDN}/pppoker_10f8e436.jpg`,
+    defaultCurrency: "USD",
     website: "https://www.pppoker.net",
   },
   {
     name: "ClubGG",
     type: "online",
     logoUrl: `${CDN}/clubgg_2a202d12.jpg`,
+    defaultCurrency: "USD",
     website: "https://www.clubgg.net",
   },
   {
     name: "PokerBros",
     type: "online",
     logoUrl: `${CDN}/pokerbros_6f897e64.jpg`,
+    defaultCurrency: "USD",
     website: "https://www.pokerbros.net",
   },
   {
     name: "PokerStars",
     type: "online",
     logoUrl: `${CDN}/pokerstars_fc2715c4.jpg`,
+    defaultCurrency: "USD",
     website: "https://www.pokerstars.com",
   },
   {
     name: "GGPoker",
     type: "online",
     logoUrl: `${CDN}/ggpoker_be9ba8c6.png`,
+    defaultCurrency: "USD",
     website: "https://www.ggpoker.com",
   },
   {
@@ -54,24 +60,28 @@ export const PRESET_VENUES: PresetVenue[] = [
     type: "online",
     logoUrl: `${CDN}/wpt_clean_3b04995e.png`,
     logoFit: "cover",
+    defaultCurrency: "USD",
     website: "https://wptglobal.com",
   },
   {
     name: "888poker",
     type: "online",
     logoUrl: `${CDN}/888poker_17ad04a6.jpg`,
+    defaultCurrency: "USD",
     website: "https://www.888poker.com",
   },
   {
     name: "KKPoker",
     type: "online",
     logoUrl: `${CDN}/kkpoker-logo_5b7e0949.png`,
+    defaultCurrency: "USD",
     website: "https://www.kkpoker.net",
   },
   {
     name: "X-Poker",
     type: "online",
     logoUrl: `${CDN}/xpoker-logo_a9942cfe.png`,
+    defaultCurrency: "USD",
     website: "https://www.xpokerapp.com",
   },
   // Live Poker Clubs - Brazil

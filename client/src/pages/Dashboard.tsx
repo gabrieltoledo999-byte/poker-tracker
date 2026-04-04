@@ -162,10 +162,15 @@ function VenueRow({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold truncate">{venue.name}</p>
-            <p className="text-xs text-muted-foreground">
-              {venue.type === "live" ? "Live" : venue.currency || "BRL"}
+            <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+              <span>{venue.type === "live" ? "Live" : venue.currency || "BRL"}</span>
+              {venue.type === "online" && (venue.currency === "BRL" || !venue.currency) && (
+                <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/20" title="Plataforma em Reais — sem conversão de moeda">
+                  🇧🇷 Nacional
+                </span>
+              )}
               {venue.type === "online" && venue.currency !== "BRL" && venue.balance > 0 && (
-                <span className="ml-1 text-[10px] text-primary/70">≈ {formatCurrencyCompact(venue.balanceBrl)}</span>
+                <span className="text-[10px] text-primary/70">≈ {formatCurrencyCompact(venue.balanceBrl)}</span>
               )}
             </p>
           </div>

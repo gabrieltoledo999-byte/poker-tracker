@@ -307,4 +307,10 @@
 - [x] Remover clubes Live dos presets permanentemente (H2 Club, Monte Carlo)
 - [ ] Exibir o bankroll Live como card separado na tela inicial
 - [x] Mover seletor de cor de acento para o DashboardLayout (acessível em todas as abas)
+
+## Moeda Padrão nas Plataformas
+
+- [x] Definir USD como moeda padrão nos presets internacionais (PokerStars, GGPoker, WPT, 888poker, KKPoker, X-Poker, PPPoker, ClubGG, PokerBros)
+- [x] Manter BRL para Suprema Poker
+- [x] Adicionar aviso visual quando plataforma usa BRL (badge 🇧🇷 Nacional em âmbar)
 - [x] Formatação do eixo Y deve usar a mesma função formatCurrencyCompact para exibir valores legíveis
