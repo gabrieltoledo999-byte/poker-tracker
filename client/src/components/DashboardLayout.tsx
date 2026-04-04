@@ -28,11 +28,45 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { useTheme, ACCENT_COLORS, AccentColor } from "@/contexts/ThemeContext";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+function ColorPickerButton({ isCollapsed }: { isCollapsed: boolean }) {
+  const { accentColor } = useTheme();
+  const currentColor = ACCENT_COLORS[accentColor];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className="flex items-center gap-2 w-full rounded-lg px-2 py-2 hover:bg-accent/50 transition-colors text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title="Mudar cor de destaque"
+        >
+          <span
+            className="h-5 w-5 rounded-full border-2 border-white/30 shrink-0 flex items-center justify-center"
+            style={{ backgroundColor: currentColor.hex }}
+          >
+            <Palette className="h-2.5 w-2.5 text-white" />
+          </span>
+          {!isCollapsed && (
+            <span className="text-xs text-muted-foreground truncate">
+              Cor: <span className="font-medium" style={{ color: currentColor.hex }}>{currentColor.label}</span>
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="end" className="w-52 p-3">
+        <p className="text-xs font-medium mb-3 flex items-center gap-1.5">
+          <Palette className="h-3.5 w-3.5" /> Cor de destaque
+        </p>
+        <ColorPicker />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function ColorPicker() {
   const { accentColor, setAccentColor } = useTheme();
   return (
-    <div className="flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+    <div className="flex gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
       {(Object.entries(ACCENT_COLORS) as [AccentColor, { label: string; hex: string; hue: number; chroma: number }][]).map(([key, val]) => (
         <button
           key={key}
@@ -235,6 +269,11 @@ function DashboardLayoutContent({
               })}
             </SidebarMenu>
           </SidebarContent>
+
+          {/* Botão de cor de destaque — visível em todas as abas */}
+          <div className="px-3 pb-2">
+            <ColorPickerButton isCollapsed={isCollapsed} />
+          </div>
 
           <SidebarFooter className="p-3">
             <DropdownMenu>

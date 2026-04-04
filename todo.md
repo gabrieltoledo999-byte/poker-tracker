@@ -307,6 +307,7 @@
 - [x] Remover clubes Live dos presets permanentemente (H2 Club, Monte Carlo)
 - [ ] Exibir o bankroll Live como card separado na tela inicial
 - [x] Mover seletor de cor de acento para o DashboardLayout (acessível em todas as abas)
+- [x] Botão de paleta de cores visível diretamente no layout (não escondido no dropdown) em todas as abas
 
 ## Moeda Padrão nas Plataformas
 
