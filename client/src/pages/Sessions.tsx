@@ -41,6 +41,23 @@ function formatCurrency(value: number, currency: string) {
   return `R$${amount.toFixed(2)}`;
 }
 
+/** Format minutes as "Xh Ym" */
+function formatMinutes(minutes: number): string {
+  if (minutes <= 0) return "0m";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+/** Calculate duration in minutes between two timestamps */
+function calcTableDuration(startedAt: string | Date, endedAt?: string | Date | null): number {
+  const start = new Date(startedAt).getTime();
+  const end = endedAt ? new Date(endedAt).getTime() : Date.now();
+  return Math.max(0, Math.round((end - start) / 60000));
+}
+
 function formatDuration(startedAt: string | Date) {
   // Parse startedAt as UTC (MySQL timestamps come without timezone info)
   const raw = startedAt instanceof Date ? startedAt : new Date(startedAt);
@@ -56,6 +73,152 @@ function formatDuration(startedAt: string | Date) {
   const m = Math.floor((diff % 3600) / 60);
   const s = diff % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+// ─── Edit Table Dialog ────────────────────────────────────────────────────────
+interface EditTableDialogProps {
+  table: {
+    id: number;
+    type: string;
+    gameFormat: string;
+    currency: string;
+    buyIn: number;
+    cashOut?: number | null;
+    venueId?: number | null;
+    gameType?: string | null;
+    stakes?: string | null;
+    notes?: string | null;
+    startedAt: string | Date;
+    endedAt?: string | Date | null;
+  };
+  venues: { id: number; name: string; logoUrl?: string | null }[];
+  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY"; buyIn?: number; cashOut?: number | null; stakes?: string; notes?: string }) => void;
+  onClose: () => void;
+  isPending: boolean;
+}
+
+function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTableDialogProps) {
+  const fmt = GAME_FORMATS.find(f => f.value === table.gameFormat);
+  const [type, setType] = useState<"online" | "live">(table.type as "online" | "live");
+  const [gameFormat, setGameFormat] = useState<"tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game">(table.gameFormat as any);
+  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY">(table.currency as any);
+  const [venueId, setVenueId] = useState(table.venueId?.toString() ?? "");
+  const [buyIn, setBuyIn] = useState((table.buyIn / 100).toFixed(2));
+  const [cashOut, setCashOut] = useState(table.cashOut != null ? (table.cashOut / 100).toFixed(2) : "");
+  const [stakes, setStakes] = useState(table.stakes ?? "");
+  const [notes, setNotes] = useState(table.notes ?? "");
+
+  const duration = calcTableDuration(table.startedAt, table.endedAt);
+
+  function handleSave() {
+    const buyInCents = Math.round(parseFloat(buyIn) * 100);
+    const cashOutCents = cashOut !== "" ? Math.round(parseFloat(cashOut) * 100) : null;
+    onSave({
+      venueId: venueId ? parseInt(venueId) : undefined,
+      type,
+      gameFormat,
+      currency,
+      buyIn: buyInCents,
+      cashOut: cashOutCents,
+      stakes: stakes || undefined,
+      notes: notes || undefined,
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Edit2 className="h-4 w-4" /> Editar Mesa
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {duration > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1.5">
+              <Clock className="h-3.5 w-3.5" />
+              Duração: <span className="font-medium text-foreground">{formatMinutes(duration)}</span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Tipo</Label>
+              <Select value={type} onValueChange={(v) => setType(v as "online" | "live")}>
+                <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="live">Live</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Moeda</Label>
+              <Select value={currency} onValueChange={(v) => setCurrency(v as any)}>
+                <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BRL">BRL (R$)</SelectItem>
+                  <SelectItem value="USD">USD ($)</SelectItem>
+                  <SelectItem value="CAD">CAD (CA$)</SelectItem>
+                  <SelectItem value="JPY">JPY (¥)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Plataforma / Local</Label>
+            <Select value={venueId} onValueChange={setVenueId}>
+              <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+              <SelectContent>
+                {venues.map(v => (
+                  <SelectItem key={v.id} value={v.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
+                      {v.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Formato</Label>
+            <Select value={gameFormat} onValueChange={(v) => setGameFormat(v as any)}>
+              <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {GAME_FORMATS.map(f => (
+                  <SelectItem key={f.value} value={f.value}>{f.emoji} {f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Buy-in ({currency})</Label>
+              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Cash-out ({currency})</Label>
+              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Stakes (ex: 1/2)</Label>
+            <Input className="h-8 text-sm mt-1" placeholder="1/2" value={stakes} onChange={e => setStakes(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Notas</Label>
+            <Textarea className="text-sm mt-1 resize-none" rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter className="mt-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={isPending}>
+            {isPending ? "Salvando..." : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ─── Add Table Form ────────────────────────────────────────────────────────────
@@ -407,6 +570,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
   const [elapsed, setElapsed] = useState(formatDuration(session.startedAt));
   const [showAddTable, setShowAddTable] = useState(false);
   const [cashOutTableId, setCashOutTableId] = useState<number | null>(null);
+  const [editTableId, setEditTableId] = useState<number | null>(null);
   const [showDiscard, setShowDiscard] = useState(false);
   const [showFinalize, setShowFinalize] = useState(false);
   const [finalizeStep, setFinalizeStep] = useState<"ask-more" | "confirm">("ask-more");
@@ -427,6 +591,15 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
       utils.sessions.getActive.invalidate();
       toast("Mesa removida.");
     },
+  });
+
+  const updateTableMutation = trpc.sessions.updateTable.useMutation({
+    onSuccess: () => {
+      utils.sessions.getActive.invalidate();
+      toast.success("Mesa atualizada!");
+      setEditTableId(null);
+    },
+    onError: (err) => toast.error("Erro ao atualizar mesa", { description: err.message }),
   });
 
   const finalizeMutation = trpc.sessions.finalize.useMutation({
@@ -566,6 +739,14 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                    onClick={() => setEditTableId(table.id)}
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                     onClick={() => removeMutation.mutate({ id: table.id })}
                   >
@@ -595,6 +776,21 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
           <CheckCircle className="h-4 w-4 mr-2" /> Finalizar Sessão
         </Button>
       </div>
+
+      {/* Edit table dialog */}
+      {editTableId !== null && (() => {
+        const et = session.tables.find(t => t.id === editTableId);
+        if (!et) return null;
+        return (
+          <EditTableDialog
+            table={et}
+            venues={venues ?? []}
+            onSave={(data) => updateTableMutation.mutate({ id: et.id, ...data })}
+            onClose={() => setEditTableId(null)}
+            isPending={updateTableMutation.isPending}
+          />
+        );
+      })()}
 
       {/* Add table dialog */}
       <Dialog open={showAddTable} onOpenChange={setShowAddTable}>
@@ -830,12 +1026,21 @@ function SessionCard({ session }: { session: any }) {
               {tables.map((t) => {
                 const tfmt = GAME_FORMATS.find(f => f.value === t.gameFormat);
                 const tp = (t.cashOut ?? 0) - t.buyIn;
+                const tDuration = calcTableDuration(t.startedAt, t.endedAt);
                 return (
-                  <div key={t.id} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/30">
-                    <span>{tfmt?.emoji} {tfmt?.label} · {t.type === "online" ? "Online" : "Live"}</span>
-                    <span className={tp >= 0 ? "text-green-500" : "text-red-500"}>
-                      {tp >= 0 ? "+" : ""}{formatCurrency(Math.abs(tp), t.currency)}
-                    </span>
+                  <div key={t.id} className="text-xs py-1.5 px-2 rounded bg-muted/30 space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{tfmt?.emoji} {tfmt?.label} · {t.type === "online" ? "Online" : "Live"}</span>
+                      <span className={tp >= 0 ? "text-green-500" : "text-red-500"}>
+                        {tp >= 0 ? "+" : ""}{formatCurrency(Math.abs(tp), t.currency)}
+                      </span>
+                    </div>
+                    {tDuration > 0 && (
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span>{formatMinutes(tDuration)}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
