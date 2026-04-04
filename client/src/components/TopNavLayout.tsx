@@ -5,6 +5,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "./ui/button";
 import { getLoginUrl } from "@/const";
@@ -13,26 +14,25 @@ import {
   LogOut,
   ListChecks,
   Settings,
-  Spade,
   MapPin,
   Users,
   Wallet,
-  Menu,
   Sun,
   Moon,
   Trophy,
   Globe,
+  Menu,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
-import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { SplashScreen } from "./SplashScreen";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const menuItems = [
+  { icon: LayoutDashboard, label: "Início", path: "/" },
   { icon: ListChecks, label: "Sessões", path: "/sessions" },
   { icon: Wallet, label: "Fundos", path: "/funds" },
   { icon: Trophy, label: "Ranking", path: "/ranking" },
@@ -42,207 +42,202 @@ const menuItems = [
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
-export default function TopNavLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function TopNavLayout({ children }: { children: React.ReactNode }) {
   const { loading, user } = useAuth();
   const [location, setLocation] = useLocation();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
+
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      window.location.href = getLoginUrl();
-    },
+    onSuccess: () => { window.location.href = getLoginUrl(); },
   });
 
-  if (loading) {
-    return <SplashScreen />;
-  }
+  if (loading) return <SplashScreen />;
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <div className="flex items-center gap-2 mb-2">
-              <img
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
-                alt="The Rail"
-                className="h-12 w-12 object-contain"
-              />
-              <span className="text-3xl font-bold gradient-text">
-                The Rail
-              </span>
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Entre para continuar
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Faça login para acessar seu painel de controle de poker e
-              gerenciar seu bankroll.
+          <div className="flex flex-col items-center gap-4">
+            <img
+              src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+              alt="The Rail"
+              className="h-20 w-20 object-contain"
+            />
+            <h1 className="text-2xl font-semibold tracking-tight text-center">Entre para continuar</h1>
+            <p className="text-muted-foreground text-center text-sm">
+              Faça login para acessar seu bankroll tracker
             </p>
           </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full bg-primary hover:opacity-90"
-          >
-            Entrar com Manus
-          </Button>
+          <a href={getLoginUrl()} className="w-full">
+            <Button size="lg" className="w-full gap-2 bg-primary hover:bg-primary/90">
+              Entrar com Manus
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </a>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-24 items-center gap-4">
-          {/* Logo */}
-          <button
-            onClick={() => setLocation("/")}
-            className="group relative flex items-center cursor-pointer shrink-0 transition-all duration-500"
-            title="Voltar ao Dashboard"
-          >
-            <img
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
-              alt="The Rail"
-              className="h-44 w-44 object-contain relative z-10 transition-all duration-700 group-hover:drop-shadow-[0_0_6px_rgba(34,211,238,0.35)]"
-            />
-            <span className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/0 via-purple-500/0 to-cyan-400/0 group-hover:from-cyan-400/10 group-hover:via-purple-500/10 group-hover:to-cyan-400/10 blur-md transition-all duration-500" />
-          </button>
+    <div className="flex min-h-screen bg-background">
+      {/* ── Sidebar Desktop ── */}
+      <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border/50 bg-card/30 sticky top-0 h-screen overflow-y-auto">
+        {/* Logo */}
+        <div
+          className="flex items-center gap-3 px-5 py-5 cursor-pointer border-b border-border/30"
+          onClick={() => setLocation("/")}
+        >
+          <img
+            src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+            alt="The Rail"
+            className="h-10 w-10 object-contain"
+          />
+          <span className="text-xl font-bold tracking-tight gradient-text">The Rail</span>
+        </div>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location === item.path;
-              return (
-                <Button
-                  key={item.path}
-                  variant="ghost"
-                  className={`gap-2 ${
-                    isActive
-                      ? "bg-primary/20 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
+        {/* Nav Items */}
+        <nav className="flex flex-col gap-1 px-3 py-4 flex-1">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location === item.path;
+            return (
+              <button
+                key={item.path}
+                onClick={() => setLocation(item.path)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 w-full text-left
+                  ${isActive
+                    ? "bg-primary/15 text-primary border border-primary/20"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   }`}
-                  onClick={() => setLocation(item.path)}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </Button>
-              );
-            })}
-          </nav>
-
-            {/* User Menu */}
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
-            {/* Theme Toggle Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleTheme}
-              title={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
-            {/* Mobile Menu */}
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="bg-background border-border"
               >
-                <div className="flex flex-col gap-2 mt-8">
-                  {menuItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = location === item.path;
-                    return (
-                      <Button
-                        key={item.path}
-                        variant="ghost"
-                        className={`justify-start gap-2 ${
-                          isActive
-                            ? "bg-primary/20 text-primary"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        onClick={() => {
-                          setLocation(item.path);
-                          setMobileMenuOpen(false);
-                        }}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
-              </SheetContent>
-            </Sheet>
+                <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                <span className="text-base">{item.label}</span>
+                {isActive && <ChevronRight className="h-4 w-4 ml-auto text-primary/60" />}
+              </button>
+            );
+          })}
+        </nav>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="relative h-10 w-10 rounded-full"
-                >
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={user.avatarUrl || undefined} />
-                    <AvatarFallback className="bg-primary text-primary-foreground">
-                      {user.name?.charAt(0).toUpperCase() || "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="bg-popover border-border"
-              >
-                <div className="flex items-center justify-start gap-2 p-2">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {user.email}
-                    </p>
-                  </div>
+        {/* User Section */}
+        <div className="border-t border-border/30 px-3 py-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors">
+                <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarImage src={user.avatarUrl || undefined} />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                    {user.name?.charAt(0).toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col items-start min-w-0 flex-1">
+                  <span className="text-sm font-medium truncate w-full">{user.name}</span>
+                  <span className="text-xs text-muted-foreground truncate w-full">{user.email}</span>
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={toggleTheme}
-                  className="cursor-pointer"
-                >
-                  {theme === "dark" ? (
-                    <><Sun className="mr-2 h-4 w-4" />Tema Claro</>
-                  ) : (
-                    <><Moon className="mr-2 h-4 w-4" />Tema Escuro</>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => logoutMutation.mutate()}
-                  className="cursor-pointer text-[oklch(0.55_0.22_25)]"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sair
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-52">
+              <DropdownMenuItem onClick={toggleTheme} className="cursor-pointer gap-2">
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? "Tema Claro" : "Tema Escuro"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => logoutMutation.mutate()} className="cursor-pointer text-destructive gap-2">
+                <LogOut className="h-4 w-4" />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </aside>
+
+      {/* ── Mobile Header ── */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 h-14 bg-card/90 backdrop-blur border-b border-border/50">
+        <div className="flex items-center gap-2" onClick={() => setLocation("/")}>
+          <img
+            src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+            alt="The Rail"
+            className="h-8 w-8 object-contain"
+          />
+          <span className="font-bold gradient-text">The Rail</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Mobile Drawer ── */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <div className="relative w-72 bg-card h-full flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
+              <div className="flex items-center gap-2">
+                <img
+                  src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+                  alt="The Rail"
+                  className="h-9 w-9 object-contain"
+                />
+                <span className="font-bold text-lg gradient-text">The Rail</span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <nav className="flex flex-col gap-1 px-3 py-4 flex-1">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location === item.path;
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => { setLocation(item.path); setMobileOpen(false); }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all w-full text-left
+                      ${isActive
+                        ? "bg-primary/15 text-primary border border-primary/20"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      }`}
+                  >
+                    <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                    <span className="text-base">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="border-t border-border/30 px-4 py-4">
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src={user.avatarUrl || undefined} />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                    {user.name?.charAt(0).toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm font-medium truncate">{user.name}</span>
+                  <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-destructive" onClick={() => logoutMutation.mutate()}>
+                <LogOut className="h-4 w-4" /> Sair
+              </Button>
+            </div>
           </div>
         </div>
-      </header>
+      )}
 
-      {/* Main Content */}
-      <main className="flex-1 container py-6">{children}</main>
+      {/* ── Main Content ── */}
+      <main className="flex-1 min-w-0 md:overflow-y-auto">
+        <div className="md:hidden h-14" /> {/* spacer for mobile header */}
+        <div className="p-4 md:p-6">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

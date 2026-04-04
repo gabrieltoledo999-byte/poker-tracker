@@ -71,6 +71,13 @@
       "when": 1772744651224,
       "tag": "0009_medical_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1775321497302,
+      "tag": "0010_wonderful_the_liberteens",
+      "breakpoints": true
     }
   ]
 }

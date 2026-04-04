@@ -969,3 +969,84 @@ export async function deleteComment(commentId: number, userId: number): Promise<
   const [result] = await db.delete(postComments).where(and(eq(postComments.id, commentId), eq(postComments.userId, userId)));
   return (result as any).affectedRows > 0;
 }
+
+// ============== CLUBS QUERIES ==============
+import { clubs, Club, InsertClub } from "../drizzle/schema";
+
+export async function getUserClubs(userId: number): Promise<Club[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(clubs).where(eq(clubs.userId, userId));
+}
+
+export async function createClub(data: InsertClub): Promise<Club> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(clubs).values(data);
+  const inserted = await db.select().from(clubs).where(eq(clubs.id, (result as any).insertId));
+  return inserted[0];
+}
+
+export async function updateClub(id: number, userId: number, data: Partial<InsertClub>): Promise<Club | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(clubs).set({ ...data, updatedAt: new Date() }).where(eq(clubs.id, id));
+  const updated = await db.select().from(clubs).where(eq(clubs.id, id));
+  if (!updated[0] || updated[0].userId !== userId) return null;
+  return updated[0];
+}
+
+export async function deleteClub(id: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(clubs).where(eq(clubs.id, id));
+  if (!existing[0] || existing[0].userId !== userId) return false;
+  await db.delete(clubs).where(eq(clubs.id, id));
+  return true;
+}
+
+export async function getClubsWithStats(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const userClubs = await db.select().from(clubs).where(eq(clubs.userId, userId));
+  const allSessions = await db.select().from(sessions).where(eq(sessions.userId, userId));
+  const allVenues = await db.select().from(venues).where(eq(venues.userId, userId));
+
+  // Map venues by name (lowercase) to clubs by name (lowercase) for matching
+  return userClubs.map((club) => {
+    // Find sessions linked to venues matching this club name
+    const matchingVenues = allVenues.filter(
+      (v) => v.name.toLowerCase() === club.name.toLowerCase()
+    );
+    const venueIds = new Set(matchingVenues.map((v) => v.id));
+    const clubSessions = allSessions.filter(
+      (s) => s.venueId && venueIds.has(s.venueId)
+    );
+
+    const totalProfit = clubSessions.reduce(
+      (sum, s) => sum + (s.cashOut - s.buyIn),
+      0
+    );
+    const sessionCount = clubSessions.length;
+
+    // Build mini chart: last 10 sessions cumulative profit
+    let cumulative = 0;
+    const chartPoints = clubSessions.slice(-10).map((s) => {
+      cumulative += s.cashOut - s.buyIn;
+      return { value: cumulative / 100 };
+    });
+
+    return {
+      id: club.id,
+      name: club.name,
+      logoUrl: club.logoUrl,
+      type: club.type,
+      allocatedAmount: club.allocatedAmount,
+      totalProfit,
+      sessionCount,
+      trend: totalProfit >= 0 ? "up" : "down",
+      chartPoints,
+    };
+  }).sort((a, b) => b.allocatedAmount - a.allocatedAmount);
+}

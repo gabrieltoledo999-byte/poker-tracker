@@ -255,3 +255,29 @@ export const friendships = mysqlTable("friendships", {
 
 export type Friendship = typeof friendships.$inferSelect;
 export type InsertFriendship = typeof friendships.$inferInsert;
+
+/**
+ * Clubs table - poker clubs where user allocates bankroll (online apps like PPPoker, ClubGG, etc.)
+ */
+export const clubs = mysqlTable("clubs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+
+  // Club info
+  name: varchar("name", { length: 128 }).notNull(),
+  logoUrl: varchar("logoUrl", { length: 512 }),
+
+  // Type: online app club or live club
+  type: mysqlEnum("type", ["online", "live"]).default("online").notNull(),
+
+  // Bankroll allocated to this club (in BRL centavos)
+  allocatedAmount: int("allocatedAmount").notNull().default(0),
+
+  // Notes
+  notes: text("notes"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Club = typeof clubs.$inferSelect;
+export type InsertClub = typeof clubs.$inferInsert;

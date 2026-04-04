@@ -643,6 +643,50 @@ export const appRouter = router({
       }),
   }),
 
+  // Clubs router
+  clubs: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const { getUserClubs } = await import("./db");
+      return getUserClubs(ctx.user.id);
+    }),
+    listWithStats: protectedProcedure.query(async ({ ctx }) => {
+      const { getClubsWithStats } = await import("./db");
+      return getClubsWithStats(ctx.user.id);
+    }),
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(128),
+        logoUrl: z.string().url().optional(),
+        type: z.enum(["online", "live"]).default("online"),
+        allocatedAmount: z.number().int().min(0).default(0),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createClub } = await import("./db");
+        return createClub({ ...input, userId: ctx.user.id });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        name: z.string().min(1).max(128).optional(),
+        logoUrl: z.string().url().optional().nullable(),
+        type: z.enum(["online", "live"]).optional(),
+        allocatedAmount: z.number().int().min(0).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { updateClub } = await import("./db");
+        const { id, ...data } = input;
+        return updateClub(id, ctx.user.id, data);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        const { deleteClub } = await import("./db");
+        return deleteClub(input.id, ctx.user.id);
+      }),
+  }),
+
   // Upload image for posts
   upload: router({
     postImage: protectedProcedure
