@@ -248,8 +248,8 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <Spade className="h-5 w-5 text-primary" />
-                    <span className="font-semibold tracking-tight truncate">
+                    <Spade className="h-7 w-7 text-primary" />
+                    <span className="text-xl font-bold tracking-tight gradient-text truncate">
                       The Rail
                     </span>
                   </div>
