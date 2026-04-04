@@ -14,7 +14,7 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "Suprema Poker",
     type: "online",
-    logoUrl: `${CDN}/suprema_94f6102b.jpg`,
+    logoUrl: `${CDN}/suprema_clean_8aafbdb1.png`,
     website: "https://www.supremapoker.com",
   },
   {
@@ -50,7 +50,7 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "WPT Global",
     type: "online",
-    logoUrl: `${CDN}/wpt_e37beb09.png`,
+    logoUrl: `${CDN}/wpt_clean_3b04995e.png`,
     website: "https://wptglobal.com",
   },
   {
@@ -75,7 +75,7 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "Monte Carlo Poker Club",
     type: "live",
-    logoUrl: `${CDN}/montecarlo_icon_82131015.png`,
+    logoUrl: `${CDN}/montecarlo_real_d486b53f.jpg`,
     website: "https://www.montecarlopoker.com.br",
   },
   {
@@ -95,31 +95,6 @@ export const PRESET_VENUES: PresetVenue[] = [
     type: "live",
     logoUrl: `${CDN}/h2club_58b7eae7.png`,
     website: "https://campinas.h2club.com.br",
-  },
-  {
-    name: "BHZ Poker Clube",
-    type: "live",
-    logoUrl: `${CDN}/bhz_icon_492624b3.png`,
-  },
-  {
-    name: "Fold Poker Club",
-    type: "live",
-    logoUrl: `${CDN}/fold_icon_d4c7a6ee.png`,
-  },
-  {
-    name: "Acaraí Poker Club",
-    type: "live",
-    logoUrl: `${CDN}/acarai_icon_73cd1a4e.png`,
-  },
-  {
-    name: "QG Masters Club",
-    type: "live",
-    logoUrl: `${CDN}/qgmasters_icon_c3b055f0.png`,
-  },
-  {
-    name: "HiJack Poker Club",
-    type: "live",
-    logoUrl: `${CDN}/hijack_icon_6b26e5c0.png`,
   },
   {
     name: "Stars Club Poker Room",
