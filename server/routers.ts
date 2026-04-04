@@ -699,6 +699,16 @@ export const appRouter = router({
         const { url } = await storagePut(key, buffer, input.mimeType);
         return { url, key };
       }),
+    clubLogo: protectedProcedure
+      .input(z.object({ base64: z.string(), mimeType: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const { storagePut } = await import("./storage");
+        const buffer = Buffer.from(input.base64, "base64");
+        const ext = input.mimeType.split("/")[1] || "jpg";
+        const key = `club-logos/${ctx.user.id}-${Date.now()}.${ext}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        return { url, key };
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

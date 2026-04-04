@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,8 @@ import {
   TrendingUp,
   TrendingDown,
   Lock,
+  Upload,
+  X,
 } from "lucide-react";
 
 // Helper to format currency
@@ -82,6 +84,36 @@ function VenueForm({
   const [website, setWebsite] = useState(initialData?.website || "");
   const [address, setAddress] = useState(initialData?.address || "");
   const [notes, setNotes] = useState(initialData?.notes || "");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadLogoMutation = trpc.upload.clubLogo.useMutation();
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Imagem muito grande. Máximo 5MB.");
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const base64 = (ev.target?.result as string).split(",")[1];
+        const result = await uploadLogoMutation.mutateAsync({
+          base64,
+          mimeType: file.type,
+        });
+        setLogoUrl(result.url);
+        toast.success("Logo enviada com sucesso!");
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      toast.error("Erro ao enviar imagem.");
+      setIsUploading(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,23 +168,57 @@ function VenueForm({
       </div>
 
       <div className="space-y-2">
-        <Label>URL do Logo (opcional)</Label>
-        <Input
-          placeholder="https://..."
-          value={logoUrl}
-          onChange={(e) => setLogoUrl(e.target.value)}
-        />
+        <Label>Logo do Clube (opcional)</Label>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Cole uma URL ou clique em 📎 para enviar do dispositivo"
+            value={logoUrl}
+            onChange={(e) => setLogoUrl(e.target.value)}
+            className="flex-1"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            title="Enviar imagem do seu dispositivo"
+            className="shrink-0"
+          >
+            {isUploading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+        </div>
         {logoUrl && (
-          <div className="flex items-center gap-2 mt-2">
-            <img 
-              src={logoUrl} 
-              alt="Preview" 
-              className="h-10 w-10 rounded object-contain bg-muted p-1"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-            <span className="text-sm text-muted-foreground">Preview do logo</span>
+          <div className="flex items-center gap-3 mt-2">
+            <div className="relative">
+              <img 
+                src={logoUrl} 
+                alt="Preview" 
+                className="h-14 w-14 rounded-lg object-contain bg-muted p-1"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setLogoUrl("")}
+                className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 hover:opacity-80"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <span className="text-sm text-muted-foreground">Preview da logo</span>
           </div>
         )}
       </div>
