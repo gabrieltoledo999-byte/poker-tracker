@@ -241,3 +241,27 @@
 - [x] Exibir resumo da sessão finalizada com breakdown por mesa
 - [x] Permitir editar/remover mesas individualmente dentro da sessão
 - [x] Remover campos manuais de duração, data e hora do formulário de nova sessão (tudo automático)
+
+## Correções do Timer de Sessão
+
+- [x] Timer deve ser crescente (00:00 → subindo) desde o clique em "Nova Sessão"
+- [x] Ao finalizar: perguntar "Deseja adicionar mais alguma mesa?" antes de confirmar
+- [x] Confirmação final: "Tem certeza que deseja finalizar a sessão?" antes de calcular
+
+## Preservação de Dados
+
+- [ ] Garantir que dados de sessões existentes dos jogadores não sejam perdidos em nenhuma atualização
+- [ ] Todas as migrações de schema devem ser aditivas (nunca DROP ou ALTER destrutivo)
+
+## Migração de Dados de Usuários Antigos
+
+- [ ] Criar script de migração que lê sessões antigas e reconstrói resultado acumulado por usuário
+- [ ] Calcular banca atual = banca inicial + depósitos - saques + resultado das sessões
+- [ ] Migrar bankrollSettings antigo (initialOnline/initialLive) para o novo modelo de saldo por plataforma
+- [ ] Garantir que nenhum dado de sessão, fundo ou bankroll seja apagado
+
+## Migração de Saldo Legado
+
+- [x] Criar procedure bankroll.getLegacyMigrationStatus para detectar usuários com initialOnline > 0 e sem saldo em nenhuma plataforma
+- [x] Criar banner/modal no Dashboard para usuários legados alocarem saldo por plataforma
+- [x] Após alocação: zerar initialOnline e marcar migração como concluída

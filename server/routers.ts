@@ -701,6 +701,40 @@ export const appRouter = router({
           allVenues: venuesWithBrl,
         };
       }),
+    // Detect if user has legacy bankroll (initialOnline > 0 but no venue balances)
+    getLegacyMigrationStatus: protectedProcedure
+      .query(async ({ ctx }) => {
+        const settings = await getBankrollSettings(ctx.user.id);
+        if (!settings || settings.initialOnline <= 0) return { needsMigration: false, legacyOnlineAmount: 0 };
+        // Check if any online venue already has a balance
+        const allVenues = await getUserVenues(ctx.user.id);
+        const hasOnlineBalance = allVenues.some(v => v.type === "online" && v.balance > 0);
+        if (hasOnlineBalance) return { needsMigration: false, legacyOnlineAmount: 0 };
+        return {
+          needsMigration: true,
+          legacyOnlineAmount: settings.initialOnline, // centavos BRL
+        };
+      }),
+    // Allocate legacy online balance to a specific venue
+    completeLegacyMigration: protectedProcedure
+      .input(z.object({
+        allocations: z.array(z.object({
+          venueId: z.number().int(),
+          amount: z.number().int().min(0), // centavos BRL
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // For each allocation, update the venue balance and record history
+        for (const alloc of input.allocations) {
+          if (alloc.amount <= 0) continue;
+          await updateVenueBalance(alloc.venueId, ctx.user.id, alloc.amount, "BRL", "manual",
+            { note: "Migração: saldo legado alocado a esta plataforma" });
+        }
+        // Zero out the legacy initialOnline so the banner disappears
+        const current = await getBankrollSettings(ctx.user.id);
+        await upsertBankrollSettings(ctx.user.id, 0, current?.initialLive ?? 0);
+        return { success: true };
+      }),
     // Get bankroll history for charts
     history: protectedProcedure
       .input(z.object({

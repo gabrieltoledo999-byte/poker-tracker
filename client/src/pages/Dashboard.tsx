@@ -426,9 +426,20 @@ export default function Dashboard() {
   const utils = trpc.useUtils();
   const [chartPeriod, setChartPeriod] = useState<"online" | "live" | "all">("all");
   const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions">("roi");
-  const [showOnboarding, setShowOnboarding] = useState(true);
-
+   const [showOnboarding, setShowOnboarding] = useState(true);
+  const [showLegacyModal, setShowLegacyModal] = useState(true);
+  const [legacyAllocations, setLegacyAllocations] = useState<Record<number, string>>({});
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
+  const { data: legacyStatus } = trpc.bankroll.getLegacyMigrationStatus.useQuery();
+  const completeLegacyMigrationMutation = trpc.bankroll.completeLegacyMigration.useMutation({
+    onSuccess: () => {
+      setShowLegacyModal(false);
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.getLegacyMigrationStatus.invalidate();
+      toast.success("Saldo migrado com sucesso! Seu patrimônio foi atualizado.");
+    },
+    onError: (err) => toast.error(`Erro ao migrar saldo: ${err.message}`),
+  });
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
@@ -539,6 +550,67 @@ export default function Dashboard() {
           <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nova Sessão</Button>
         </Link>
       </div>
+
+      {/* Modal de migração legada */}
+      {legacyStatus?.needsMigration && showLegacyModal && (
+        <Dialog open={showLegacyModal} onOpenChange={setShowLegacyModal}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-amber-400" />
+                Distribua seu saldo por plataforma
+              </DialogTitle>
+              <DialogDescription>
+                Encontramos um saldo online de <strong>{formatCurrency(legacyStatus.legacyOnlineAmount)}</strong> registrado anteriormente sem plataforma definida.
+                Indique em qual(is) plataforma(s) esse dinheiro está para que seu patrimônio fique correto.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2 max-h-72 overflow-y-auto">
+              {allVenues.filter((v: any) => v.type === "online").map((v: any) => (
+                <div key={v.id} className="flex items-center gap-3 p-3 rounded-lg border border-border/40 bg-muted/20">
+                  <div className="h-9 w-9 rounded-lg bg-muted/60 flex items-center justify-center shrink-0 overflow-hidden">
+                    {v.logoUrl ? (
+                      <img src={v.logoUrl} alt={v.name} className="h-full w-full object-contain" />
+                    ) : (
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">{v.name}</p>
+                    <p className="text-xs text-muted-foreground">{v.currency || "BRL"}</p>
+                  </div>
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    className="w-28 h-8 text-sm"
+                    value={legacyAllocations[v.id] ?? ""}
+                    onChange={(e) => setLegacyAllocations(prev => ({ ...prev, [v.id]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-border/30">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setShowLegacyModal(false)}>
+                Fazer depois
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                disabled={completeLegacyMigrationMutation.isPending}
+                onClick={() => {
+                  const allocations = Object.entries(legacyAllocations)
+                    .filter(([, v]) => v && parseFloat(v) > 0)
+                    .map(([id, v]) => ({ venueId: parseInt(id), amount: Math.round(parseFloat(v) * 100) }));
+                  if (!allocations.length) { toast.error("Defina o saldo em ao menos uma plataforma"); return; }
+                  completeLegacyMigrationMutation.mutate({ allocations });
+                }}
+              >
+                <CheckCircle2 className="h-4 w-4" /> Confirmar distribuição
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Banner de onboarding */}
       {showOnboarding && allVenues.length > 0 && (

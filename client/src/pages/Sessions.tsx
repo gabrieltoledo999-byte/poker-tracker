@@ -42,9 +42,16 @@ function formatCurrency(value: number, currency: string) {
 }
 
 function formatDuration(startedAt: string | Date) {
-  const start = new Date(startedAt).getTime();
-  const now = Date.now();
-  const diff = Math.floor((now - start) / 1000);
+  // Parse startedAt as UTC (MySQL timestamps come without timezone info)
+  const raw = startedAt instanceof Date ? startedAt : new Date(startedAt);
+  // If the string has no timezone suffix, treat it as UTC
+  const startMs = typeof startedAt === "string" && !startedAt.endsWith("Z") && !startedAt.includes("+")
+    ? Date.UTC(
+        raw.getUTCFullYear(), raw.getUTCMonth(), raw.getUTCDate(),
+        raw.getUTCHours(), raw.getUTCMinutes(), raw.getUTCSeconds()
+      )
+    : raw.getTime();
+  const diff = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
   const h = Math.floor(diff / 3600);
   const m = Math.floor((diff % 3600) / 60);
   const s = diff % 60;
@@ -402,6 +409,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
   const [cashOutTableId, setCashOutTableId] = useState<number | null>(null);
   const [showDiscard, setShowDiscard] = useState(false);
   const [showFinalize, setShowFinalize] = useState(false);
+  const [finalizeStep, setFinalizeStep] = useState<"ask-more" | "confirm">("ask-more");
   const [finalNotes, setFinalNotes] = useState("");
 
   const { data: venues } = trpc.venues.list.useQuery({});
@@ -581,7 +589,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
         </Button>
         <Button
           className="flex-1"
-          onClick={() => setShowFinalize(true)}
+          onClick={() => { setFinalizeStep("ask-more"); setShowFinalize(true); }}
           disabled={session.tables.length === 0}
         >
           <CheckCircle className="h-4 w-4 mr-2" /> Finalizar Sessão
@@ -619,50 +627,72 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Finalize dialog */}
-      <Dialog open={showFinalize} onOpenChange={setShowFinalize}>
+      {/* Finalize dialog — two-step */}
+      <Dialog open={showFinalize} onOpenChange={(open) => { if (!open) setShowFinalize(false); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Finalizar Sessão</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Duração</span>
-                <span className="font-mono font-medium">{elapsed}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Mesas</span>
-                <span className="font-medium">{session.tables.length}</span>
-              </div>
-              {totalProfit !== null && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Resultado</span>
-                  <span className={`font-semibold ${totalProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {totalProfit >= 0 ? "+" : ""}R${(totalProfit / 100).toFixed(2)}
-                  </span>
+          {finalizeStep === "ask-more" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Deseja adicionar mais alguma mesa?</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Você tem <strong>{session.tables.length}</strong> {session.tables.length === 1 ? "mesa" : "mesas"} registrada{session.tables.length === 1 ? "" : "s"} nesta sessão.
+                Deseja adicionar mais antes de finalizar?
+              </p>
+              <DialogFooter className="flex gap-2 pt-2">
+                <Button variant="outline" onClick={() => { setShowFinalize(false); setShowAddTable(true); }}>
+                  Sim, adicionar mesa
+                </Button>
+                <Button onClick={() => setFinalizeStep("confirm")}>
+                  Não, finalizar
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Tem certeza que deseja finalizar a sessão?</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Duração</span>
+                    <span className="font-mono font-medium">{elapsed}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Mesas</span>
+                    <span className="font-medium">{session.tables.length}</span>
+                  </div>
+                  {totalProfit !== null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Resultado estimado</span>
+                      <span className={`font-semibold ${totalProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
+                        {totalProfit >= 0 ? "+" : ""}R${(totalProfit / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Notas (opcional)</Label>
-              <Textarea
-                placeholder="Como foi a sessão?"
-                value={finalNotes}
-                onChange={(e) => setFinalNotes(e.target.value)}
-                rows={3}
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowFinalize(false)}>Cancelar</Button>
-              <Button
-                onClick={() => finalizeMutation.mutate({ activeSessionId: session.id, notes: finalNotes || undefined })}
-                disabled={finalizeMutation.isPending}
-              >
-                {finalizeMutation.isPending ? "Salvando..." : "Confirmar"}
-              </Button>
-            </DialogFooter>
-          </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Notas (opcional)</Label>
+                  <Textarea
+                    placeholder="Como foi a sessão?"
+                    value={finalNotes}
+                    onChange={(e) => setFinalNotes(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setFinalizeStep("ask-more")}>Voltar</Button>
+                  <Button
+                    onClick={() => finalizeMutation.mutate({ activeSessionId: session.id, notes: finalNotes || undefined })}
+                    disabled={finalizeMutation.isPending}
+                  >
+                    {finalizeMutation.isPending ? "Salvando..." : "Confirmar Finalização"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
