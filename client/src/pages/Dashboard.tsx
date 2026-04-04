@@ -187,32 +187,113 @@ function ClubCard({ club, onEdit, onDelete }: {
   );
 }
 
+// Suggested clubs list
+const SUGGESTED_CLUBS = [
+  // Online
+  { name: "Suprema Poker", type: "online" as const, logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Suprema_Poker_logo.png/200px-Suprema_Poker_logo.png", emoji: "♠️" },
+  { name: "PPPoker", type: "online" as const, logoUrl: "", emoji: "🃏" },
+  { name: "ClubGG", type: "online" as const, logoUrl: "", emoji: "🎯" },
+  { name: "PokerBros", type: "online" as const, logoUrl: "", emoji: "🤝" },
+  { name: "X-Poker", type: "online" as const, logoUrl: "", emoji: "✖️" },
+  { name: "PokerStars", type: "online" as const, logoUrl: "", emoji: "⭐" },
+  { name: "GGPoker", type: "online" as const, logoUrl: "", emoji: "🟢" },
+  { name: "WPT Global", type: "online" as const, logoUrl: "", emoji: "🌍" },
+  { name: "888poker", type: "online" as const, logoUrl: "", emoji: "8️⃣" },
+  { name: "KKPoker", type: "online" as const, logoUrl: "", emoji: "👑" },
+  // Live BR
+  { name: "Monte Carlo Poker Club", type: "live" as const, logoUrl: "", emoji: "🎰" },
+  { name: "H2 Club São Paulo", type: "live" as const, logoUrl: "", emoji: "🏆" },
+  { name: "H2 Club Curitiba", type: "live" as const, logoUrl: "", emoji: "🏆" },
+  { name: "H2 Club Campinas", type: "live" as const, logoUrl: "", emoji: "🏆" },
+  { name: "BHZ Poker Clube", type: "live" as const, logoUrl: "", emoji: "🎲" },
+  { name: "Fold Poker Club", type: "live" as const, logoUrl: "", emoji: "🃏" },
+  { name: "Acaraí Poker Club", type: "live" as const, logoUrl: "", emoji: "🌴" },
+  { name: "QG Masters Club", type: "live" as const, logoUrl: "", emoji: "👑" },
+  { name: "HiJack Poker Club", type: "live" as const, logoUrl: "", emoji: "🎯" },
+  { name: "Stars Club Poker Room", type: "live" as const, logoUrl: "", emoji: "⭐" },
+  { name: "Players Poker Club", type: "live" as const, logoUrl: "", emoji: "🃏" },
+  { name: "Home Game", type: "live" as const, logoUrl: "", emoji: "🏠" },
+];
+
 function ClubDialog({ open, onOpenChange, initial, onSave }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   initial?: { id?: number; name: string; logoUrl?: string | null; type: string; allocatedAmount: number; notes?: string | null };
   onSave: (data: { name: string; logoUrl?: string; type: "online" | "live"; allocatedAmount: number; notes?: string }) => void;
 }) {
+  const [step, setStep] = useState<"pick" | "form">(initial?.id ? "form" : "pick");
+  const [filterType, setFilterType] = useState<"all" | "online" | "live">("all");
   const [name, setName] = useState(initial?.name || "");
   const [logoUrl, setLogoUrl] = useState(initial?.logoUrl || "");
   const [type, setType] = useState<"online" | "live">(initial?.type as "online" | "live" || "online");
   const [amount, setAmount] = useState(initial ? String(initial.allocatedAmount / 100) : "");
   const [notes, setNotes] = useState(initial?.notes || "");
 
+  const filteredSuggestions = SUGGESTED_CLUBS.filter(c => filterType === "all" || c.type === filterType);
+
+  const selectSuggestion = (club: typeof SUGGESTED_CLUBS[0]) => {
+    setName(club.name);
+    setType(club.type);
+    setLogoUrl(club.logoUrl || "");
+    setStep("form");
+  };
+
   const handleSubmit = () => {
     if (!name.trim()) { toast.error("Nome obrigatório"); return; }
     const val = Math.round(parseFloat(amount.replace(",", ".") || "0") * 100);
     onSave({ name: name.trim(), logoUrl: logoUrl || undefined, type, allocatedAmount: val, notes: notes || undefined });
     onOpenChange(false);
+    setStep("pick");
+  };
+
+  const handleClose = (v: boolean) => {
+    onOpenChange(v);
+    if (!v) { setStep(initial?.id ? "form" : "pick"); }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{initial?.id ? "Editar Clube" : "Novo Clube"}</DialogTitle>
+          <DialogTitle>{initial?.id ? "Editar Clube" : step === "pick" ? "Adicionar Clube" : `Configurar: ${name || "Clube Personalizado"}`}</DialogTitle>
         </DialogHeader>
+
+        {step === "pick" && !initial?.id ? (
+          <div className="space-y-3">
+            {/* Filter tabs */}
+            <div className="flex gap-1.5">
+              {(["all", "online", "live"] as const).map(f => (
+                <Button key={f} size="sm" variant={filterType === f ? "default" : "outline"}
+                  className="h-7 px-3 text-xs capitalize flex-1" onClick={() => setFilterType(f)}>
+                  {f === "all" ? "Todos" : f === "online" ? "🖥️ Online" : "🎰 Live"}
+                </Button>
+              ))}
+            </div>
+
+            {/* Suggestions grid */}
+            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+              {filteredSuggestions.map((club) => (
+                <button key={club.name} onClick={() => selectSuggestion(club)}
+                  className="flex items-center gap-2 p-2.5 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/60 hover:border-primary/40 transition-colors text-left">
+                  <span className="text-lg shrink-0">{club.emoji}</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold truncate">{club.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{club.type === "online" ? "Online" : "Live"}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Custom club button */}
+            <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => { setName(""); setType("online"); setLogoUrl(""); setStep("form"); }}>
+              <Plus className="h-4 w-4" /> Clube Personalizado / Home Game
+            </Button>
+          </div>
+        ) : (
         <div className="space-y-3 mt-2">
-          <div><Label>Nome do Clube</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: PPPoker, ClubGG..." /></div>
+          {!initial?.id && (
+            <button onClick={() => setStep("pick")} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">← Voltar à lista</button>
+          )}
+          <div><Label>Nome do Clube</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: PPPoker, Home Game..." /></div>
           <div><Label>Tipo</Label>
             <Select value={type} onValueChange={(v) => setType(v as "online" | "live")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -225,8 +306,9 @@ function ClubDialog({ open, onOpenChange, initial, onSave }: {
           <div><Label>Bankroll Alocado (R$)</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" /></div>
           <div><Label>URL da Logo (opcional)</Label><Input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://..." /></div>
           <div><Label>Notas (opcional)</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Observações..." /></div>
-          <Button className="w-full" onClick={handleSubmit}>{initial?.id ? "Salvar" : "Criar Clube"}</Button>
+          <Button className="w-full" onClick={handleSubmit}>{initial?.id ? "Salvar" : "Adicionar Clube"}</Button>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );
