@@ -270,3 +270,17 @@
 
 - [x] Patrimônio total deve exibir initialOnline + resultado das sessões quando usuário ainda não associou saldo a plataformas
 - [x] Adicionar indicador visual no Dashboard quando patrimônio é calculado pelo método legado (sem plataforma associada)
+
+## Cotação de Moedas — Correção Urgente
+
+- [x] AwesomeAPI retorna 429 (quota excedida) causando fallback fixo de R$ 5,75
+- [x] Substituir por API sem quota (open.er-api.com + frankfurter.dev como fallback)
+- [x] Reduzir cache de 24h para 1h para garantir cotação mais atual
+- [ ] Exibir data/hora da última atualização da cotação no Dashboard
+
+## Gráficos — Escala Dinâmica
+
+- [x] Eixo Y dos gráficos deve se adaptar ao bankroll real do usuário (não ficar na casa de milhão se o saldo é baixo)
+- [x] Gráfico de área de evolução: domínio Y baseado nos valores mínimo e máximo dos dados reais
+- [ ] Gráfico de barras de desempenho: escala proporcional ao maior valor presente
+- [x] Formatação do eixo Y deve usar a mesma função formatCurrencyCompact para exibir valores legíveis

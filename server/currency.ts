@@ -1,7 +1,9 @@
-// Currency conversion service using AwesomeAPI (free, no auth required)
-// Cache duration: 24 hours (daily rates)
+// Currency conversion service
+// Primary: open.er-api.com (free, no auth, updated daily)
+// Fallback: frankfurter.dev (ECB rates, free, no auth)
+// Cache: 1 hour (to stay reasonably fresh without hammering APIs)
 
-const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 
 interface RateCache {
   rate: number;
@@ -20,101 +22,110 @@ function isCacheValid(cache: RateCache | null): boolean {
   return Date.now() - cache.timestamp < CACHE_DURATION;
 }
 
-export async function getUsdToBrlRate(): Promise<number> {
-  if (isCacheValid(usdCache)) return usdCache!.rate;
+// Fetch all three rates in a single request from open.er-api.com
+async function fetchAllRatesFromOpenER(): Promise<{ BRL: number; CAD: number; JPY: number }> {
+  const response = await fetch("https://open.er-api.com/v6/latest/USD", {
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!response.ok) throw new Error(`open.er-api HTTP ${response.status}`);
+  const data: any = await response.json();
+  if (data.result !== "success") throw new Error(`open.er-api: ${data["error-type"] ?? "unknown error"}`);
+  const rates = data.rates;
+  return {
+    BRL: rates.BRL,
+    CAD: rates.CAD,
+    JPY: rates.JPY,
+  };
+}
+
+// Fallback: frankfurter.dev (ECB-sourced, free)
+async function fetchAllRatesFromFrankfurter(): Promise<{ BRL: number; CAD: number; JPY: number }> {
+  const response = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=BRL,CAD,JPY", {
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!response.ok) throw new Error(`frankfurter HTTP ${response.status}`);
+  const data: any = await response.json();
+  return {
+    BRL: data.rates.BRL,
+    CAD: data.rates.CAD,
+    JPY: data.rates.JPY,
+  };
+}
+
+// Fetch all rates once and populate all three caches
+async function refreshAllCaches(): Promise<void> {
+  const now = Date.now();
+  const fetchedAt = new Date().toISOString();
 
   try {
-    const response = await fetch("https://economia.awesomeapi.com.br/json/last/USD-BRL", {
-      signal: AbortSignal.timeout(5000),
-    });
+    const rates = await fetchAllRatesFromOpenER();
+    usdCache = { rate: rates.BRL, timestamp: now, source: "api", fetchedAt };
+    cadCache = { rate: rates.BRL / rates.CAD, timestamp: now, source: "api", fetchedAt };
+    jpyCache = { rate: rates.BRL / rates.JPY, timestamp: now, source: "api", fetchedAt };
+    console.log(`[Currency] Rates updated from open.er-api: USD=${rates.BRL?.toFixed(4)}, CAD=${(rates.BRL / rates.CAD)?.toFixed(4)}, JPY=${(rates.BRL / rates.JPY)?.toFixed(6)}`);
+    return;
+  } catch (err) {
+    console.warn("[Currency] open.er-api failed, trying frankfurter.dev:", err);
+  }
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const data: any = await response.json();
-    const rate = parseFloat(data.USDBRL.bid);
-
-    usdCache = {
-      rate,
-      timestamp: Date.now(),
-      source: "api",
-      fetchedAt: new Date().toISOString(),
-    };
-
-    return rate;
-  } catch (error) {
-    console.error("[Currency] Failed to fetch USD/BRL rate:", error);
-
-    // Return stale cache if available
-    if (usdCache) return usdCache.rate;
-
-    // Fallback rate
-    usdCache = { rate: 5.75, timestamp: Date.now(), source: "fallback", fetchedAt: new Date().toISOString() };
-    return usdCache.rate;
+  try {
+    const rates = await fetchAllRatesFromFrankfurter();
+    usdCache = { rate: rates.BRL, timestamp: now, source: "api", fetchedAt };
+    cadCache = { rate: rates.BRL / rates.CAD, timestamp: now, source: "api", fetchedAt };
+    jpyCache = { rate: rates.BRL / rates.JPY, timestamp: now, source: "api", fetchedAt };
+    console.log(`[Currency] Rates updated from frankfurter.dev: USD=${rates.BRL?.toFixed(4)}, CAD=${(rates.BRL / rates.CAD)?.toFixed(4)}, JPY=${(rates.BRL / rates.JPY)?.toFixed(6)}`);
+    return;
+  } catch (err) {
+    console.error("[Currency] Both APIs failed:", err);
+    throw err;
   }
 }
 
-export async function getJpyToBrlRate(): Promise<number> {
-  if (isCacheValid(jpyCache)) return jpyCache!.rate;
-
-  try {
-    const response = await fetch("https://economia.awesomeapi.com.br/json/last/JPY-BRL", {
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const data: any = await response.json();
-    const rate = parseFloat(data.JPYBRL.bid);
-
-    jpyCache = {
-      rate,
-      timestamp: Date.now(),
-      source: "api",
-      fetchedAt: new Date().toISOString(),
-    };
-
-    return rate;
-  } catch (error) {
-    console.error("[Currency] Failed to fetch JPY/BRL rate:", error);
-
-    if (jpyCache) return jpyCache.rate;
-
-    // Fallback: 1 JPY ≈ R$ 0.038
-    jpyCache = { rate: 0.038, timestamp: Date.now(), source: "fallback", fetchedAt: new Date().toISOString() };
-    return jpyCache.rate;
+async function ensureCachesPopulated(): Promise<void> {
+  // If any cache is missing or stale, refresh all at once
+  if (!isCacheValid(usdCache) || !isCacheValid(cadCache) || !isCacheValid(jpyCache)) {
+    await refreshAllCaches();
   }
+}
+
+export async function getUsdToBrlRate(): Promise<number> {
+  try {
+    await ensureCachesPopulated();
+    if (usdCache) return usdCache.rate;
+  } catch (err) {
+    console.error("[Currency] Failed to fetch USD/BRL rate:", err);
+    if (usdCache) return usdCache.rate; // return stale if available
+  }
+  // Hard fallback — only if both APIs fail AND no stale cache
+  const fallbackRate = 5.80;
+  usdCache = { rate: fallbackRate, timestamp: Date.now() - CACHE_DURATION + 5 * 60 * 1000, source: "fallback", fetchedAt: new Date().toISOString() };
+  return fallbackRate;
 }
 
 export async function getCadToBrlRate(): Promise<number> {
-  if (isCacheValid(cadCache)) return cadCache!.rate;
-
   try {
-    const response = await fetch("https://economia.awesomeapi.com.br/json/last/CAD-BRL", {
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const data: any = await response.json();
-    const rate = parseFloat(data.CADBRL.bid);
-
-    cadCache = {
-      rate,
-      timestamp: Date.now(),
-      source: "api",
-      fetchedAt: new Date().toISOString(),
-    };
-
-    return rate;
-  } catch (error) {
-    console.error("[Currency] Failed to fetch CAD/BRL rate:", error);
-
+    await ensureCachesPopulated();
     if (cadCache) return cadCache.rate;
-
-    // Fallback: 1 CAD ≈ R$ 4.20
-    cadCache = { rate: 4.20, timestamp: Date.now(), source: "fallback", fetchedAt: new Date().toISOString() };
-    return cadCache.rate;
+  } catch (err) {
+    console.error("[Currency] Failed to fetch CAD/BRL rate:", err);
+    if (cadCache) return cadCache.rate;
   }
+  const fallbackRate = 4.20;
+  cadCache = { rate: fallbackRate, timestamp: Date.now() - CACHE_DURATION + 5 * 60 * 1000, source: "fallback", fetchedAt: new Date().toISOString() };
+  return fallbackRate;
+}
+
+export async function getJpyToBrlRate(): Promise<number> {
+  try {
+    await ensureCachesPopulated();
+    if (jpyCache) return jpyCache.rate;
+  } catch (err) {
+    console.error("[Currency] Failed to fetch JPY/BRL rate:", err);
+    if (jpyCache) return jpyCache.rate;
+  }
+  const fallbackRate = 0.038;
+  jpyCache = { rate: fallbackRate, timestamp: Date.now() - CACHE_DURATION + 5 * 60 * 1000, source: "fallback", fetchedAt: new Date().toISOString() };
+  return fallbackRate;
 }
 
 /** Returns all exchange rates at once (used by the dashboard) */

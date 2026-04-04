@@ -752,8 +752,8 @@ export const appRouter = router({
         const settings = await getBankrollSettings(ctx.user.id);
         const sessions = await getBankrollHistory(ctx.user.id, input?.type);
         
-        let initialOnline = settings?.initialOnline ?? 100000;
-        let initialLive = settings?.initialLive ?? 400000;
+        let initialOnline = settings?.initialOnline ?? 0;
+        let initialLive = settings?.initialLive ?? 0;
         
         let runningOnline = initialOnline;
         let runningLive = initialLive;

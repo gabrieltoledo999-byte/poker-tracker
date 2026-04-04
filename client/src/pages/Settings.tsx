@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon } from "lucide-react";
-import { useTheme } from "@/contexts/ThemeContext";
+import { useTheme, ACCENT_COLORS, type AccentColor } from "@/contexts/ThemeContext";
 
 // Helper to format currency
 function formatCurrency(centavos: number): string {
@@ -194,7 +194,7 @@ export default function Settings() {
     }
   };
 
-  const { theme, toggleTheme } = useTheme();
+  const { theme, toggleTheme, accentColor, setAccentColor } = useTheme();
 
   if (isLoading) {
     return (
@@ -439,27 +439,62 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between p-4 rounded-lg border">
-            <div className="flex items-center gap-3">
-              {theme === "dark" ? (
-                <Moon className="h-8 w-8 text-[oklch(0.6_0.15_250)]" />
-              ) : (
-                <Sun className="h-8 w-8 text-[oklch(0.7_0.15_85)]" />
-              )}
-              <div>
-                <p className="font-medium">{theme === "dark" ? "Tema Escuro" : "Tema Claro"}</p>
-                <p className="text-sm text-muted-foreground">
-                  {theme === "dark" ? "Interface escura, ideal para uso noturno" : "Interface clara, ideal para uso diurno"}
-                </p>
+          <div className="space-y-5">
+            {/* Tema claro/escuro */}
+            <div className="flex items-center justify-between p-4 rounded-lg border">
+              <div className="flex items-center gap-3">
+                {theme === "dark" ? (
+                  <Moon className="h-8 w-8 text-[oklch(0.6_0.15_250)]" />
+                ) : (
+                  <Sun className="h-8 w-8 text-[oklch(0.7_0.15_85)]" />
+                )}
+                <div>
+                  <p className="font-medium">{theme === "dark" ? "Tema Escuro" : "Tema Claro"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {theme === "dark" ? "Interface escura, ideal para uso noturno" : "Interface clara, ideal para uso diurno"}
+                  </p>
+                </div>
               </div>
+              <Button onClick={toggleTheme} variant="outline" className="gap-2">
+                {theme === "dark" ? (
+                  <><Sun className="h-4 w-4" />Mudar para Claro</>
+                ) : (
+                  <><Moon className="h-4 w-4" />Mudar para Escuro</>
+                )}
+              </Button>
             </div>
-            <Button onClick={toggleTheme} variant="outline" className="gap-2">
-              {theme === "dark" ? (
-                <><Sun className="h-4 w-4" />Mudar para Claro</>
-              ) : (
-                <><Moon className="h-4 w-4" />Mudar para Escuro</>
-              )}
-            </Button>
+
+            {/* Cor de acento */}
+            <div className="p-4 rounded-lg border space-y-3">
+              <div>
+                <p className="font-medium">Cor de Destaque</p>
+                <p className="text-sm text-muted-foreground">Escolha a cor principal do aplicativo. Salva automaticamente.</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {(Object.entries(ACCENT_COLORS) as [AccentColor, typeof ACCENT_COLORS[AccentColor]][]).map(([key, val]) => (
+                  <button
+                    key={key}
+                    title={val.label}
+                    onClick={() => setAccentColor(key)}
+                    className={`relative h-9 w-9 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      accentColor === key ? "ring-2 ring-offset-2 ring-offset-background scale-110" : "hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: val.hex }}
+                  >
+                    {accentColor === key && (
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="white" strokeWidth={3}>
+                          <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cor atual: <span className="font-medium" style={{ color: ACCENT_COLORS[accentColor].hex }}>{ACCENT_COLORS[accentColor].label}</span>
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

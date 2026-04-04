@@ -472,6 +472,22 @@ export default function Dashboard() {
     }));
   }, [history]);
 
+  // Domínio dinâmico do eixo Y — se adapta ao bankroll real do usuário
+  const chartYDomain = useMemo((): [number, number] => {
+    if (!chartData.length) return [0, 100];
+    const allValues: number[] = [];
+    chartData.forEach((d) => {
+      if (chartPeriod === "all" || chartPeriod === "online") allValues.push(d.online);
+      if (chartPeriod === "all" || chartPeriod === "live") allValues.push(d.live);
+      if (chartPeriod === "all") allValues.push(d.total);
+    });
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    const range = maxVal - minVal || Math.abs(maxVal) || 100;
+    const padding = range * 0.15;
+    return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)];
+  }, [chartData, chartPeriod]);
+
   // Donut: Live vs Online (2 fatias)
   const donutData = useMemo(() => {
     if (!consolidated) return [];
@@ -887,6 +903,7 @@ export default function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.03 240 / 0.4)" />
                       <XAxis dataKey="date" stroke="oklch(0.55 0.01 240)" fontSize={11} tickLine={false} />
                       <YAxis stroke="oklch(0.55 0.01 240)" fontSize={11} tickLine={false} axisLine={false}
+                        domain={chartYDomain}
                         tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { notation: "compact", style: "currency", currency: "BRL" }).format(v)} />
                       <ReferenceLine y={0} stroke="oklch(0.4 0.01 240)" strokeDasharray="4 4" />
                       <RechartsTooltip content={<CustomTooltip />} />
