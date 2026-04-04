@@ -151,9 +151,11 @@ function VenueRow({
       >
         <CirclePercent pct={pct} color={color} size={44} />
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="h-10 w-10 rounded-lg bg-muted/60 flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+          <div className="h-10 w-10 rounded-lg bg-muted/60 flex items-center justify-center shrink-0 overflow-hidden">
             {venue.logoUrl ? (
-              <img src={venue.logoUrl} alt={venue.name} className="h-full w-full object-contain rounded-md" />
+              <img src={venue.logoUrl} alt={venue.name} className={`h-full w-full rounded-md ${
+                venue.name === "Suprema Poker" || venue.name === "WPT Global" ? "object-cover" : "object-contain"
+              }`} />
             ) : (
               <Building2 className="h-5 w-5 text-muted-foreground" />
             )}
@@ -1036,8 +1038,8 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground">Clique para expandir e definir/editar saldo</p>
             </CardHeader>
             <CardContent className="px-3 py-0 max-h-[500px] overflow-y-auto">
-              {allVenues.length > 0 ? (
-                allVenues.map((venue: any, i: number) => (
+              {allVenues.filter((v: any) => v.type === "online").length > 0 ? (
+                allVenues.filter((v: any) => v.type === "online").map((venue: any, i: number) => (
                   <VenueRow
                     key={venue.id}
                     venue={venue}

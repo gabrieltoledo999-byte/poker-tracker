@@ -296,4 +296,14 @@
 - [x] Adicionar botão "Definir saldo" na seção Live do Dashboard (card de patrimônio)
 - [x] Modal inline para editar initialLive sem sair do Dashboard
 - [x] Após salvar, invalidar a query getConsolidated para atualizar o gráfico imediatamente
+
+## Plataformas — Ajustes Visuais
+
+- [x] Remover Stars Club Poker Room da lista de plataformas padrão
+- [x] Remover Players Poker Club da lista de plataformas padrão
+- [x] Aumentar logo da Suprema para caber no campo completo (object-cover)
+- [x] Aumentar logo da WPT para caber no campo completo (object-cover)
+- [x] Remover clubes Live da seção Minhas Plataformas do Dashboard (manter só online)
+- [x] Remover clubes Live dos presets permanentemente (H2 Club, Monte Carlo)
+- [ ] Exibir o bankroll Live como card separado na tela inicial
 - [x] Formatação do eixo Y deve usar a mesma função formatCurrencyCompact para exibir valores legíveis

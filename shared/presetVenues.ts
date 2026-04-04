@@ -4,6 +4,7 @@ export interface PresetVenue {
   name: string;
   type: "online" | "live";
   logoUrl: string;
+  logoFit?: "contain" | "cover";
   website?: string;
 }
 
@@ -15,6 +16,7 @@ export const PRESET_VENUES: PresetVenue[] = [
     name: "Suprema Poker",
     type: "online",
     logoUrl: `${CDN}/suprema_clean_8aafbdb1.png`,
+    logoFit: "cover",
     website: "https://www.supremapoker.com",
   },
   {
@@ -51,6 +53,7 @@ export const PRESET_VENUES: PresetVenue[] = [
     name: "WPT Global",
     type: "online",
     logoUrl: `${CDN}/wpt_clean_3b04995e.png`,
+    logoFit: "cover",
     website: "https://wptglobal.com",
   },
   {
@@ -70,41 +73,6 @@ export const PRESET_VENUES: PresetVenue[] = [
     type: "online",
     logoUrl: `${CDN}/xpoker-logo_a9942cfe.png`,
     website: "https://www.xpokerapp.com",
-  },
-  // Live Poker Clubs - Brazil
-  {
-    name: "Monte Carlo Poker Club",
-    type: "live",
-    logoUrl: `${CDN}/montecarlo_real_d486b53f.jpg`,
-    website: "https://www.montecarlopoker.com.br",
-  },
-  {
-    name: "H2 Club São Paulo",
-    type: "live",
-    logoUrl: `${CDN}/h2club_58b7eae7.png`,
-    website: "https://sp.h2club.com.br",
-  },
-  {
-    name: "H2 Club Curitiba",
-    type: "live",
-    logoUrl: `${CDN}/h2club_58b7eae7.png`,
-    website: "https://curitiba.h2club.com.br",
-  },
-  {
-    name: "H2 Club Campinas",
-    type: "live",
-    logoUrl: `${CDN}/h2club_58b7eae7.png`,
-    website: "https://campinas.h2club.com.br",
-  },
-  {
-    name: "Stars Club Poker Room",
-    type: "live",
-    logoUrl: `${CDN}/starsclub_icon_d24b5f93.png`,
-  },
-  {
-    name: "Players Poker Club",
-    type: "live",
-    logoUrl: `${CDN}/players_icon_63bc2826.png`,
   },
 ];
 
