@@ -100,13 +100,15 @@ describe("bankroll.getConsolidated", () => {
     expect(result.live.initial).toBe(200000);
   });
 
-  it("total.current is sum of online venues balances + live bankroll", async () => {
+  it("total.current is sum of online bankroll (initialOnline + profit) + live bankroll", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.bankroll.getConsolidated();
 
-    // online venue balance = 50000 BRL, live = 205000
-    expect(result.total.current).toBe(50000 + 205000);
+    // online = initialOnline(100000) + onlineStats.totalProfit(5000) + fundTotals.online.net(0) = 105000
+    // live = initialLive(200000) + liveStats.totalProfit(5000) + fundTotals.live.net(0) = 205000
+    // total = 105000 + 205000 = 310000
+    expect(result.total.current).toBe(105000 + 205000);
   });
 });
 
@@ -162,12 +164,12 @@ describe("bankroll.getConsolidated - legacy user (initialOnline without venue ba
     expect(result.online.current).toBe(105000);
   });
 
-  it("returns hasVenueBalances=true when at least one online venue has balance", async () => {
+  it("returns hasVenueBalances=false always (deprecated field, kept for compatibility)", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.bankroll.getConsolidated();
-    // Default mock has PokerStars with balance=50000
-    expect(result.hasVenueBalances).toBe(true);
+    // hasVenueBalances is deprecated and always false in new single-bankroll logic
+    expect(result.hasVenueBalances).toBe(false);
   });
 });
 

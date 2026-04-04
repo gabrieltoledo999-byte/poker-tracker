@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, ListChecks, Settings, Spade, MapPin, Users, Wallet, Palette } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, ListChecks, Settings, MapPin, Users, Wallet, Palette } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -137,11 +137,12 @@ export default function DashboardLayout({
         <div className="flex flex-col items-center gap-10 p-8 max-w-sm w-full">
           {/* Logo grande */}
           <div className="flex flex-col items-center gap-4">
-            <div className="h-24 w-24 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-xl">
-              <Spade className="h-14 w-14 text-primary" />
-            </div>
+            <img
+              src="/therail-logo.png"
+              alt="The Rail"
+              className="h-32 w-auto object-contain drop-shadow-xl"
+            />
             <div className="flex flex-col items-center gap-1">
-              <span className="text-5xl font-bold gradient-text tracking-tight">The Rail</span>
               <span className="text-sm text-muted-foreground tracking-widest uppercase">Poker Bankroll Tracker</span>
             </div>
           </div>
@@ -255,15 +256,20 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="logo flex items-center gap-2 min-w-0 flex-1 cursor-pointer" onClick={() => setLocation("/")}>
-                  <Spade className="h-9 w-9 text-primary shrink-0" />
-                  <span className="text-2xl font-extrabold tracking-tight gradient-text truncate">
-                    The Rail
-                  </span>
+                <div className="logo flex items-center min-w-0 flex-1 cursor-pointer" onClick={() => setLocation("/")}>
+                  <img
+                    src="/therail-logo.png"
+                    alt="The Rail"
+                    className="h-10 w-auto object-contain transition-all hover:drop-shadow-[0_0_8px_rgba(229,9,20,0.8)] hover:scale-105"
+                  />
                 </div>
               ) : (
                 <div className="logo flex justify-center cursor-pointer" onClick={() => setLocation("/")}>
-                  <Spade className="h-9 w-9 text-primary" />
+                  <img
+                    src="/therail-logo.png"
+                    alt="The Rail"
+                    className="h-8 w-auto object-contain"
+                  />
                 </div>
               )}
             </div>

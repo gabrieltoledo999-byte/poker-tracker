@@ -647,49 +647,39 @@ export const appRouter = router({
       .query(async ({ ctx }) => {
         const settings = await getBankrollSettings(ctx.user.id);
         const initialLive = settings?.initialLive ?? 0;
+        const initialOnline = settings?.initialOnline ?? 0;
         const liveStats = await getSessionStats(ctx.user.id, "live");
         const onlineStats = await getSessionStats(ctx.user.id, "online");
         const fundTotals = await getFundTransactionsTotals(ctx.user.id);
         
-        // Get all venues with their balances
+        // Get all venues with session stats (venues are just tags, no balance logic)
         const allVenues = await getUserVenues(ctx.user.id);
         const venueStats = await getStatsByVenue(ctx.user.id);
         const statsMap = new Map(venueStats.map(s => [s.venueId, s]));
         
-        // Convert venue balances to BRL
-        const venuesWithBrl = await Promise.all(
-          allVenues.map(async (v) => {
-            const balanceBrl = await convertToBrl(v.balance, v.currency as "BRL" | "USD" | "CAD" | "JPY");
-            return {
-              ...v,
-              balanceBrl,
-              stats: statsMap.get(v.id) || null,
-            };
-          })
-        );
+        const venuesWithStats = allVenues.map((v) => ({
+          ...v,
+          balanceBrl: 0, // no per-venue balance in new logic
+          stats: statsMap.get(v.id) || null,
+        }));
         
-        // Online venues total (sum of balances)
-        const onlineVenues = venuesWithBrl.filter(v => v.type === "online");
-        const liveVenues = venuesWithBrl.filter(v => v.type === "live");
-        const rawOnlineBalanceTotal = onlineVenues.reduce((sum, v) => sum + v.balanceBrl, 0);
+        const onlineVenues = venuesWithStats.filter(v => v.type === "online");
+        const liveVenues = venuesWithStats.filter(v => v.type === "live");
         
-        // Fallback: se nenhuma plataforma tem saldo definido, usar initialOnline + resultado das sessões
-        const initialOnline = settings?.initialOnline ?? 0;
-        const hasVenueBalances = rawOnlineBalanceTotal > 0;
-        const onlineBalanceTotal = hasVenueBalances
-          ? rawOnlineBalanceTotal
-          : Math.max(0, initialOnline + onlineStats.totalProfit + fundTotals.online.net);
+        // Online bankroll = initialOnline + all online session profit + fund movements
+        const onlineBalanceTotal = Math.max(0, initialOnline + onlineStats.totalProfit + fundTotals.online.net);
         
-        // Live bankroll = defined by user (initialLive) + live session profit
+        // Live bankroll = initialLive + live session profit + fund movements
         const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
         
-        // Total = sum of all online venue balances + live bankroll
+        // Total = online + live
         const totalCurrent = onlineBalanceTotal + Math.max(0, liveCurrent);
         
         return {
-          hasVenueBalances,
+          hasVenueBalances: false, // deprecated, kept for compatibility
           online: {
             current: onlineBalanceTotal,
+            initial: initialOnline,
             profit: onlineStats.totalProfit,
             sessions: onlineStats.totalSessions,
             venues: onlineVenues,
@@ -706,7 +696,7 @@ export const appRouter = router({
             profit: onlineStats.totalProfit + liveStats.totalProfit,
             sessions: onlineStats.totalSessions + liveStats.totalSessions,
           },
-          allVenues: venuesWithBrl,
+          allVenues: venuesWithStats,
         };
       }),
     // Detect if user has legacy bankroll (initialOnline > 0 but no venue balances)
