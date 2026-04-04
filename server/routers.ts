@@ -38,6 +38,15 @@ import {
   updateVenueBalance,
   getVenueBalanceHistory,
   getUserPreferences,
+  startActiveSession,
+  getActiveSession,
+  getActiveSessionTables,
+  addSessionTable,
+  updateSessionTable,
+  removeSessionTable,
+  finalizeActiveSession,
+  discardActiveSession,
+  getSessionTables,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -214,6 +223,106 @@ export const appRouter = router({
     getUserPreferences: protectedProcedure
       .query(async ({ ctx }) => {
         return await getUserPreferences(ctx.user.id);
+      }),
+
+    // ── Active Session (timer-based) ──────────────────────────────────────
+    // Start a new active session (timer begins now)
+    startActive: protectedProcedure
+      .input(z.object({ notes: z.string().optional() }).optional())
+      .mutation(async ({ ctx, input }) => {
+        return await startActiveSession(ctx.user.id, input?.notes);
+      }),
+
+    // Get current active session (null if none)
+    getActive: protectedProcedure
+      .query(async ({ ctx }) => {
+        const active = await getActiveSession(ctx.user.id);
+        if (!active) return null;
+        const tables = await getActiveSessionTables(active.id, ctx.user.id);
+        return { ...active, tables };
+      }),
+
+    // Add a table to the active session
+    addTable: protectedProcedure
+      .input(z.object({
+        activeSessionId: z.number().int(),
+        venueId: z.number().int().optional(),
+        type: z.enum(["online", "live"]).default("online"),
+        gameFormat: gameFormatEnum.default("tournament"),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY"]).default("BRL"),
+        buyIn: z.number().int().min(0),
+        gameType: z.string().optional(),
+        stakes: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await addSessionTable({
+          ...input,
+          userId: ctx.user.id,
+          startedAt: new Date(),
+        });
+      }),
+
+    // Update a table (e.g. set cashOut when leaving)
+    updateTable: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        venueId: z.number().int().optional(),
+        type: z.enum(["online", "live"]).optional(),
+        gameFormat: gameFormatEnum.optional(),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY"]).optional(),
+        buyIn: z.number().int().min(0).optional(),
+        cashOut: z.number().int().min(0).optional().nullable(),
+        gameType: z.string().optional(),
+        stakes: z.string().optional(),
+        notes: z.string().optional(),
+        endedAt: z.date().optional().nullable(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        return await updateSessionTable(id, ctx.user.id, data as any);
+      }),
+
+    // Remove a table from the active session
+    removeTable: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        return await removeSessionTable(input.id, ctx.user.id);
+      }),
+
+    // Finalize the active session (creates a sessions record)
+    finalize: protectedProcedure
+      .input(z.object({
+        activeSessionId: z.number().int(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const rates = await getAllRates();
+        const exchangeRates = {
+          USD: Math.round((rates?.USD?.rate ?? 5.75) * 100),
+          CAD: Math.round((rates?.CAD?.rate ?? 4.20) * 100),
+          JPY: Math.round((rates?.JPY?.rate ?? 0.033) * 100),
+        };
+        return await finalizeActiveSession(
+          ctx.user.id,
+          input.activeSessionId,
+          input.notes,
+          exchangeRates
+        );
+      }),
+
+    // Discard the active session without saving
+    discard: protectedProcedure
+      .input(z.object({ activeSessionId: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        return await discardActiveSession(ctx.user.id, input.activeSessionId);
+      }),
+
+    // Get tables for a finalized session
+    getTables: protectedProcedure
+      .input(z.object({ sessionId: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        return await getSessionTables(input.sessionId, ctx.user.id);
       }),
   }),
   // Venues router

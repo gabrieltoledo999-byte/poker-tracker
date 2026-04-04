@@ -331,3 +331,59 @@ export const venueBalanceHistory = mysqlTable("venue_balance_history", {
 });
 export type VenueBalanceHistory = typeof venueBalanceHistory.$inferSelect;
 export type InsertVenueBalanceHistory = typeof venueBalanceHistory.$inferInsert;
+
+/**
+ * Active sessions table - tracks sessions currently in progress (timer running)
+ * When the user finalizes the session, it gets converted to a regular session record.
+ */
+export const activeSessions = mysqlTable("active_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // one active session per user at a time
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ActiveSession = typeof activeSessions.$inferSelect;
+export type InsertActiveSession = typeof activeSessions.$inferInsert;
+
+/**
+ * Session tables - individual tables/games within a session
+ * A session can have multiple tables (simultaneous or sequential).
+ */
+export const sessionTables = mysqlTable("session_tables", {
+  id: int("id").autoincrement().primaryKey(),
+  // Links to either an active session or a finalized session
+  activeSessionId: int("activeSessionId"),
+  sessionId: int("sessionId"), // set after session is finalized
+  userId: int("userId").notNull(),
+
+  // Table details
+  venueId: int("venueId"),
+  type: mysqlEnum("type", ["online", "live"]).notNull().default("online"),
+  gameFormat: mysqlEnum("gameFormat", [
+    "cash_game", "tournament", "turbo", "hyper_turbo",
+    "sit_and_go", "spin_and_go", "bounty", "satellite", "freeroll", "home_game"
+  ]).notNull().default("tournament"),
+
+  // Financial data in original currency (centavos/units)
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY"]).default("BRL").notNull(),
+  buyIn: int("buyIn").notNull().default(0), // in original currency centavos
+  cashOut: int("cashOut"), // null = still in progress
+
+  // Optional details
+  gameType: varchar("gameType", { length: 64 }), // NL Hold'em, PLO, etc.
+  stakes: varchar("stakes", { length: 32 }), // 1/2, 2/5, etc.
+  notes: text("notes"),
+
+  // Timestamps
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  endedAt: timestamp("endedAt"), // null = still playing
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SessionTable = typeof sessionTables.$inferSelect;
+export type InsertSessionTable = typeof sessionTables.$inferInsert;

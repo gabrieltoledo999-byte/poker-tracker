@@ -1,321 +1,179 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
-  Plus,
-  Edit,
-  Trash2,
-  Calendar,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  Filter,
-  Monitor,
-  Users,
-  DollarSign,
-  RefreshCw,
-  MapPin,
-  HelpCircle,
-  Sparkles,
+  Plus, Timer, Trophy, TrendingUp, TrendingDown, Trash2,
+  Edit2, CheckCircle, XCircle, Wifi, MapPin, Sparkles,
+  ChevronDown, ChevronUp, Clock, DollarSign, BarChart2
 } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GAME_FORMATS, GameFormat, getGameFormatLabel, getGameFormatEmoji } from "@shared/gameFormats";
 
-// Helper to format currency
-function formatCurrency(centavos: number, currency: "BRL" | "USD" = "BRL"): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: currency,
-  }).format(centavos / 100);
+// ─── Constants ────────────────────────────────────────────────────────────────
+const GAME_FORMATS = [
+  { value: "tournament", label: "Torneio", emoji: "🏆" },
+  { value: "cash_game", label: "Cash Game", emoji: "💵" },
+  { value: "turbo", label: "Turbo", emoji: "⚡" },
+  { value: "hyper_turbo", label: "Hyper Turbo", emoji: "🚀" },
+  { value: "sit_and_go", label: "Sit & Go", emoji: "🎯" },
+  { value: "spin_and_go", label: "Spin & Go", emoji: "🎰" },
+  { value: "bounty", label: "Bounty/PKO", emoji: "🎯" },
+  { value: "satellite", label: "Satélite", emoji: "🛰️" },
+  { value: "freeroll", label: "Freeroll", emoji: "🆓" },
+  { value: "home_game", label: "Home Game", emoji: "🏠" },
+];
+
+type GameFormat = typeof GAME_FORMATS[number]["value"];
+
+function formatCurrency(value: number, currency: string) {
+  const amount = value / 100;
+  if (currency === "USD") return `$${amount.toFixed(2)}`;
+  if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
+  if (currency === "JPY") return `¥${Math.round(amount)}`;
+  return `R$${amount.toFixed(2)}`;
 }
 
-// Helper to format duration
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours === 0) return `${mins}min`;
-  return `${hours}h ${mins}min`;
+function formatDuration(startedAt: string | Date) {
+  const start = new Date(startedAt).getTime();
+  const now = Date.now();
+  const diff = Math.floor((now - start) / 1000);
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// Helper to calculate ROI
-function calculateROI(buyIn: number, cashOut: number): number {
-  if (buyIn === 0) return 0;
-  return ((cashOut - buyIn) / buyIn) * 100;
-}
-
-// Helper to calculate hourly rate
-function calculateHourlyRate(profit: number, minutes: number): number {
-  if (minutes === 0) return 0;
-  return (profit / minutes) * 60;
-}
-
-// Session form component
-function SessionForm({
-  initialData,
-  onSubmit,
-  onCancel,
-  isLoading,
-}: {
-  initialData?: {
-    id?: number;
-    type: "online" | "live";
-    gameFormat: GameFormat;
-    currency?: "BRL" | "USD";
-    buyIn: number;
-    cashOut: number;
-    sessionDate: Date;
-    durationMinutes: number;
-    notes?: string | null;
-    doubts?: string | null;
-    venueId?: number | null;
-    gameType?: string | null;
-    stakes?: string | null;
-    location?: string | null;
-    originalBuyIn?: number | null;
-    originalCashOut?: number | null;
-  };
-  onSubmit: (data: any) => void;
+// ─── Add Table Form ────────────────────────────────────────────────────────────
+interface AddTableFormProps {
+  activeSessionId: number;
+  onSuccess: () => void;
   onCancel: () => void;
-  isLoading: boolean;
-}) {
-  const [type, setType] = useState<"online" | "live">(initialData?.type || "live");
-  const [gameFormat, setGameFormat] = useState<GameFormat>(initialData?.gameFormat || "cash_game");
-  const [currency, setCurrency] = useState<"BRL" | "USD">(initialData?.currency || "BRL");
-  const [venueId, setVenueId] = useState<string>(initialData?.venueId?.toString() || "");
-  const [buyIn, setBuyIn] = useState(
-    initialData 
-      ? String((initialData.originalBuyIn || initialData.buyIn) / 100) 
-      : ""
-  );
-  const [cashOut, setCashOut] = useState(
-    initialData 
-      ? String((initialData.originalCashOut || initialData.cashOut) / 100) 
-      : ""
-  );
-  const [sessionDate, setSessionDate] = useState(
-    initialData
-      ? new Date(initialData.sessionDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0]
-  );
-  const [hours, setHours] = useState(
-    initialData ? String(Math.floor(initialData.durationMinutes / 60)) : ""
-  );
-  const [minutes, setMinutes] = useState(
-    initialData ? String(initialData.durationMinutes % 60) : ""
-  );
-  const [notes, setNotes] = useState(initialData?.notes || "");
-  const [doubts, setDoubts] = useState(initialData?.doubts || "");
-  const [gameType, setGameType] = useState(initialData?.gameType || "");
-  const [stakes, setStakes] = useState(initialData?.stakes || "");
+}
 
-  // Fetch venues
-  const { data: venues } = trpc.venues.list.useQuery({ type });
-  
-  // Fetch exchange rate
-  const { data: rateData, refetch: refetchRate } = trpc.currency.getRate.useQuery();
-  const exchangeRate = rateData?.rate || 5.0;
+function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProps) {
+  const utils = trpc.useUtils();
 
-  // Fetch user preferences (smart suggestions based on history)
+  // Fetch preferences for smart defaults
   const { data: prefs } = trpc.sessions.getUserPreferences.useQuery(undefined, {
-    enabled: !initialData, // Only for new sessions
     staleTime: 5 * 60 * 1000,
   });
 
-  // Apply smart defaults when preferences load (only for new sessions)
-  const [prefsApplied, setPrefsApplied] = useState(false);
+  // Determine smart defaults
+  const defaultType = (prefs?.preferredType as "online" | "live") ?? "online";
+  const defaultFormat = (prefs?.preferredGameFormats?.[0] as GameFormat) ?? "tournament";
+  const defaultBuyIn = prefs?.preferredBuyIns?.[0] ? String(prefs.preferredBuyIns[0] / 100) : "";
+
+  const [type, setType] = useState<"online" | "live">(defaultType);
+  const [gameFormat, setGameFormat] = useState<GameFormat>(defaultFormat);
+  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY">(type === "online" ? "USD" : "BRL");
+  const [venueId, setVenueId] = useState("");
+  const [buyIn, setBuyIn] = useState(defaultBuyIn);
+  const [gameType, setGameType] = useState("");
+  const [stakes, setStakes] = useState("");
+
+  const { data: venues } = trpc.venues.list.useQuery({ type });
+
+  // Sort venues by preference
+  const sortedVenues = useMemo(() => {
+    if (!venues) return [];
+    if (!prefs?.preferredVenueIds?.length) return venues;
+    return [...venues].sort((a, b) => {
+      const ai = prefs.preferredVenueIds.indexOf(a.id);
+      const bi = prefs.preferredVenueIds.indexOf(b.id);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [venues, prefs]);
+
+  // Sort game formats by preference
+  const sortedFormats = useMemo(() => {
+    if (!prefs?.preferredGameFormats?.length) return GAME_FORMATS;
+    return [...GAME_FORMATS].sort((a, b) => {
+      const ai = prefs.preferredGameFormats.indexOf(a.value);
+      const bi = prefs.preferredGameFormats.indexOf(b.value);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [prefs]);
+
+  const suggestedBuyIns = prefs?.preferredBuyIns?.slice(0, 4) ?? [];
+
+  // Auto-update currency when type changes
   useEffect(() => {
-    if (prefs && !initialData && !prefsApplied) {
-      setPrefsApplied(true);
-      setType(prefs.preferredType as "online" | "live");
-      if (prefs.preferredGameFormats.length > 0) {
-        setGameFormat(prefs.preferredGameFormats[0] as GameFormat);
-      }
-      if (prefs.preferredBuyIns.length > 0) {
-        setBuyIn(String(prefs.preferredBuyIns[0] / 100));
-      }
-    }
-  }, [prefs, initialData, prefsApplied]);
+    setCurrency(type === "online" ? "USD" : "BRL");
+    setVenueId("");
+  }, [type]);
 
-  // Sort venues by user preference (most used first)
-  const sortedVenues = venues ? [...venues].sort((a, b) => {
-    if (!prefs) return 0;
-    const aIdx = prefs.preferredVenueIds.indexOf(a.id);
-    const bIdx = prefs.preferredVenueIds.indexOf(b.id);
-    if (aIdx === -1 && bIdx === -1) return 0;
-    if (aIdx === -1) return 1;
-    if (bIdx === -1) return -1;
-    return aIdx - bIdx;
-  }) : venues;
-
-  // Sort game formats by user preference
-  const sortedGameFormats = prefs && prefs.preferredGameFormats.length > 0
-    ? [...GAME_FORMATS].sort((a, b) => {
-        const aIdx = prefs.preferredGameFormats.indexOf(a.value);
-        const bIdx = prefs.preferredGameFormats.indexOf(b.value);
-        if (aIdx === -1 && bIdx === -1) return 0;
-        if (aIdx === -1) return 1;
-        if (bIdx === -1) return -1;
-        return aIdx - bIdx;
-      })
-    : GAME_FORMATS;
-
-  // Suggested buy-ins from history
-  const suggestedBuyIns = prefs?.preferredBuyIns?.slice(0, 4) || [];
-
-  // Auto-set currency to USD for online
-  useEffect(() => {
-    if (type === "online" && !initialData && !prefsApplied) {
-      setCurrency("USD");
-    } else if (type === "live" && !initialData && !prefsApplied) {
-      setCurrency("BRL");
-    }
-  }, [type, initialData, prefsApplied]);
-
-  // Reset venue when type changes
-  useEffect(() => {
-    if (!initialData) {
-      setVenueId("");
-    }
-  }, [type, initialData]);
+  const addTableMutation = trpc.sessions.addTable.useMutation({
+    onSuccess: () => {
+      utils.sessions.getActive.invalidate();
+      toast("Mesa adicionada!", { description: "Mesa incluída na sessão." });
+      onSuccess();
+    },
+    onError: (err) => {
+      toast.error("Erro", { description: err.message });
+    },
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const buyInCentavos = Math.round(parseFloat(buyIn) * 100);
-    const cashOutCentavos = Math.round(parseFloat(cashOut) * 100);
-    const durationMinutes =
-      (parseInt(hours) || 0) * 60 + (parseInt(minutes) || 0);
-
-    if (isNaN(buyInCentavos) || buyInCentavos <= 0) {
-      toast.error("Buy-in deve ser um valor positivo");
+    const buyInCents = Math.round(parseFloat(buyIn) * 100);
+    if (isNaN(buyInCents) || buyInCents < 0) {
+      toast.error("Buy-in inválido");
       return;
     }
-    if (isNaN(cashOutCentavos) || cashOutCentavos < 0) {
-      toast.error("Cash-out deve ser um valor válido");
-      return;
-    }
-    if (durationMinutes <= 0) {
-      toast.error("Duração deve ser maior que zero");
-      return;
-    }
-
-    onSubmit({
-      id: initialData?.id,
-      type,
-      gameFormat,
-      currency,
-      buyIn: buyInCentavos,
-      cashOut: cashOutCentavos,
-      sessionDate: new Date(sessionDate),
-      durationMinutes,
-      notes: notes || undefined,
-      doubts: doubts || undefined,
+    addTableMutation.mutate({
+      activeSessionId,
       venueId: venueId ? parseInt(venueId) : undefined,
+      type,
+      gameFormat: gameFormat as any,
+      currency,
+      buyIn: buyInCents,
       gameType: gameType || undefined,
       stakes: stakes || undefined,
     });
   };
 
-  // Preview calculations (convert to BRL for display if USD)
-  const buyInNum = parseFloat(buyIn) * 100 || 0;
-  const cashOutNum = parseFloat(cashOut) * 100 || 0;
-  const buyInBrl = currency === "USD" ? buyInNum * exchangeRate : buyInNum;
-  const cashOutBrl = currency === "USD" ? cashOutNum * exchangeRate : cashOutNum;
-  const profit = cashOutBrl - buyInBrl;
-  const roi = calculateROI(buyInBrl, cashOutBrl);
-  const durationMins = (parseInt(hours) || 0) * 60 + (parseInt(minutes) || 0);
-  const hourlyRate = calculateHourlyRate(profit, durationMins);
+  // Quick-fill from recent combo
+  const fillFromCombo = (combo: NonNullable<typeof prefs>["recentCombos"][0]) => {
+    setType(combo.type as "online" | "live");
+    setGameFormat(combo.gameFormat as GameFormat);
+    if (combo.venueId) setVenueId(combo.venueId.toString());
+    setBuyIn(String(combo.buyIn / 100));
+    if (combo.gameType) setGameType(combo.gameType);
+    setCurrency(combo.currency as any);
+  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Modalidade</Label>
-          <Select value={type} onValueChange={(v) => setType(v as "online" | "live")}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="online">
-                <span className="flex items-center gap-2">
-                  <Monitor className="h-4 w-4" /> Online
-                </span>
-              </SelectItem>
-              <SelectItem value="live">
-                <span className="flex items-center gap-2">
-                  <Users className="h-4 w-4" /> Live
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label>Data</Label>
-          <Input
-            type="date"
-            value={sessionDate}
-            onChange={(e) => setSessionDate(e.target.value)}
-            required
-          />
-        </div>
-      </div>
-
-      {/* Smart suggestion: recent combos (only for new sessions with history) */}
-      {!initialData && prefs && prefs.recentCombos.length > 0 && (
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+      {/* Quick combos */}
+      {prefs && prefs.recentCombos.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
             <Sparkles className="h-3 w-3" /> Repetir sessão recente
-          </Label>
+          </p>
           <div className="flex flex-wrap gap-2">
             {prefs.recentCombos.slice(0, 3).map((combo, i) => {
               const venueName = venues?.find(v => v.id === combo.venueId)?.name;
-              const fmtLabel = GAME_FORMATS.find(f => f.value === combo.gameFormat)?.label || combo.gameFormat;
+              const fmtLabel = GAME_FORMATS.find(f => f.value === combo.gameFormat)?.label ?? combo.gameFormat;
               return (
                 <button
                   key={i}
                   type="button"
-                  onClick={() => {
-                    setType(combo.type as "online" | "live");
-                    setGameFormat(combo.gameFormat as GameFormat);
-                    if (combo.venueId) setVenueId(combo.venueId.toString());
-                    setBuyIn(String(combo.buyIn / 100));
-                    if (combo.gameType) setGameType(combo.gameType);
-                  }}
-                  className="text-xs px-2 py-1 rounded-full border border-border bg-muted/50 hover:bg-muted transition-colors text-left"
+                  onClick={() => fillFromCombo(combo)}
+                  className="text-xs px-2 py-1 rounded-full border border-border bg-muted/50 hover:bg-muted transition-colors"
                 >
                   {venueName ? `${venueName} · ` : ""}{fmtLabel} · {combo.currency === "USD" ? "$" : "R$"}{(combo.buyIn / 100).toFixed(0)}
                 </button>
@@ -325,19 +183,38 @@ function SessionForm({
         </div>
       )}
 
-      <div className="space-y-2">
+      {/* Type toggle */}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setType("online")}
+          className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-2 ${type === "online" ? "bg-primary text-primary-foreground border-primary" : "border-border bg-muted/30 hover:bg-muted"}`}
+        >
+          <Wifi className="h-4 w-4" /> Online
+        </button>
+        <button
+          type="button"
+          onClick={() => setType("live")}
+          className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-2 ${type === "live" ? "bg-primary text-primary-foreground border-primary" : "border-border bg-muted/30 hover:bg-muted"}`}
+        >
+          <MapPin className="h-4 w-4" /> Live
+        </button>
+      </div>
+
+      {/* Game Format */}
+      <div className="space-y-1">
         <Label>Tipo de Jogo</Label>
         <Select value={gameFormat} onValueChange={(v) => setGameFormat(v as GameFormat)}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {sortedGameFormats.map((format, i) => (
-              <SelectItem key={format.value} value={format.value}>
+            {sortedFormats.map((fmt, i) => (
+              <SelectItem key={fmt.value} value={fmt.value}>
                 <span className="flex items-center gap-2">
-                  <span>{format.emoji}</span> {format.label}
-                  {i === 0 && prefs && prefs.preferredGameFormats[0] === format.value && (
-                    <span className="text-xs text-muted-foreground ml-1">(mais usado)</span>
+                  {fmt.emoji} {fmt.label}
+                  {i === 0 && prefs?.preferredGameFormats?.[0] === fmt.value && (
+                    <span className="text-xs text-muted-foreground">(mais usado)</span>
                   )}
                 </span>
               </SelectItem>
@@ -346,29 +223,22 @@ function SessionForm({
         </Select>
       </div>
 
-      {/* Venue selection */}
-      <div className="space-y-2">
-        <Label className="flex items-center gap-2">
-          <MapPin className="h-4 w-4" />
-          {type === "online" ? "Plataforma" : "Local"}
-        </Label>
+      {/* Venue */}
+      <div className="space-y-1">
+        <Label>{type === "online" ? "Plataforma" : "Local"}</Label>
         <Select value={venueId} onValueChange={setVenueId}>
           <SelectTrigger>
             <SelectValue placeholder={`Selecione ${type === "online" ? "a plataforma" : "o local"}`} />
           </SelectTrigger>
           <SelectContent>
-            {sortedVenues?.map((venue, i) => (
+            {sortedVenues.map((venue, i) => (
               <SelectItem key={venue.id} value={venue.id.toString()}>
                 <span className="flex items-center gap-2">
                   {venue.logoUrl && (
-                    <img 
-                      src={venue.logoUrl} 
-                      alt={venue.name} 
-                      className="h-5 w-5 rounded object-contain"
-                    />
+                    <img src={venue.logoUrl} alt={venue.name} className="h-5 w-5 rounded object-contain" />
                   )}
                   {venue.name}
-                  {i === 0 && prefs && prefs.preferredVenueIds[0] === venue.id && (
+                  {i === 0 && prefs?.preferredVenueIds?.[0] === venue.id && (
                     <span className="text-xs text-muted-foreground">(favorita)</span>
                   )}
                 </span>
@@ -378,42 +248,22 @@ function SessionForm({
         </Select>
       </div>
 
-      {/* Currency selection */}
-      <div className="space-y-2">
-        <Label className="flex items-center gap-2">
-          <DollarSign className="h-4 w-4" />
-          Moeda
-        </Label>
-        <div className="flex gap-2">
-          <Select value={currency} onValueChange={(v) => setCurrency(v as "BRL" | "USD")}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
+      {/* Currency + Buy-in */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label>Moeda</Label>
+          <Select value={currency} onValueChange={(v) => setCurrency(v as any)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="BRL">R$ (BRL)</SelectItem>
-              <SelectItem value="USD">$ (USD)</SelectItem>
+              <SelectItem value="BRL">🇧🇷 BRL</SelectItem>
+              <SelectItem value="USD">🇺🇸 USD</SelectItem>
+              <SelectItem value="CAD">🇨🇦 CAD</SelectItem>
+              <SelectItem value="JPY">🇯🇵 JPY</SelectItem>
             </SelectContent>
           </Select>
-          {currency === "USD" && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted px-3 rounded-md">
-              <span>1 USD = R$ {exchangeRate.toFixed(2)}</span>
-              <Button 
-                type="button" 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6"
-                onClick={() => refetchRate()}
-              >
-                <RefreshCw className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Buy-in ({currency === "USD" ? "$" : "R$"})</Label>
+        <div className="space-y-1">
+          <Label>Buy-in ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : "R$"})</Label>
           <Input
             type="number"
             step="0.01"
@@ -423,7 +273,6 @@ function SessionForm({
             onChange={(e) => setBuyIn(e.target.value)}
             required
           />
-          {/* Suggested buy-ins from history */}
           {suggestedBuyIns.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
               {suggestedBuyIns.map((val) => (
@@ -439,567 +288,618 @@ function SessionForm({
             </div>
           )}
         </div>
-
-        <div className="space-y-2">
-          <Label>Cash-out ({currency === "USD" ? "$" : "R$"})</Label>
-          <Input
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0,00"
-            value={cashOut}
-            onChange={(e) => setCashOut(e.target.value)}
-            required
-          />
-        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Duração (horas)</Label>
-          <Input
-            type="number"
-            min="0"
-            placeholder="0"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-          />
+      {/* Optional: game type + stakes */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Variante (opcional)</Label>
+          <Input placeholder="NL Hold'em, PLO..." value={gameType} onChange={(e) => setGameType(e.target.value)} />
         </div>
-
-        <div className="space-y-2">
-          <Label>Duração (minutos)</Label>
-          <Input
-            type="number"
-            min="0"
-            placeholder="0"
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
-          />
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Stakes (opcional)</Label>
+          <Input placeholder="1/2, 2/5..." value={stakes} onChange={(e) => setStakes(e.target.value)} />
         </div>
-      </div>
-
-      {/* Preview */}
-      {buyIn && cashOut && (
-        <Card className="bg-muted/50">
-          <CardContent className="pt-4">
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-xs text-muted-foreground">Resultado (R$)</p>
-                <p
-                  className={`text-lg font-bold ${
-                    profit >= 0
-                      ? "text-[oklch(0.6_0.2_145)]"
-                      : "text-[oklch(0.55_0.22_25)]"
-                  }`}
-                >
-                  {profit >= 0 ? "+" : ""}
-                  {formatCurrency(profit)}
-                </p>
-                {currency === "USD" && (
-                  <p className="text-xs text-muted-foreground">
-                    ({formatCurrency(cashOutNum - buyInNum, "USD")})
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">ROI</p>
-                <p
-                  className={`text-lg font-bold ${
-                    roi >= 0
-                      ? "text-[oklch(0.6_0.2_145)]"
-                      : "text-[oklch(0.55_0.22_25)]"
-                  }`}
-                >
-                  {roi >= 0 ? "+" : ""}
-                  {roi.toFixed(1)}%
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">R$/hora</p>
-                <p
-                  className={`text-lg font-bold ${
-                    hourlyRate >= 0
-                      ? "text-[oklch(0.6_0.2_145)]"
-                      : "text-[oklch(0.55_0.22_25)]"
-                  }`}
-                >
-                  {hourlyRate >= 0 ? "+" : ""}
-                  {formatCurrency(hourlyRate)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Variante (opcional)</Label>
-          <Input
-            placeholder="Ex: NL Hold'em, PLO"
-            value={gameType}
-            onChange={(e) => setGameType(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Stakes (opcional)</Label>
-          <Input
-            placeholder="Ex: 1/2, 2/5"
-            value={stakes}
-            onChange={(e) => setStakes(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Notas (opcional)</Label>
-        <Textarea
-          placeholder="Observações sobre a sessão..."
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label className="flex items-center gap-2">
-          Dúvidas (opcional)
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <HelpCircle className="h-3 w-3 text-muted-foreground" />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Registre dúvidas ou questões sobre jogadas para revisar depois</p>
-            </TooltipContent>
-          </Tooltip>
-        </Label>
-        <Textarea
-          placeholder="Ex: Deveria ter dado call no river? Fold no turn foi correto?..."
-          value={doubts}
-          onChange={(e) => setDoubts(e.target.value)}
-          rows={3}
-        />
       </div>
 
       <DialogFooter>
-        <DialogClose asChild>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancelar
-          </Button>
-        </DialogClose>
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? "Salvando..." : initialData?.id ? "Atualizar" : "Criar"}
+        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit" disabled={addTableMutation.isPending}>
+          {addTableMutation.isPending ? "Adicionando..." : "Adicionar Mesa"}
         </Button>
       </DialogFooter>
     </form>
   );
 }
 
-// Session card component
-function SessionCard({
-  session,
-  venues,
-  onEdit,
-  onDelete,
-}: {
-  session: {
-    id: number;
-    type: "online" | "live";
-    gameFormat: string;
-    currency: "BRL" | "USD";
-    buyIn: number;
-    cashOut: number;
-    originalBuyIn?: number | null;
-    originalCashOut?: number | null;
-    sessionDate: Date;
-    durationMinutes: number;
-    notes?: string | null;
-    doubts?: string | null;
-    venueId?: number | null;
-    gameType?: string | null;
-    stakes?: string | null;
-    location?: string | null;
-  };
-  venues?: Array<{ id: number; name: string; logoUrl: string | null }>;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const profit = session.cashOut - session.buyIn;
-  const roi = calculateROI(session.buyIn, session.cashOut);
-  const hourlyRate = calculateHourlyRate(profit, session.durationMinutes);
-  const isPositive = profit >= 0;
-  
-  const venue = venues?.find(v => v.id === session.venueId);
+// ─── Cash-out Dialog ───────────────────────────────────────────────────────────
+interface CashOutDialogProps {
+  tableId: number;
+  currency: string;
+  buyIn: number;
+  onClose: () => void;
+}
+
+function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps) {
+  const utils = trpc.useUtils();
+  const [cashOut, setCashOut] = useState(String(buyIn / 100));
+
+  const updateMutation = trpc.sessions.updateTable.useMutation({
+    onSuccess: () => {
+      utils.sessions.getActive.invalidate();
+      toast("Cash-out registrado!");
+      onClose();
+    },
+    onError: (err) => toast.error("Erro", { description: err.message }),
+  });
+
+  const profit = Math.round(parseFloat(cashOut) * 100) - buyIn;
+  const profitDisplay = formatCurrency(Math.abs(profit), currency);
 
   return (
-    <Card className="overflow-hidden">
-      <div
-        className={`h-1 ${
-          isPositive
-            ? "bg-[oklch(0.6_0.2_145)]"
-            : "bg-[oklch(0.55_0.22_25)]"
-        }`}
-      />
-      <CardContent className="pt-4">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              {session.type === "online" ? (
-                <Monitor className="h-4 w-4 text-[oklch(0.5_0.15_250)]" />
-              ) : (
-                <Users className="h-4 w-4 text-[oklch(0.55_0.18_145)]" />
-              )}
-              <span className="font-medium">
-                {session.type === "online" ? "Online" : "Live"}
-              </span>
-              <span className="text-sm bg-muted px-2 py-0.5 rounded flex items-center gap-1">
-                {getGameFormatEmoji(session.gameFormat as GameFormat)} {getGameFormatLabel(session.gameFormat as GameFormat)}
-              </span>
-              {session.currency === "USD" && (
-                <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
-                  USD
-                </span>
-              )}
-              {session.stakes && (
-                <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                  {session.stakes}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                {new Date(session.sessionDate).toLocaleDateString("pt-BR")}
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {formatDuration(session.durationMinutes)}
-              </span>
-            </div>
-            {venue && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {venue.logoUrl && (
-                  <img 
-                    src={venue.logoUrl} 
-                    alt={venue.name} 
-                    className="h-4 w-4 rounded object-contain"
-                  />
-                )}
-                <span>{venue.name}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={onEdit}>
-              <Edit className="h-4 w-4" />
-            </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Excluir sessão?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Esta ação não pode ser desfeita. A sessão será removida permanentemente.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={onDelete}>
-                    Excluir
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Label>Cash-out ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : "R$"})</Label>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={cashOut}
+          onChange={(e) => setCashOut(e.target.value)}
+          autoFocus
+        />
+      </div>
+      {!isNaN(profit) && (
+        <div className={`text-sm font-medium flex items-center gap-1 ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
+          {profit >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+          {profit >= 0 ? "+" : "-"}{profitDisplay}
         </div>
-
-        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-          <div>
-            <p className="text-xs text-muted-foreground">Buy-in</p>
-            <p className="font-medium">{formatCurrency(session.buyIn)}</p>
-            {session.originalBuyIn && (
-              <p className="text-xs text-muted-foreground">
-                ({formatCurrency(session.originalBuyIn, "USD")})
-              </p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Cash-out</p>
-            <p className="font-medium">{formatCurrency(session.cashOut)}</p>
-            {session.originalCashOut && (
-              <p className="text-xs text-muted-foreground">
-                ({formatCurrency(session.originalCashOut, "USD")})
-              </p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Resultado</p>
-            <p
-              className={`font-bold flex items-center justify-center gap-1 ${
-                isPositive
-                  ? "text-[oklch(0.6_0.2_145)]"
-                  : "text-[oklch(0.55_0.22_25)]"
-              }`}
-            >
-              {isPositive ? (
-                <TrendingUp className="h-3 w-3" />
-              ) : (
-                <TrendingDown className="h-3 w-3" />
-              )}
-              {isPositive ? "+" : ""}
-              {formatCurrency(profit)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">ROI</p>
-            <p
-              className={`font-bold ${
-                isPositive
-                  ? "text-[oklch(0.6_0.2_145)]"
-                  : "text-[oklch(0.55_0.22_25)]"
-              }`}
-            >
-              {isPositive ? "+" : ""}
-              {roi.toFixed(1)}%
-            </p>
-          </div>
-        </div>
-
-        {session.notes && (
-          <div className="mt-3 border-t pt-3">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Notas:</p>
-            <p className="text-sm text-muted-foreground">
-              {session.notes}
-            </p>
-          </div>
-        )}
-        
-        {session.doubts && (
-          <div className="mt-3 border-t pt-3 bg-[oklch(0.7_0.15_85)]/5 -mx-6 px-6 py-3">
-            <p className="text-xs font-medium text-[oklch(0.7_0.15_85)] mb-1 flex items-center gap-1">
-              <HelpCircle className="h-3 w-3" />
-              Dúvidas para revisar:
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {session.doubts}
-            </p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Cancelar</Button>
+        <Button
+          onClick={() => {
+            const cents = Math.round(parseFloat(cashOut) * 100);
+            if (isNaN(cents) || cents < 0) return;
+            updateMutation.mutate({ id: tableId, cashOut: cents, endedAt: new Date() });
+          }}
+          disabled={updateMutation.isPending}
+        >
+          Confirmar
+        </Button>
+      </DialogFooter>
+    </div>
   );
 }
 
-export default function Sessions() {
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [editingSession, setEditingSession] = useState<any>(null);
-  const [filterType, setFilterType] = useState<"all" | "online" | "live">("all");
-  const [filterFormat, setFilterFormat] = useState<string>("all");
+// ─── Active Session Panel ──────────────────────────────────────────────────────
+interface ActiveSessionPanelProps {
+  session: {
+    id: number;
+    startedAt: string | Date;
+    notes?: string | null;
+    tables: Array<{
+      id: number;
+      type: string;
+      gameFormat: string;
+      currency: string;
+      buyIn: number;
+      cashOut?: number | null;
+      venueId?: number | null;
+      gameType?: string | null;
+      stakes?: string | null;
+      startedAt: string | Date;
+      endedAt?: string | Date | null;
+    }>;
+  };
+  onFinalized: () => void;
+}
 
+function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
   const utils = trpc.useUtils();
-
-  const { data: sessions, isLoading } = trpc.sessions.list.useQuery(
-    filterType === "all" && filterFormat === "all"
-      ? {}
-      : {
-          type: filterType === "all" ? undefined : filterType,
-          gameFormat: filterFormat === "all" ? undefined : filterFormat as GameFormat,
-        }
-  );
+  const [elapsed, setElapsed] = useState(formatDuration(session.startedAt));
+  const [showAddTable, setShowAddTable] = useState(false);
+  const [cashOutTableId, setCashOutTableId] = useState<number | null>(null);
+  const [showDiscard, setShowDiscard] = useState(false);
+  const [showFinalize, setShowFinalize] = useState(false);
+  const [finalNotes, setFinalNotes] = useState("");
 
   const { data: venues } = trpc.venues.list.useQuery({});
 
-  const createMutation = trpc.sessions.create.useMutation({
+  // Live timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(formatDuration(session.startedAt));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [session.startedAt]);
+
+  const removeMutation = trpc.sessions.removeTable.useMutation({
     onSuccess: () => {
-      toast.success("Sessão criada com sucesso!");
-      setIsCreateOpen(false);
-      utils.sessions.list.invalidate();
-      utils.sessions.stats.invalidate();
-      utils.sessions.statsByFormat.invalidate();
-      utils.bankroll.getCurrent.invalidate();
-      utils.bankroll.history.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Erro ao criar sessão: ${error.message}`);
+      utils.sessions.getActive.invalidate();
+      toast("Mesa removida.");
     },
   });
 
-  const updateMutation = trpc.sessions.update.useMutation({
+  const finalizeMutation = trpc.sessions.finalize.useMutation({
     onSuccess: () => {
-      toast.success("Sessão atualizada com sucesso!");
-      setEditingSession(null);
+      utils.sessions.getActive.invalidate();
       utils.sessions.list.invalidate();
-      utils.sessions.stats.invalidate();
-      utils.sessions.statsByFormat.invalidate();
-      utils.bankroll.getCurrent.invalidate();
-      utils.bankroll.history.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      toast("Sessão finalizada!", { description: "Resultado salvo com sucesso." });
+      onFinalized();
     },
-    onError: (error) => {
-      toast.error(`Erro ao atualizar sessão: ${error.message}`);
+    onError: (err) => toast.error("Erro ao finalizar", { description: err.message }),
+  });
+
+  const discardMutation = trpc.sessions.discard.useMutation({
+    onSuccess: () => {
+      utils.sessions.getActive.invalidate();
+      toast("Sessão descartada.");
+      onFinalized();
     },
   });
 
-  const deleteMutation = trpc.sessions.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Sessão excluída com sucesso!");
-      utils.sessions.list.invalidate();
-      utils.sessions.stats.invalidate();
-      utils.sessions.statsByFormat.invalidate();
-      utils.bankroll.getCurrent.invalidate();
-      utils.bankroll.history.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Erro ao excluir sessão: ${error.message}`);
-    },
-  });
+  // Calculate totals (only from tables with cashOut set)
+  const totalBuyIn = session.tables.reduce((s, t) => s + t.buyIn, 0);
+  const completedTables = session.tables.filter(t => t.cashOut !== null && t.cashOut !== undefined);
+  const totalCashOut = completedTables.reduce((s, t) => s + (t.cashOut ?? 0), 0);
+  const totalProfit = completedTables.length > 0 ? totalCashOut - completedTables.reduce((s, t) => s + t.buyIn, 0) : null;
 
-  const handleCreate = (data: any) => {
-    createMutation.mutate(data);
-  };
-
-  const handleUpdate = (data: any) => {
-    updateMutation.mutate(data);
-  };
-
-  const handleDelete = (id: number) => {
-    deleteMutation.mutate({ id });
-  };
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid gap-4">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-40" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const cashOutTable = session.tables.find(t => t.id === cashOutTableId);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Sessões</h1>
-          <p className="text-muted-foreground">
-            {sessions?.length || 0} sessões registradas
-          </p>
+    <div className="space-y-4">
+      {/* Session header */}
+      <div className="bg-gradient-to-r from-primary/20 to-primary/5 border border-primary/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="font-semibold text-sm">Sessão em andamento</span>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-lg font-bold text-primary">
+            <Timer className="h-5 w-5" />
+            {elapsed}
+          </div>
         </div>
 
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Nova Sessão
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Nova Sessão</DialogTitle>
-            </DialogHeader>
-            <SessionForm
-              onSubmit={handleCreate}
-              onCancel={() => setIsCreateOpen(false)}
-              isLoading={createMutation.isPending}
-            />
-          </DialogContent>
-        </Dialog>
+        {/* Totals */}
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <div>
+            <p className="text-xs text-muted-foreground">Buy-in total</p>
+            <p className="font-semibold text-sm">R${(totalBuyIn / 100).toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Mesas</p>
+            <p className="font-semibold text-sm">{session.tables.length}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Resultado</p>
+            <p className={`font-semibold text-sm ${totalProfit === null ? "text-muted-foreground" : totalProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {totalProfit === null ? "—" : `${totalProfit >= 0 ? "+" : ""}R$${(totalProfit / 100).toFixed(2)}`}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Filtros:</span>
-            </div>
-            <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="live">Live</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterFormat} onValueChange={setFilterFormat}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
-                {GAME_FORMATS.map((format) => (
-                  <SelectItem key={format.value} value={format.value}>
-                    {format.emoji} {format.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Sessions List */}
-      {sessions && sessions.length > 0 ? (
-        <div className="grid gap-4">
-          {sessions.map((session) => (
-            <SessionCard
-              key={session.id}
-              session={session as any}
-              venues={venues}
-              onEdit={() => setEditingSession(session)}
-              onDelete={() => handleDelete(session.id)}
-            />
-          ))}
+      {/* Tables list */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Mesas ({session.tables.length})</h3>
+          <Button size="sm" variant="outline" onClick={() => setShowAddTable(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Adicionar Mesa
+          </Button>
         </div>
-      ) : (
-        <Card className="border-dashed">
-          <CardContent className="py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
-              <Sparkles className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-medium mb-2">Nenhuma sessão registrada</h3>
-            <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-              Comece a registrar suas sessões de poker para acompanhar seu desempenho e evolução do bankroll.
-            </p>
-            <Button onClick={() => setIsCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Registrar Primeira Sessão
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Edit Dialog */}
-      <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        {session.tables.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm border border-dashed border-border rounded-lg">
+            <p>Nenhuma mesa adicionada ainda.</p>
+            <p className="text-xs mt-1">Clique em "Adicionar Mesa" para começar.</p>
+          </div>
+        ) : (
+          session.tables.map((table) => {
+            const venue = venues?.find(v => v.id === table.venueId);
+            const fmt = GAME_FORMATS.find(f => f.value === table.gameFormat);
+            const isFinished = table.cashOut !== null && table.cashOut !== undefined;
+            const profit = isFinished ? (table.cashOut ?? 0) - table.buyIn : null;
+
+            return (
+              <div key={table.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isFinished ? "border-border bg-muted/20" : "border-primary/20 bg-primary/5"}`}>
+                {/* Venue logo */}
+                <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {venue?.logoUrl ? (
+                    <img src={venue.logoUrl} alt={venue.name} className="h-8 w-8 object-contain" />
+                  ) : (
+                    <span className="text-lg">{fmt?.emoji ?? "🃏"}</span>
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{venue?.name ?? (table.type === "online" ? "Online" : "Live")}</span>
+                    <Badge variant="outline" className="text-xs shrink-0">{fmt?.label ?? table.gameFormat}</Badge>
+                    {table.type === "online" ? (
+                      <Wifi className="h-3 w-3 text-muted-foreground shrink-0" />
+                    ) : (
+                      <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <span className="text-xs text-muted-foreground">
+                      Buy-in: {formatCurrency(table.buyIn, table.currency)}
+                    </span>
+                    {isFinished && profit !== null && (
+                      <span className={`text-xs font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
+                        {profit >= 0 ? "+" : ""}{formatCurrency(Math.abs(profit), table.currency)}
+                      </span>
+                    )}
+                    {!isFinished && (
+                      <span className="text-xs text-green-500 flex items-center gap-1">
+                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        Em jogo
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {!isFinished && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 px-2"
+                      onClick={() => setCashOutTableId(table.id)}
+                    >
+                      <CheckCircle className="h-3 w-3 mr-1" /> Cash-out
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeMutation.mutate({ id: table.id })}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Session actions */}
+      <div className="flex gap-2 pt-2">
+        <Button
+          variant="outline"
+          className="flex-1 text-destructive border-destructive/30 hover:bg-destructive/10"
+          onClick={() => setShowDiscard(true)}
+        >
+          <XCircle className="h-4 w-4 mr-2" /> Descartar
+        </Button>
+        <Button
+          className="flex-1"
+          onClick={() => setShowFinalize(true)}
+          disabled={session.tables.length === 0}
+        >
+          <CheckCircle className="h-4 w-4 mr-2" /> Finalizar Sessão
+        </Button>
+      </div>
+
+      {/* Add table dialog */}
+      <Dialog open={showAddTable} onOpenChange={setShowAddTable}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Editar Sessão</DialogTitle>
+            <DialogTitle>Adicionar Mesa</DialogTitle>
           </DialogHeader>
-          {editingSession && (
-            <SessionForm
-              initialData={editingSession}
-              onSubmit={handleUpdate}
-              onCancel={() => setEditingSession(null)}
-              isLoading={updateMutation.isPending}
+          <AddTableForm
+            activeSessionId={session.id}
+            onSuccess={() => setShowAddTable(false)}
+            onCancel={() => setShowAddTable(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Cash-out dialog */}
+      <Dialog open={cashOutTableId !== null} onOpenChange={(open) => !open && setCashOutTableId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Registrar Cash-out</DialogTitle>
+          </DialogHeader>
+          {cashOutTable && (
+            <CashOutDialog
+              tableId={cashOutTable.id}
+              currency={cashOutTable.currency}
+              buyIn={cashOutTable.buyIn}
+              onClose={() => setCashOutTableId(null)}
             />
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Finalize dialog */}
+      <Dialog open={showFinalize} onOpenChange={setShowFinalize}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Finalizar Sessão</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Duração</span>
+                <span className="font-mono font-medium">{elapsed}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Mesas</span>
+                <span className="font-medium">{session.tables.length}</span>
+              </div>
+              {totalProfit !== null && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Resultado</span>
+                  <span className={`font-semibold ${totalProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {totalProfit >= 0 ? "+" : ""}R${(totalProfit / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Notas (opcional)</Label>
+              <Textarea
+                placeholder="Como foi a sessão?"
+                value={finalNotes}
+                onChange={(e) => setFinalNotes(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowFinalize(false)}>Cancelar</Button>
+              <Button
+                onClick={() => finalizeMutation.mutate({ activeSessionId: session.id, notes: finalNotes || undefined })}
+                disabled={finalizeMutation.isPending}
+              >
+                {finalizeMutation.isPending ? "Salvando..." : "Confirmar"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Discard confirmation */}
+      <AlertDialog open={showDiscard} onOpenChange={setShowDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Descartar sessão?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todas as mesas desta sessão serão perdidas. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => discardMutation.mutate({ activeSessionId: session.id })}
+            >
+              Descartar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ─── Session History Card ──────────────────────────────────────────────────────
+function SessionCard({ session }: { session: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const { data: tables } = trpc.sessions.getTables.useQuery(
+    { sessionId: session.id },
+    { enabled: expanded }
+  );
+
+  const profit = session.cashOut - session.buyIn;
+  const profitPct = session.buyIn > 0 ? ((profit / session.buyIn) * 100).toFixed(1) : "0";
+  const fmt = GAME_FORMATS.find(f => f.value === session.gameFormat);
+  const date = new Date(session.sessionDate);
+
+  return (
+    <Card className="overflow-hidden">
+      <div
+        className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/20 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-lg shrink-0 ${profit >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
+          {fmt?.emoji ?? "🃏"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm truncate">{fmt?.label ?? session.gameFormat}</span>
+            <Badge variant="outline" className="text-xs shrink-0">{session.type === "online" ? "Online" : "Live"}</Badge>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+            <span>{date.toLocaleDateString("pt-BR")}</span>
+            <span>{Math.floor(session.durationMinutes / 60)}h{session.durationMinutes % 60}m</span>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <p className={`font-semibold text-sm ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
+            {profit >= 0 ? "+" : ""}R${(profit / 100).toFixed(2)}
+          </p>
+          <p className="text-xs text-muted-foreground">{profitPct}% ROI</p>
+        </div>
+        {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
+          <div className="grid grid-cols-3 gap-3 text-center text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Buy-in</p>
+              <p className="font-medium">R${(session.buyIn / 100).toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Cash-out</p>
+              <p className="font-medium">R${(session.cashOut / 100).toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">R$/hora</p>
+              <p className={`font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {session.durationMinutes > 0 ? `${profit >= 0 ? "+" : ""}R${((profit / session.durationMinutes) * 60 / 100).toFixed(2)}` : "—"}
+              </p>
+            </div>
+          </div>
+
+          {tables && tables.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground font-medium">Mesas ({tables.length})</p>
+              {tables.map((t) => {
+                const tfmt = GAME_FORMATS.find(f => f.value === t.gameFormat);
+                const tp = (t.cashOut ?? 0) - t.buyIn;
+                return (
+                  <div key={t.id} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/30">
+                    <span>{tfmt?.emoji} {tfmt?.label} · {t.type === "online" ? "Online" : "Live"}</span>
+                    <span className={tp >= 0 ? "text-green-500" : "text-red-500"}>
+                      {tp >= 0 ? "+" : ""}{formatCurrency(Math.abs(tp), t.currency)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {session.notes && (
+            <p className="text-xs text-muted-foreground italic">"{session.notes}"</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Main Sessions Page ────────────────────────────────────────────────────────
+export default function Sessions() {
+  const { user } = useAuth();
+  const utils = trpc.useUtils();
+
+  const { data: activeSession, isLoading: loadingActive } = trpc.sessions.getActive.useQuery(undefined, {
+    refetchInterval: 5000, // poll every 5s to keep timer in sync
+  });
+
+  const { data: sessions, isLoading: loadingSessions } = trpc.sessions.list.useQuery({});
+
+  const startMutation = trpc.sessions.startActive.useMutation({
+    onSuccess: () => {
+      utils.sessions.getActive.invalidate();
+      toast("Sessão iniciada!", { description: "Timer rodando. Adicione suas mesas." });
+    },
+    onError: (err) => toast.error("Erro", { description: err.message }),
+  });
+
+  if (!user) return null;
+
+  const totalProfit = sessions?.reduce((s, sess) => s + (sess.cashOut - sess.buyIn), 0) ?? 0;
+  const totalSessions = sessions?.length ?? 0;
+  const winRate = totalSessions > 0
+    ? ((sessions?.filter(s => s.cashOut > s.buyIn).length ?? 0) / totalSessions * 100).toFixed(0)
+    : "0";
+
+  return (
+    <div className="p-6 space-y-6 max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Sessões</h1>
+          <p className="text-sm text-muted-foreground">Gerencie suas sessões de poker</p>
+        </div>
+        {!activeSession && (
+          <Button
+            onClick={() => startMutation.mutate({})}
+            disabled={startMutation.isPending}
+            className="gap-2"
+          >
+            <Timer className="h-4 w-4" />
+            {startMutation.isPending ? "Iniciando..." : "Nova Sessão"}
+          </Button>
+        )}
+      </div>
+
+      {/* Stats bar */}
+      {totalSessions > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <Card>
+            <CardContent className="p-3 text-center">
+              <p className="text-xs text-muted-foreground">Resultado Total</p>
+              <p className={`font-bold text-base ${totalProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {totalProfit >= 0 ? "+" : ""}R${(totalProfit / 100).toFixed(2)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-3 text-center">
+              <p className="text-xs text-muted-foreground">Sessões</p>
+              <p className="font-bold text-base">{totalSessions}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-3 text-center">
+              <p className="text-xs text-muted-foreground">Win Rate</p>
+              <p className="font-bold text-base">{winRate}%</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Active session */}
+      {loadingActive ? (
+        <div className="h-24 rounded-xl bg-muted/30 animate-pulse" />
+      ) : activeSession ? (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              Sessão Ativa
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ActiveSessionPanel
+              session={activeSession as any}
+              onFinalized={() => utils.sessions.list.invalidate()}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="text-center py-10 border border-dashed border-border rounded-xl">
+          <Timer className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+          <p className="font-medium">Nenhuma sessão ativa</p>
+          <p className="text-sm text-muted-foreground mt-1 mb-4">
+            Clique em "Nova Sessão" para iniciar o timer e adicionar suas mesas.
+          </p>
+          <Button onClick={() => startMutation.mutate({})} disabled={startMutation.isPending}>
+            <Timer className="h-4 w-4 mr-2" />
+            Iniciar Sessão
+          </Button>
+        </div>
+      )}
+
+      {/* Session history */}
+      {loadingSessions ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-muted/30 animate-pulse" />)}
+        </div>
+      ) : sessions && sessions.length > 0 ? (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Histórico</h2>
+          {sessions.map((session) => (
+            <SessionCard key={session.id} session={session} />
+          ))}
+        </div>
+      ) : !activeSession ? (
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          <BarChart2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p>Nenhuma sessão registrada ainda.</p>
+        </div>
+      ) : null}
     </div>
   );
 }

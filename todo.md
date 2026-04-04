@@ -229,3 +229,15 @@
 - [x] Pré-preencher buy-in sugerido com base no buy-in mais frequente por plataforma
 - [x] Pré-selecionar modo online/live com base no perfil predominante do usuário
 - [x] Exibir "Últimas mesas usadas" como atalho rápido na adição de mesa
+
+## Novo Fluxo de Sessão (Container + Mesas)
+
+- [x] Criar tabela sessionTables no schema (mesas dentro de uma sessão)
+- [x] Criar tabela activeSessions para sessões em andamento com timer
+- [x] Criar procedures: startSession, endSession, addTable, updateTable, removeTable
+- [x] Redesenhar página de Sessões: sessão ativa com timer, lista de mesas, botão adicionar mesa
+- [x] Modalidade padrão = Online (a menos que histórico mostre preferência por Live)
+- [x] Ao finalizar sessão: calcular resultado total, ROI, tempo, R$/hora automaticamente
+- [x] Exibir resumo da sessão finalizada com breakdown por mesa
+- [x] Permitir editar/remover mesas individualmente dentro da sessão
+- [x] Remover campos manuais de duração, data e hora do formulário de nova sessão (tudo automático)

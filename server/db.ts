@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, lte, sql, sum } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1275,4 +1275,188 @@ export async function getUserPreferences(userId: number) {
     recentCombos,
     isOnlinePlayer: (typeCount["online"] || 0) >= (typeCount["live"] || 0),
   };
+}
+
+// ─── Active Sessions & Session Tables ────────────────────────────────────────
+
+/** Start a new active session for the user (one at a time). */
+export async function startActiveSession(userId: number, notes?: string): Promise<ActiveSession | null> {
+  const db = await getDb();
+  if (!db) return null;
+  // Upsert: if one already exists, return it
+  const existing = await db.select().from(activeSessions).where(eq(activeSessions.userId, userId)).limit(1);
+  if (existing.length > 0) return existing[0];
+  await db.insert(activeSessions).values({ userId, notes: notes ?? null, startedAt: new Date() });
+  const [created] = await db.select().from(activeSessions).where(eq(activeSessions.userId, userId)).limit(1);
+  return created ?? null;
+}
+
+/** Get the current active session for the user (null if none). */
+export async function getActiveSession(userId: number): Promise<ActiveSession | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(activeSessions).where(eq(activeSessions.userId, userId)).limit(1);
+  return row ?? null;
+}
+
+/** Add a table to the active session. */
+export async function addSessionTable(data: InsertSessionTable): Promise<SessionTable | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(sessionTables).values(data);
+  const [row] = await db
+    .select()
+    .from(sessionTables)
+    .where(and(eq(sessionTables.userId, data.userId), eq(sessionTables.activeSessionId, data.activeSessionId!)))
+    .orderBy(desc(sessionTables.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Update a session table (e.g. set cashOut, endedAt). */
+export async function updateSessionTable(
+  id: number,
+  userId: number,
+  data: Partial<InsertSessionTable>
+): Promise<SessionTable | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(sessionTables).set({ ...data, updatedAt: new Date() }).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
+  const [row] = await db.select().from(sessionTables).where(eq(sessionTables.id, id)).limit(1);
+  return row ?? null;
+}
+
+/** Remove a session table. */
+export async function removeSessionTable(id: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  await db.delete(sessionTables).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
+  return true;
+}
+
+/** Get all tables for an active session. */
+export async function getActiveSessionTables(activeSessionId: number, userId: number): Promise<SessionTable[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(sessionTables)
+    .where(and(eq(sessionTables.activeSessionId, activeSessionId), eq(sessionTables.userId, userId)))
+    .orderBy(sessionTables.createdAt);
+}
+
+/** Get all tables for a finalized session. */
+export async function getSessionTables(sessionId: number, userId: number): Promise<SessionTable[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(sessionTables)
+    .where(and(eq(sessionTables.sessionId, sessionId), eq(sessionTables.userId, userId)))
+    .orderBy(sessionTables.createdAt);
+}
+
+/**
+ * Finalize the active session:
+ * 1. Calculate total buyIn, cashOut, duration from tables
+ * 2. Create a sessions record
+ * 3. Link all sessionTables to the new session
+ * 4. Delete the active session
+ */
+export async function finalizeActiveSession(
+  userId: number,
+  activeSessionId: number,
+  notes?: string,
+  exchangeRates?: { USD: number; CAD: number; JPY: number }
+): Promise<Session | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [active] = await db.select().from(activeSessions).where(and(eq(activeSessions.id, activeSessionId), eq(activeSessions.userId, userId))).limit(1);
+  if (!active) return null;
+
+  const tables = await getActiveSessionTables(activeSessionId, userId);
+  if (tables.length === 0) {
+    // No tables — just delete the active session
+    await db.delete(activeSessions).where(eq(activeSessions.id, activeSessionId));
+    return null;
+  }
+
+  const now = new Date();
+  const startedAt = active.startedAt;
+  const durationMinutes = Math.max(1, Math.round((now.getTime() - startedAt.getTime()) / 60000));
+
+  // Convert all table values to BRL centavos for the aggregate session record
+  const rates = exchangeRates ?? { USD: 575, CAD: 420, JPY: 3 }; // fallback rates (per 100 units)
+  function toCentsBrl(amount: number, currency: string): number {
+    if (currency === "USD") return Math.round(amount * rates.USD / 100);
+    if (currency === "CAD") return Math.round(amount * rates.CAD / 100);
+    if (currency === "JPY") return Math.round(amount * rates.JPY / 100);
+    return amount;
+  }
+
+  let totalBuyIn = 0;
+  let totalCashOut = 0;
+  // Determine dominant type and gameFormat from tables
+  const typeCount: Record<string, number> = {};
+  const formatCount: Record<string, number> = {};
+  let dominantVenueId: number | undefined;
+  const venueCounts: Record<number, number> = {};
+
+  for (const t of tables) {
+    totalBuyIn += toCentsBrl(t.buyIn, t.currency);
+    totalCashOut += toCentsBrl(t.cashOut ?? 0, t.currency);
+    typeCount[t.type] = (typeCount[t.type] || 0) + 1;
+    formatCount[t.gameFormat] = (formatCount[t.gameFormat] || 0) + 1;
+    if (t.venueId) venueCounts[t.venueId] = (venueCounts[t.venueId] || 0) + 1;
+  }
+
+  const dominantType = (Object.entries(typeCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "online") as "online" | "live";
+  const dominantFormat = (Object.entries(formatCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "tournament") as any;
+  const venueEntries = Object.entries(venueCounts).sort((a, b) => b[1] - a[1]);
+  if (venueEntries.length > 0) dominantVenueId = Number(venueEntries[0][0]);
+
+  // Create the finalized session
+  await db.insert(sessions).values({
+    userId,
+    type: dominantType,
+    gameFormat: dominantFormat,
+    currency: "BRL",
+    buyIn: totalBuyIn,
+    cashOut: totalCashOut,
+    sessionDate: startedAt,
+    durationMinutes,
+    notes: notes ?? active.notes ?? undefined,
+    venueId: dominantVenueId,
+  });
+
+  const [newSession] = await db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.userId, userId))
+    .orderBy(desc(sessions.createdAt))
+    .limit(1);
+
+  if (newSession) {
+    // Link all tables to the finalized session
+    await db
+      .update(sessionTables)
+      .set({ sessionId: newSession.id, activeSessionId: null, updatedAt: new Date() })
+      .where(eq(sessionTables.activeSessionId, activeSessionId));
+  }
+
+  // Delete the active session
+  await db.delete(activeSessions).where(eq(activeSessions.id, activeSessionId));
+
+  return newSession ?? null;
+}
+
+/** Discard (cancel) an active session without saving. */
+export async function discardActiveSession(userId: number, activeSessionId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  // Delete tables first
+  await db.delete(sessionTables).where(eq(sessionTables.activeSessionId, activeSessionId));
+  await db.delete(activeSessions).where(and(eq(activeSessions.id, activeSessionId), eq(activeSessions.userId, userId)));
+  return true;
 }
