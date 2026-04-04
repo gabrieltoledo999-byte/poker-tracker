@@ -777,73 +777,56 @@ export default function Dashboard() {
 
         {/* RIGHT COLUMN */}
         <div className="xl:col-span-2 space-y-5">
-          {/* Card Online */}
-          <Card className="border border-cyan-500/30 bg-card/60 overflow-hidden">
-            <div className="h-1 w-full bg-gradient-to-r from-cyan-500 to-blue-600" />
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Poker Online</span>
-                <Badge variant="outline" className="text-cyan-400 border-cyan-500/30 text-xs gap-1">
-                  <Wifi className="h-3 w-3" />Online
-                </Badge>
-              </div>
-              <p className="text-3xl font-bold mb-1">{formatCurrencyCompact(consolidated?.online.current || 0)}</p>
-              <div className={`flex items-center gap-1 text-sm mb-1 ${(consolidated?.online.profit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {(consolidated?.online.profit || 0) >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                <span>{(consolidated?.online.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.online.profit || 0)} nas sessões</span>
-              </div>
-              <p className="text-xs text-muted-foreground mb-4">{consolidated?.online.sessions || 0} sessões</p>
-              <div className="border-t border-border/30 pt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-cyan-300">
-                    {(consolidated?.online.current || 0) > 0 ? formatCurrency(consolidated?.online.current || 0) : "—"}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={(consolidated?.online.current || 0) > 0 ? "outline" : "default"}
-                    className={`h-7 px-3 text-xs gap-1 ${(consolidated?.online.current || 0) === 0 ? "bg-cyan-600 hover:bg-cyan-700 text-white border-0" : "border-cyan-500/30 text-cyan-400"}`}
+          {/* Cards Online + Live lado a lado no topo */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Card Online */}
+            <Card className="border border-cyan-500/30 bg-card/60 overflow-hidden">
+              <div className="h-1 w-full bg-gradient-to-r from-cyan-500 to-blue-600" />
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="text-cyan-400 border-cyan-500/30 text-xs gap-1">
+                    <Wifi className="h-3 w-3" />Online
+                  </Badge>
+                  <button
                     onClick={() => setShowOnlineModal(true)}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 transition-colors"
                   >
-                    {(consolidated?.online.current || 0) > 0 ? <><Settings2 className="h-3 w-3" /> Alterar</> : <><Plus className="h-3 w-3" /> Definir bankroll</>}
-                  </Button>
+                    {(consolidated?.online.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                  </button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                <p className="text-xl font-bold mb-1">{formatCurrencyCompact(consolidated?.online.current || 0)}</p>
+                <div className={`flex items-center gap-1 text-xs ${(consolidated?.online.profit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {(consolidated?.online.profit || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  <span>{(consolidated?.online.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.online.profit || 0)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{consolidated?.online.sessions || 0} sessões</p>
+              </CardContent>
+            </Card>
 
-          {/* Card Live */}
-          <Card className="border border-violet-500/30 bg-card/60 overflow-hidden">
-            <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-700" />
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Poker Live</span>
-                <Badge variant="outline" className="text-violet-400 border-violet-500/30 text-xs gap-1">
-                  <MapPin className="h-3 w-3" />Live
-                </Badge>
-              </div>
-              <p className="text-3xl font-bold mb-1">{formatCurrencyCompact(consolidated?.live.current || 0)}</p>
-              <div className={`flex items-center gap-1 text-sm mb-1 ${(consolidated?.live.profit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {(consolidated?.live.profit || 0) >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                <span>{(consolidated?.live.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.live.profit || 0)} nas sessões</span>
-              </div>
-              <p className="text-xs text-muted-foreground mb-4">{consolidated?.live.sessions || 0} sessões</p>
-              <div className="border-t border-border/30 pt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-violet-300">
-                    {(consolidated?.live.current || 0) > 0 ? formatCurrency(consolidated?.live.current || 0) : "—"}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={(consolidated?.live.current || 0) > 0 ? "outline" : "default"}
-                    className={`h-7 px-3 text-xs gap-1 ${(consolidated?.live.current || 0) === 0 ? "bg-violet-600 hover:bg-violet-700 text-white border-0" : "border-violet-500/30 text-violet-400"}`}
+            {/* Card Live */}
+            <Card className="border border-violet-500/30 bg-card/60 overflow-hidden">
+              <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-700" />
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="text-violet-400 border-violet-500/30 text-xs gap-1">
+                    <MapPin className="h-3 w-3" />Live
+                  </Badge>
+                  <button
                     onClick={() => setShowLiveModal(true)}
+                    className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5 transition-colors"
                   >
-                    {(consolidated?.live.current || 0) > 0 ? <><Settings2 className="h-3 w-3" /> Alterar</> : <><Plus className="h-3 w-3" /> Definir bankroll</>}
-                  </Button>
+                    {(consolidated?.live.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                  </button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                <p className="text-xl font-bold mb-1">{formatCurrencyCompact(consolidated?.live.current || 0)}</p>
+                <div className={`flex items-center gap-1 text-xs ${(consolidated?.live.profit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {(consolidated?.live.profit || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  <span>{(consolidated?.live.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.live.profit || 0)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{consolidated?.live.sessions || 0} sessões</p>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Minhas Plataformas (apenas stats) */}
           <Card className="bg-card/60 border-border/40">
