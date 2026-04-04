@@ -290,4 +290,10 @@
 - [x] Cada plataforma deve ter sua própria cor (mesmas cores do VENUE_COLORS)
 - [x] Saldo Live deve entrar no gráfico de pizza corretamente
 - [x] Legenda do gráfico deve listar cada plataforma com nome e valor
+
+## Saldo Live — Atalho no Dashboard
+
+- [x] Adicionar botão "Definir saldo" na seção Live do Dashboard (card de patrimônio)
+- [x] Modal inline para editar initialLive sem sair do Dashboard
+- [x] Após salvar, invalidar a query getConsolidated para atualizar o gráfico imediatamente
 - [x] Formatação do eixo Y deve usar a mesma função formatCurrencyCompact para exibir valores legíveis

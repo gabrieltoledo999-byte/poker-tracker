@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -429,6 +430,8 @@ export default function Dashboard() {
    const [showOnboarding, setShowOnboarding] = useState(true);
   const [showLegacyModal, setShowLegacyModal] = useState(true);
   const [legacyAllocations, setLegacyAllocations] = useState<Record<number, string>>({});
+  const [showLiveModal, setShowLiveModal] = useState(false);
+  const [liveInputValue, setLiveInputValue] = useState("");
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
   const { data: legacyStatus } = trpc.bankroll.getLegacyMigrationStatus.useQuery();
   const completeLegacyMigrationMutation = trpc.bankroll.completeLegacyMigration.useMutation({
@@ -639,6 +642,67 @@ export default function Dashboard() {
         </Dialog>
       )}
 
+      {/* Modal: Definir/Editar Bankroll Live */}
+      <Dialog open={showLiveModal} onOpenChange={setShowLiveModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-violet-400" />
+              {(consolidated?.live.current || 0) > 0 ? "Editar Bankroll Live" : "Definir Bankroll Live"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Informe o valor total que você tem disponível para jogar presencialmente (cash, fichas, etc.).
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="live-bankroll-input">Valor em R$</Label>
+              <Input
+                id="live-bankroll-input"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder={`Ex: ${((consolidated?.live.current || 0) / 100).toFixed(2) || "500.00"}`}
+                value={liveInputValue}
+                onChange={(e) => setLiveInputValue(e.target.value)}
+                onFocus={() => {
+                  if (!liveInputValue && (consolidated?.live.current || 0) > 0) {
+                    setLiveInputValue(((consolidated?.live.current || 0) / 100).toFixed(2));
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            {(consolidated?.live.current || 0) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Valor atual: <span className="text-violet-400 font-medium">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format((consolidated?.live.current || 0) / 100)}</span>
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" size="sm" onClick={() => { setShowLiveModal(false); setLiveInputValue(""); }}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 bg-violet-600 hover:bg-violet-700"
+              disabled={updateLiveBankrollMutation.isPending || !liveInputValue}
+              onClick={() => {
+                const val = parseFloat(liveInputValue);
+                if (isNaN(val) || val < 0) { toast.error("Valor inválido"); return; }
+                updateLiveBankrollMutation.mutate(
+                  { initialLive: Math.round(val * 100) },
+                  { onSuccess: () => { setShowLiveModal(false); setLiveInputValue(""); } }
+                );
+              }}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {updateLiveBankrollMutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Banner de onboarding */}
       {showOnboarding && allVenues.length > 0 && (
         <OnboardingBanner venues={allVenues} onDismiss={() => setShowOnboarding(false)} />
@@ -680,7 +744,16 @@ export default function Dashboard() {
                   <p className="font-semibold text-cyan-400">{formatCurrencyCompact(consolidated?.online.current || 0)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs mb-0.5">Live</p>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <p className="text-muted-foreground text-xs">Live</p>
+                    <button
+                      onClick={() => setShowLiveModal(true)}
+                      className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5 transition-colors"
+                      title="Definir bankroll live"
+                    >
+                      {(consolidated?.live.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                    </button>
+                  </div>
                   <p className="font-semibold text-violet-400">{formatCurrencyCompact(consolidated?.live.current || 0)}</p>
                 </div>
                 <div>
