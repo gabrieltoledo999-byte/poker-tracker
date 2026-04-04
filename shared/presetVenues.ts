@@ -68,14 +68,14 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "X-Poker",
     type: "online",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/X_logo_2023_%28white%29.png/240px-X_logo_2023_%28white%29.png",
-    website: "https://www.xpoker.com",
+    logoUrl: "https://play-lh.googleusercontent.com/2P9q7_FMxJhHlBRjDlWJJHUHqFVDNGZnVzF2jlGxPjNHHxvpGfKbpTqnO8_TkJJxjA=s512",
+    website: "https://www.xpokerapp.com",
   },
   // Live Poker Clubs - Brazil
   {
     name: "Monte Carlo Poker Club",
     type: "live",
-    logoUrl: `${CDN}/montecarlo_acc5f978.jpg`,
+    logoUrl: `${CDN}/montecarlo_icon_82131015.png`,
     website: "https://www.montecarlopoker.com.br",
   },
   {
@@ -99,42 +99,37 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "BHZ Poker Clube",
     type: "live",
-    logoUrl: "https://pbs.twimg.com/profile_images/1629516614823849984/lfpJHVJo_400x400.jpg",
+    logoUrl: `${CDN}/bhz_icon_492624b3.png`,
   },
   {
     name: "Fold Poker Club",
     type: "live",
-    logoUrl: "https://pbs.twimg.com/profile_images/1673759843285913600/Gq2QLPXF_400x400.jpg",
+    logoUrl: `${CDN}/fold_icon_d4c7a6ee.png`,
   },
   {
     name: "Acaraí Poker Club",
     type: "live",
-    logoUrl: "https://pbs.twimg.com/profile_images/1611783542743334913/gWbQHGBh_400x400.jpg",
+    logoUrl: `${CDN}/acarai_icon_73cd1a4e.png`,
   },
   {
     name: "QG Masters Club",
     type: "live",
-    logoUrl: "https://pbs.twimg.com/profile_images/1578822394985492480/wGkQABpQ_400x400.jpg",
+    logoUrl: `${CDN}/qgmasters_icon_c3b055f0.png`,
   },
   {
     name: "HiJack Poker Club",
     type: "live",
-    logoUrl: `${CDN}/hijack_3fb66810.jpg`,
+    logoUrl: `${CDN}/hijack_icon_6b26e5c0.png`,
   },
   {
     name: "Stars Club Poker Room",
     type: "live",
-    logoUrl: "https://pbs.twimg.com/profile_images/1624162034538283010/5Yl9Hy7m_400x400.jpg",
+    logoUrl: `${CDN}/starsclub_icon_d24b5f93.png`,
   },
   {
     name: "Players Poker Club",
     type: "live",
-    logoUrl: "https://pbs.twimg.com/profile_images/1624162034538283010/5Yl9Hy7m_400x400.jpg",
-  },
-  {
-    name: "Home Game",
-    type: "live",
-    logoUrl: "",
+    logoUrl: `${CDN}/players_icon_63bc2826.png`,
   },
 ];
 
