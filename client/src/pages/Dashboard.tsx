@@ -387,8 +387,11 @@ function OnboardingBanner({ venues, onDismiss }: { venues: any[]; onDismiss: () 
   const undefinedOnline = venues.filter(v => v.type === "online" && v.balance === 0);
   const undefinedLive = venues.filter(v => v.type === "live" && v.balanceBrl === 0);
   const totalUndefined = undefinedOnline.length + undefinedLive.length;
+  const totalVenues = venues.length;
 
-  if (totalUndefined === 0) return null;
+  // Desaparece automaticamente se ao menos uma plataforma tiver saldo definido
+  const hasAtLeastOneBalance = totalVenues > 0 && totalUndefined < totalVenues;
+  if (hasAtLeastOneBalance || totalUndefined === 0) return null;
 
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
@@ -507,7 +510,7 @@ export default function Dashboard() {
 
   // Detectar se o usuário ainda não definiu nenhuma banca
   const hasAnyBalance = consolidatedTotal > 0;
-  const allVenues = consolidated?.allVenues || [];
+  const allVenues = [...(consolidated?.allVenues || [])].sort((a: any, b: any) => b.balanceBrl - a.balanceBrl);
 
   const isLoading = loadingStats || loadingHistory || loadingConsolidated;
 

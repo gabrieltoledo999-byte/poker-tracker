@@ -217,3 +217,6 @@
 - [x] Adicionar logo da KK Poker (imagem fornecida pelo usuário)
 - [x] Aumentar tamanho do logo da Suprema Poker (está pequeno)
 - [x] Aumentar tamanho do logo da WPT (está pequeno)
+
+- [x] Banner de onboarding deve desaparecer automaticamente quando ao menos uma plataforma tiver saldo definido
+- [x] Ordenar plataformas por valor de banca (maior para menor) no Dashboard e na página de Locais

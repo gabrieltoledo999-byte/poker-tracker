@@ -634,7 +634,7 @@ export default function Venues() {
   });
 
   const getVenueStats = (venueId: number) => venueStats?.find((s: any) => s.venueId === venueId);
-  const filteredVenues = venues?.filter((v: any) => v.type === activeTab) || [];
+  const filteredVenues = (venues?.filter((v: any) => v.type === activeTab) || []).sort((a: any, b: any) => (b.balance ?? 0) - (a.balance ?? 0));
 
   if (isLoading) {
     return (
