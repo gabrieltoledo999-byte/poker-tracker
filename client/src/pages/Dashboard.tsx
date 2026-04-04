@@ -634,6 +634,11 @@ export default function Dashboard() {
                       <AlertCircle className="h-3 w-3" /> Defina os saldos das suas plataformas para ver o patrimônio real
                     </p>
                   )}
+                  {hasAnyBalance && !consolidated?.hasVenueBalances && (
+                    <p className="text-xs text-amber-400/70 mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Patrimônio calculado pelo histórico — <Link to="/locais" className="underline underline-offset-2">associe uma plataforma</Link> para maior precisão
+                    </p>
+                  )}
                 </div>
                 {hasAnyBalance && (
                   <Badge variant={consolidatedProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1 mt-1">

@@ -671,7 +671,14 @@ export const appRouter = router({
         // Online venues total (sum of balances)
         const onlineVenues = venuesWithBrl.filter(v => v.type === "online");
         const liveVenues = venuesWithBrl.filter(v => v.type === "live");
-        const onlineBalanceTotal = onlineVenues.reduce((sum, v) => sum + v.balanceBrl, 0);
+        const rawOnlineBalanceTotal = onlineVenues.reduce((sum, v) => sum + v.balanceBrl, 0);
+        
+        // Fallback: se nenhuma plataforma tem saldo definido, usar initialOnline + resultado das sessões
+        const initialOnline = settings?.initialOnline ?? 0;
+        const hasVenueBalances = rawOnlineBalanceTotal > 0;
+        const onlineBalanceTotal = hasVenueBalances
+          ? rawOnlineBalanceTotal
+          : Math.max(0, initialOnline + onlineStats.totalProfit + fundTotals.online.net);
         
         // Live bankroll = defined by user (initialLive) + live session profit
         const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
@@ -680,6 +687,7 @@ export const appRouter = router({
         const totalCurrent = onlineBalanceTotal + Math.max(0, liveCurrent);
         
         return {
+          hasVenueBalances,
           online: {
             current: onlineBalanceTotal,
             profit: onlineStats.totalProfit,

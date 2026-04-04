@@ -265,3 +265,8 @@
 - [x] Criar procedure bankroll.getLegacyMigrationStatus para detectar usuários com initialOnline > 0 e sem saldo em nenhuma plataforma
 - [x] Criar banner/modal no Dashboard para usuários legados alocarem saldo por plataforma
 - [x] Após alocação: zerar initialOnline e marcar migração como concluída
+
+## Correção de Patrimônio Legado
+
+- [x] Patrimônio total deve exibir initialOnline + resultado das sessões quando usuário ainda não associou saldo a plataformas
+- [x] Adicionar indicador visual no Dashboard quando patrimônio é calculado pelo método legado (sem plataforma associada)

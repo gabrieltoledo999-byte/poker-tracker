@@ -138,6 +138,39 @@ describe("venues.updateBalance", () => {
   });
 });
 
+describe("bankroll.getConsolidated - legacy user (initialOnline without venue balances)", () => {
+  it("returns hasVenueBalances=false when no online venue has balance", async () => {
+    const { getUserVenues } = await import("./db");
+    vi.mocked(getUserVenues).mockResolvedValueOnce([
+      { id: 1, name: "PokerStars", type: "online", balance: 0, currency: "BRL", userId: 1, logoUrl: null, isPreset: 1, createdAt: new Date(), updatedAt: new Date() },
+    ]);
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bankroll.getConsolidated();
+    expect(result.hasVenueBalances).toBe(false);
+  });
+
+  it("uses initialOnline as fallback when no venue has balance", async () => {
+    const { getUserVenues } = await import("./db");
+    vi.mocked(getUserVenues).mockResolvedValueOnce([
+      { id: 1, name: "PokerStars", type: "online", balance: 0, currency: "BRL", userId: 1, logoUrl: null, isPreset: 1, createdAt: new Date(), updatedAt: new Date() },
+    ]);
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bankroll.getConsolidated();
+    // initialOnline=100000, onlineStats.totalProfit=5000, fundTotals.online.net=0 → 105000
+    expect(result.online.current).toBe(105000);
+  });
+
+  it("returns hasVenueBalances=true when at least one online venue has balance", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.bankroll.getConsolidated();
+    // Default mock has PokerStars with balance=50000
+    expect(result.hasVenueBalances).toBe(true);
+  });
+});
+
 describe("bankroll.updateSettings - live bankroll", () => {
   it("accepts initialLive to set live bankroll without deposits", async () => {
     const ctx = createAuthContext();
