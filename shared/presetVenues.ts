@@ -74,6 +74,36 @@ export const PRESET_VENUES: PresetVenue[] = [
     logoUrl: `${CDN}/xpoker-logo_a9942cfe.png`,
     website: "https://www.xpokerapp.com",
   },
+  // Live Poker Clubs - Brazil
+  {
+    name: "Monte Carlo Poker Club",
+    type: "live",
+    logoUrl: `${CDN}/montecarlo_real_d486b53f.jpg`,
+    website: "https://www.montecarlopoker.com.br",
+  },
+  {
+    name: "H2 Club São Paulo",
+    type: "live",
+    logoUrl: `${CDN}/h2club_58b7eae7.png`,
+    website: "https://sp.h2club.com.br",
+  },
+  {
+    name: "H2 Club Curitiba",
+    type: "live",
+    logoUrl: `${CDN}/h2club_58b7eae7.png`,
+    website: "https://curitiba.h2club.com.br",
+  },
+  {
+    name: "H2 Club Campinas",
+    type: "live",
+    logoUrl: `${CDN}/h2club_58b7eae7.png`,
+    website: "https://campinas.h2club.com.br",
+  },
+  {
+    name: "Players Poker Club",
+    type: "live",
+    logoUrl: `${CDN}/players_icon_63bc2826.png`,
+  },
 ];
 
 export function getVenueEmoji(type: "online" | "live"): string {
