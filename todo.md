@@ -306,4 +306,5 @@
 - [x] Remover clubes Live da seção Minhas Plataformas do Dashboard (manter só online)
 - [x] Remover clubes Live dos presets permanentemente (H2 Club, Monte Carlo)
 - [ ] Exibir o bankroll Live como card separado na tela inicial
+- [x] Mover seletor de cor de acento para o DashboardLayout (acessível em todas as abas)
 - [x] Formatação do eixo Y deve usar a mesma função formatCurrencyCompact para exibir valores legíveis

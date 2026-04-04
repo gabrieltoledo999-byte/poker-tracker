@@ -21,11 +21,32 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, ListChecks, Settings, Spade, MapPin, Users, Wallet } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, ListChecks, Settings, Spade, MapPin, Users, Wallet, Palette } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { useTheme, ACCENT_COLORS, AccentColor } from "@/contexts/ThemeContext";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+
+function ColorPicker() {
+  const { accentColor, setAccentColor } = useTheme();
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {(Object.entries(ACCENT_COLORS) as [AccentColor, { label: string; hex: string }][]).map(([key, val]) => (
+        <button
+          key={key}
+          title={val.label}
+          onClick={() => setAccentColor(key)}
+          className={`h-5 w-5 rounded-full border-2 transition-all ${
+            accentColor === key ? "border-white scale-110" : "border-transparent opacity-70 hover:opacity-100"
+          }`}
+          style={{ backgroundColor: val.hex }}
+        />
+      ))}
+    </div>
+  );
+}
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -230,13 +251,18 @@ function DashboardLayoutContent({
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-52">
+                <div className="px-2 py-2">
+                  <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1"><Palette className="h-3 w-3" /> Cor de destaque</p>
+                  <ColorPicker />
+                </div>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
+                  <span>Sair</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -264,6 +290,9 @@ function DashboardLayoutContent({
                   </span>
                 </div>
               </div>
+            </div>
+            <div className="flex items-center gap-1 pr-2">
+              <ColorPicker />
             </div>
           </div>
         )}
