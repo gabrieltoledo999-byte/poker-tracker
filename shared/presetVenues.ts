@@ -62,13 +62,13 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "KKPoker",
     type: "online",
-    logoUrl: "https://play-lh.googleusercontent.com/RRnFJGRGiJPmWZQFq0kBSWXHHqBEGLPJCJBGNMEVHVSRqEYFJrFT3zFuOJE0VqQ8w=s512",
+    logoUrl: `${CDN}/kkpoker-logo_5b7e0949.png`,
     website: "https://www.kkpoker.net",
   },
   {
     name: "X-Poker",
     type: "online",
-    logoUrl: "https://play-lh.googleusercontent.com/2P9q7_FMxJhHlBRjDlWJJHUHqFVDNGZnVzF2jlGxPjNHHxvpGfKbpTqnO8_TkJJxjA=s512",
+    logoUrl: `${CDN}/xpoker-logo_a9942cfe.png`,
     website: "https://www.xpokerapp.com",
   },
   // Live Poker Clubs - Brazil

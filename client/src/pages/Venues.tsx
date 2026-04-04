@@ -426,7 +426,7 @@ function VenueCard({
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
             {venue.logoUrl ? (
-              <img src={venue.logoUrl} alt={venue.name} className="h-12 w-12 rounded-lg object-contain bg-muted p-1" />
+              <img src={venue.logoUrl} alt={venue.name} className="h-16 w-16 rounded-lg object-contain bg-muted p-1.5" />
             ) : (
               <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
                 {venue.type === "online" ? <Monitor className="h-6 w-6 text-muted-foreground" /> : <MapPin className="h-6 w-6 text-muted-foreground" />}

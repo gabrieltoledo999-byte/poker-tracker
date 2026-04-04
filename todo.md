@@ -192,3 +192,28 @@
 - [ ] Bloco "Meu Desempenho": barras horizontais por plataforma (ROI/Win Rate)
 - [ ] Painel "Minhas Plataformas": lista expansível estilo "Meus Ativos" do TradeMap
 - [ ] Conversão automática USD/JPY para BRL no total consolidado
+
+## Correções de Patrimônio e Gráfico Donut
+
+- [ ] Corrigir lógica do patrimônio total no Dashboard (valor deve refletir saldos reais das plataformas convertidos para BRL)
+- [ ] Substituir gráfico de distribuição por donut chart Live vs Online estilo TradeMap
+- [ ] Garantir que o card "Banca Total" exiba o patrimônio real do usuário (saldo online + bankroll live)
+
+## Correções Urgentes de Patrimônio
+
+- [x] Corrigir botão "Definir" no card Poker Live (não salva o valor)
+- [x] Corrigir edição de saldo nas plataformas online (botão Editar não funciona)
+- [x] Adicionar estado vazio com CTA quando nenhum patrimônio foi cadastrado
+- [x] Corrigir donut chart para mostrar Live vs Online com valores reais
+- [x] Patrimônio total deve usar saldos reais das plataformas (não initialOnline fictício)
+
+- [x] Criar fluxo de onboarding de banca para usuários existentes (modal/banner com CTA)
+- [x] Onboarding: usuário define saldo atual por plataforma + bankroll live
+- [x] Após definir banca: recalcular ROI, resultado e patrimônio total automaticamente
+
+## Logos das Plataformas
+
+- [x] Adicionar logo da X Poker (imagem fornecida pelo usuário)
+- [x] Adicionar logo da KK Poker (imagem fornecida pelo usuário)
+- [x] Aumentar tamanho do logo da Suprema Poker (está pequeno)
+- [x] Aumentar tamanho do logo da WPT (está pequeno)

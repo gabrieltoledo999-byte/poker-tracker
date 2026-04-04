@@ -12,6 +12,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   AreaChart,
   Area,
   BarChart,
@@ -24,7 +31,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
   ReferenceLine,
 } from "recharts";
 import {
@@ -39,6 +45,9 @@ import {
   ChevronDown,
   ChevronRight,
   Settings2,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useMemo } from "react";
@@ -95,6 +104,7 @@ function CirclePercent({ pct, color, size = 48 }: { pct: number; color: string; 
   );
 }
 
+// ─── VenueRow ────────────────────────────────────────────────────────────────
 function VenueRow({
   venue, totalBrl, colorIdx, onEditBalance,
 }: {
@@ -130,6 +140,8 @@ function VenueRow({
     return formatCurrencyCompact(venue.balance);
   };
 
+  const hasBalance = venue.type === "live" ? venue.balanceBrl > 0 : venue.balance > 0;
+
   return (
     <div className="border-b border-border/20 last:border-0">
       <div
@@ -138,29 +150,37 @@ function VenueRow({
       >
         <CirclePercent pct={pct} color={color} size={44} />
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="h-8 w-8 rounded-lg bg-muted/60 flex items-center justify-center shrink-0 overflow-hidden">
+          <div className="h-10 w-10 rounded-lg bg-muted/60 flex items-center justify-center shrink-0 overflow-hidden p-0.5">
             {venue.logoUrl ? (
-              <img src={venue.logoUrl} alt={venue.name} className="h-8 w-8 object-cover rounded-lg" />
+              <img src={venue.logoUrl} alt={venue.name} className="h-full w-full object-contain rounded-md" />
             ) : (
-              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Building2 className="h-5 w-5 text-muted-foreground" />
             )}
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold truncate">{venue.name}</p>
             <p className="text-xs text-muted-foreground">
               {venue.type === "live" ? "Live" : venue.currency || "BRL"}
-              {venue.type === "online" && venue.currency !== "BRL" && (
+              {venue.type === "online" && venue.currency !== "BRL" && venue.balance > 0 && (
                 <span className="ml-1 text-[10px] text-primary/70">≈ {formatCurrencyCompact(venue.balanceBrl)}</span>
               )}
             </p>
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-bold">{displayBalance()}</p>
-          {stats && stats.sessions > 0 && (
-            <p className={`text-xs font-medium ${stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {stats.totalProfit >= 0 ? "+" : ""}{formatCurrencyCompact(stats.totalProfit)}
-            </p>
+          {hasBalance ? (
+            <>
+              <p className="text-sm font-bold">{displayBalance()}</p>
+              {stats && stats.sessions > 0 && (
+                <p className={`text-xs font-medium ${stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {stats.totalProfit >= 0 ? "+" : ""}{formatCurrencyCompact(stats.totalProfit)}
+                </p>
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-amber-400 font-medium flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> Definir
+            </span>
           )}
         </div>
         <div className="shrink-0 ml-1">
@@ -172,7 +192,10 @@ function VenueRow({
         <div className="pb-3 px-2 space-y-3">
           {venue.type === "online" && (
             <div className="bg-muted/20 rounded-lg p-3">
-              <p className="text-xs text-muted-foreground mb-2 font-medium">Saldo na plataforma</p>
+              <p className="text-xs text-muted-foreground mb-2 font-medium">
+                Saldo atual na plataforma
+                {!hasBalance && <span className="ml-2 text-amber-400">(não definido)</span>}
+              </p>
               {editingBalance ? (
                 <div className="flex gap-2 items-center">
                   <Select value={currencyInput} onValueChange={setCurrencyInput}>
@@ -186,24 +209,49 @@ function VenueRow({
                       <SelectItem value="JPY">JPY</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input type="number" placeholder="0.00" value={balanceInput}
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={balanceInput}
                     onChange={(e) => setBalanceInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveBalance(); if (e.key === "Escape") setEditingBalance(false); }}
-                    className="h-8 text-sm flex-1" autoFocus />
-                  <Button size="sm" className="h-8 px-3" onClick={handleSaveBalance}>OK</Button>
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveBalance();
+                      if (e.key === "Escape") setEditingBalance(false);
+                    }}
+                    className="h-8 text-sm flex-1"
+                    autoFocus
+                  />
+                  <Button size="sm" className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveBalance}>
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Salvar
+                  </Button>
                   <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingBalance(false)}>✕</Button>
                 </div>
               ) : (
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold">
-                    {displayBalance()}
-                    {venue.currency !== "BRL" && (
-                      <span className="text-xs text-muted-foreground ml-2">≈ {formatCurrencyCompact(venue.balanceBrl)}</span>
+                    {hasBalance ? (
+                      <>
+                        {displayBalance()}
+                        {venue.currency !== "BRL" && (
+                          <span className="text-xs text-muted-foreground ml-2">≈ {formatCurrencyCompact(venue.balanceBrl)}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">Nenhum saldo definido</span>
                     )}
                   </span>
-                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1"
-                    onClick={(e) => { e.stopPropagation(); setEditingBalance(true); setCurrencyInput(venue.currency || "BRL"); setBalanceInput(String(venue.balance / 100)); }}>
-                    <Pencil className="h-3 w-3" /> Editar
+                  <Button
+                    size="sm"
+                    variant={hasBalance ? "outline" : "default"}
+                    className={`h-7 px-2 text-xs gap-1 ${!hasBalance ? "bg-primary text-primary-foreground" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingBalance(true);
+                      setCurrencyInput(venue.currency || "BRL");
+                      setBalanceInput(hasBalance ? String(venue.balance / 100) : "");
+                    }}
+                  >
+                    {hasBalance ? <><Pencil className="h-3 w-3" /> Editar</> : <><Plus className="h-3 w-3" /> Definir saldo</>}
                   </Button>
                 </div>
               )}
@@ -237,6 +285,7 @@ function VenueRow({
   );
 }
 
+// ─── LiveBankrollCard ─────────────────────────────────────────────────────────
 function LiveBankrollCard({
   liveBankroll, profit, sessions, onSetBankroll,
 }: {
@@ -246,6 +295,7 @@ function LiveBankrollCard({
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const isPositive = profit >= 0;
+  const hasBankroll = liveBankroll > 0;
 
   const handleConfirm = () => {
     const val = Math.round(parseFloat(inputValue.replace(",", ".")) * 100);
@@ -265,29 +315,64 @@ function LiveBankrollCard({
             <MapPin className="h-3 w-3" />Live
           </Badge>
         </div>
-        <p className="text-3xl font-bold mb-1">{formatCurrency(liveBankroll)}</p>
-        <div className={`flex items-center gap-1 text-sm mb-1 ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
-          {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          <span>{isPositive ? "+" : ""}{formatCurrency(profit)} nas sessões</span>
-        </div>
-        <p className="text-xs text-muted-foreground mb-4">{sessions} {sessions === 1 ? "sessão" : "sessões"}</p>
+
+        {hasBankroll ? (
+          <>
+            <p className="text-3xl font-bold mb-1">{formatCurrency(liveBankroll)}</p>
+            <div className={`flex items-center gap-1 text-sm mb-1 ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
+              {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+              <span>{isPositive ? "+" : ""}{formatCurrency(profit)} nas sessões</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">{sessions} {sessions === 1 ? "sessão" : "sessões"}</p>
+          </>
+        ) : (
+          <div className="mb-4">
+            <p className="text-3xl font-bold mb-1 text-muted-foreground">R$ 0,00</p>
+            <p className="text-xs text-amber-400 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> Bankroll live não definido
+            </p>
+          </div>
+        )}
+
         <div className="border-t border-border/30 pt-3">
-          <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">Bankroll definido para live</p>
+          <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">
+            {hasBankroll ? "Bankroll definido para live" : "Defina seu bankroll para live"}
+          </p>
           {editing ? (
             <div className="flex gap-2 items-center">
-              <span className="text-sm text-muted-foreground">R$</span>
-              <Input type="number" placeholder="0,00" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleConfirm(); if (e.key === "Escape") setEditing(false); }}
-                className="h-8 text-sm flex-1" autoFocus />
-              <Button size="sm" className="h-8 px-3" onClick={handleConfirm}>OK</Button>
+              <span className="text-sm text-muted-foreground shrink-0">R$</span>
+              <Input
+                type="number"
+                placeholder="Ex: 2000"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleConfirm();
+                  if (e.key === "Escape") setEditing(false);
+                }}
+                className="h-8 text-sm flex-1"
+                autoFocus
+              />
+              <Button size="sm" className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirm}>
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Salvar
+              </Button>
               <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditing(false)}>✕</Button>
             </div>
           ) : (
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-violet-300">{formatCurrency(liveBankroll)}</span>
-              <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 border-violet-500/30 text-violet-400"
-                onClick={() => { setEditing(true); setInputValue(String(liveBankroll / 100)); }}>
-                <Settings2 className="h-3 w-3" /> Definir
+              <span className="text-sm font-semibold text-violet-300">
+                {hasBankroll ? formatCurrency(liveBankroll) : "—"}
+              </span>
+              <Button
+                size="sm"
+                variant={hasBankroll ? "outline" : "default"}
+                className={`h-7 px-3 text-xs gap-1 ${!hasBankroll ? "bg-violet-600 hover:bg-violet-700 text-white border-0" : "border-violet-500/30 text-violet-400"}`}
+                onClick={() => {
+                  setEditing(true);
+                  setInputValue(hasBankroll ? String(liveBankroll / 100) : "");
+                }}
+              >
+                {hasBankroll ? <><Settings2 className="h-3 w-3" /> Alterar</> : <><Plus className="h-3 w-3" /> Definir bankroll</>}
               </Button>
             </div>
           )}
@@ -297,13 +382,50 @@ function LiveBankrollCard({
   );
 }
 
+// ─── OnboardingBanner ─────────────────────────────────────────────────────────
+function OnboardingBanner({ venues, onDismiss }: { venues: any[]; onDismiss: () => void }) {
+  const undefinedOnline = venues.filter(v => v.type === "online" && v.balance === 0);
+  const undefinedLive = venues.filter(v => v.type === "live" && v.balanceBrl === 0);
+  const totalUndefined = undefinedOnline.length + undefinedLive.length;
+
+  if (totalUndefined === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
+      <Sparkles className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-amber-300 mb-1">Configure sua banca para ver seu patrimônio real</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Você tem {totalUndefined} plataforma{totalUndefined > 1 ? "s" : ""} sem saldo definido.
+          Clique em cada plataforma abaixo → expanda → clique em <strong>"Definir saldo"</strong> para registrar quanto você tem em cada site.
+          {undefinedLive.length > 0 && " Para o Live, use o card roxo abaixo."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {undefinedOnline.slice(0, 5).map((v: any) => (
+            <span key={v.id} className="text-xs bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5 text-amber-300">
+              {v.name}
+            </span>
+          ))}
+          {undefinedOnline.length > 5 && (
+            <span className="text-xs text-muted-foreground">+{undefinedOnline.length - 5} mais</span>
+          )}
+        </div>
+      </div>
+      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-muted-foreground shrink-0" onClick={onDismiss}>
+        Fechar
+      </Button>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const utils = trpc.useUtils();
   const [chartPeriod, setChartPeriod] = useState<"online" | "live" | "all">("all");
   const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions">("roi");
+  const [showOnboarding, setShowOnboarding] = useState(true);
 
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
-  const { data: bankroll, isLoading: loadingBankroll } = trpc.bankroll.getCurrent.useQuery();
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
@@ -311,18 +433,19 @@ export default function Dashboard() {
   const updateBalanceMutation = trpc.venues.updateBalance.useMutation({
     onSuccess: () => {
       utils.bankroll.getConsolidated.invalidate();
-      toast.success("Saldo atualizado!");
+      utils.bankroll.history.invalidate();
+      toast.success("Saldo atualizado com sucesso!");
     },
-    onError: () => toast.error("Erro ao atualizar saldo"),
+    onError: (err) => toast.error(`Erro ao atualizar saldo: ${err.message}`),
   });
 
   const updateLiveBankrollMutation = trpc.bankroll.updateSettings.useMutation({
     onSuccess: () => {
-      utils.bankroll.getCurrent.invalidate();
       utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.history.invalidate();
       toast.success("Bankroll live atualizado!");
     },
-    onError: () => toast.error("Erro ao atualizar bankroll live"),
+    onError: (err) => toast.error(`Erro ao atualizar bankroll: ${err.message}`),
   });
 
   const chartData = useMemo(() => {
@@ -335,17 +458,29 @@ export default function Dashboard() {
     }));
   }, [history]);
 
+  // Donut: Live vs Online (2 fatias)
   const donutData = useMemo(() => {
-    if (!consolidated?.allVenues) return [];
-    const venues = consolidated.allVenues.filter((v: any) => v.balanceBrl > 0);
-    if (venues.length === 0) return [];
-    return venues.map((v: any, i: number) => ({
-      name: v.name.length > 12 ? v.name.substring(0, 12) + "…" : v.name,
-      fullName: v.name,
-      value: v.balanceBrl / 100,
-      color: VENUE_COLORS[i % VENUE_COLORS.length],
-      pct: consolidated.total.current > 0 ? Math.round((v.balanceBrl / consolidated.total.current) * 100) : 0,
-    }));
+    if (!consolidated) return [];
+    const onlineVal = consolidated.online.current;
+    const liveVal = consolidated.live.current;
+    const total = onlineVal + liveVal;
+    if (total === 0) return [];
+    const result = [];
+    if (onlineVal > 0) result.push({
+      name: "Online",
+      fullName: "Poker Online",
+      value: onlineVal / 100,
+      color: "#06b6d4",
+      pct: Math.round((onlineVal / total) * 100),
+    });
+    if (liveVal > 0) result.push({
+      name: "Live",
+      fullName: "Poker Live",
+      value: liveVal / 100,
+      color: "#8b5cf6",
+      pct: Math.round((liveVal / total) * 100),
+    });
+    return result;
   }, [consolidated]);
 
   const perfData = useMemo(() => {
@@ -364,17 +499,17 @@ export default function Dashboard() {
       }));
   }, [venueStats]);
 
-  const totalProfit = bankroll?.total.profit || 0;
-  const totalCurrent = bankroll?.total.current || 0;
-  const invested = totalCurrent - totalProfit;
-  const profitPct = invested > 0 ? (totalProfit / invested) * 100 : 0;
-
+  // Patrimônio real = saldo das plataformas online (convertido p/ BRL) + bankroll live
   const consolidatedTotal = consolidated?.total.current || 0;
   const consolidatedProfit = consolidated?.total.profit || 0;
   const consolidatedBase = consolidatedTotal - consolidatedProfit;
   const consolidatedPct = consolidatedBase > 0 ? (consolidatedProfit / consolidatedBase) * 100 : 0;
 
-  const isLoading = loadingBankroll || loadingStats || loadingHistory || loadingConsolidated;
+  // Detectar se o usuário ainda não definiu nenhuma banca
+  const hasAnyBalance = consolidatedTotal > 0;
+  const allVenues = consolidated?.allVenues || [];
+
+  const isLoading = loadingStats || loadingHistory || loadingConsolidated;
 
   if (isLoading) {
     return (
@@ -402,6 +537,11 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      {/* Banner de onboarding */}
+      {showOnboarding && allVenues.length > 0 && (
+        <OnboardingBanner venues={allVenues} onDismiss={() => setShowOnboarding(false)} />
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
         {/* LEFT COLUMN */}
         <div className="xl:col-span-3 space-y-5">
@@ -411,22 +551,41 @@ export default function Dashboard() {
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Patrimônio Poker</p>
-                  <p className="text-4xl font-bold tracking-tight">{formatCurrencyCompact(consolidatedTotal)}</p>
+                  <p className={`text-4xl font-bold tracking-tight ${!hasAnyBalance ? "text-muted-foreground" : ""}`}>
+                    {formatCurrencyCompact(consolidatedTotal)}
+                  </p>
+                  {!hasAnyBalance && (
+                    <p className="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Defina os saldos das suas plataformas para ver o patrimônio real
+                    </p>
+                  )}
                 </div>
-                <Badge variant={consolidatedProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1 mt-1">
-                  {consolidatedProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                  {formatPercent(consolidatedPct)}
-                </Badge>
+                {hasAnyBalance && (
+                  <Badge variant={consolidatedProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1 mt-1">
+                    {consolidatedProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                    {formatPercent(consolidatedPct)}
+                  </Badge>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                 <div>
-                  <p className="text-muted-foreground text-xs mb-0.5">Banca base</p>
-                  <p className="font-semibold">{formatCurrencyCompact(Math.max(0, consolidatedBase))}</p>
+                  <p className="text-muted-foreground text-xs mb-0.5">Online</p>
+                  <p className="font-semibold text-cyan-400">{formatCurrencyCompact(consolidated?.online.current || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs mb-0.5">Live</p>
+                  <p className="font-semibold text-violet-400">{formatCurrencyCompact(consolidated?.live.current || 0)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs mb-0.5">Resultado acumulado</p>
                   <p className={`font-semibold ${consolidatedProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {consolidatedProfit >= 0 ? "+" : ""}{formatCurrencyCompact(consolidatedProfit)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs mb-0.5">ROI geral</p>
+                  <p className={`font-semibold ${consolidatedPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {hasAnyBalance ? formatPercent(consolidatedPct) : "—"}
                   </p>
                 </div>
               </div>
@@ -459,6 +618,7 @@ export default function Dashboard() {
 
           {/* Donut + Desempenho */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Donut: Live vs Online */}
             <Card className="bg-card/60 border-border/40">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Distribuição da Banca</CardTitle>
@@ -466,10 +626,19 @@ export default function Dashboard() {
               <CardContent>
                 {donutData.length > 0 ? (
                   <div className="flex flex-col items-center">
-                    <div className="relative h-48 w-full">
+                    <div className="relative h-52 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={donutData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value">
+                          <Pie
+                            data={donutData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={55}
+                            outerRadius={85}
+                            paddingAngle={3}
+                            dataKey="value"
+                            strokeWidth={0}
+                          >
                             {donutData.map((entry: any, index: number) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
@@ -489,32 +658,49 @@ export default function Dashboard() {
                           />
                         </PieChart>
                       </ResponsiveContainer>
+                      {/* Centro do donut */}
                       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <p className="text-xs text-muted-foreground">Total</p>
+                        <p className="text-[10px] text-muted-foreground">Total</p>
                         <p className="text-base font-bold">{formatCurrencyCompact(consolidatedTotal)}</p>
                       </div>
                     </div>
-                    <div className="w-full space-y-1 mt-1">
+                    {/* Legenda */}
+                    <div className="w-full space-y-2 mt-2">
                       {donutData.map((d: any) => (
-                        <div key={d.name} className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                            <span className="text-muted-foreground truncate">{d.name}</span>
+                        <div key={d.name} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                            <span className="text-sm font-medium">{d.fullName}</span>
                           </div>
-                          <span className="font-semibold" style={{ color: d.color }}>{d.pct}%</span>
+                          <div className="text-right">
+                            <span className="text-sm font-bold" style={{ color: d.color }}>
+                              {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.value)}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2">{d.pct}%</span>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  <div className="h-48 flex flex-col items-center justify-center gap-2 text-center">
-                    <BarChart2 className="h-10 w-10 text-muted-foreground/30" />
-                    <p className="text-xs text-muted-foreground">Defina saldos nas plataformas para ver a distribuição</p>
+                  <div className="h-52 flex flex-col items-center justify-center gap-3 text-center">
+                    <div className="relative">
+                      <div className="h-24 w-24 rounded-full border-4 border-dashed border-muted-foreground/20 flex items-center justify-center">
+                        <BarChart2 className="h-8 w-8 text-muted-foreground/30" />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Sem dados de banca</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Defina o saldo nas plataformas para ver a distribuição Live vs Online
+                      </p>
+                    </div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
+            {/* Desempenho */}
             <Card className="bg-card/60 border-border/40">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
@@ -531,7 +717,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 {perfData.length > 0 ? (
-                  <div className="h-48">
+                  <div className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={perfData} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
                         <XAxis type="number" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false}
@@ -564,7 +750,7 @@ export default function Dashboard() {
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="h-48 flex flex-col items-center justify-center gap-2 text-center">
+                  <div className="h-52 flex flex-col items-center justify-center gap-2 text-center">
                     <BarChart2 className="h-10 w-10 text-muted-foreground/30" />
                     <p className="text-xs text-muted-foreground">Registre sessões para ver o desempenho</p>
                     <Link href="/sessions">
@@ -582,10 +768,12 @@ export default function Dashboard() {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-sm font-semibold">Evolução do Bankroll</CardTitle>
-                  <Badge variant={totalProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1">
-                    {totalProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                    {formatPercent(profitPct)}
-                  </Badge>
+                  {hasAnyBalance && (
+                    <Badge variant={consolidatedProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1">
+                      {consolidatedProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      {formatPercent(consolidatedPct)}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex gap-1">
                   {(["all", "online", "live"] as const).map((p) => (
@@ -622,7 +810,6 @@ export default function Dashboard() {
                         tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { notation: "compact", style: "currency", currency: "BRL" }).format(v)} />
                       <ReferenceLine y={0} stroke="oklch(0.4 0.01 240)" strokeDasharray="4 4" />
                       <RechartsTooltip content={<CustomTooltip />} />
-                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px" }} />
                       {(chartPeriod === "all" || chartPeriod === "online") && (
                         <Area type="monotone" dataKey="online" name="Online" stroke="#06b6d4" strokeWidth={2} fill="url(#gradOnline)" dot={false} activeDot={{ r: 4 }} />
                       )}
@@ -661,11 +848,11 @@ export default function Dashboard() {
                   </Button>
                 </Link>
               </div>
-              <p className="text-xs text-muted-foreground">Clique para expandir e editar saldo</p>
+              <p className="text-xs text-muted-foreground">Clique para expandir e definir/editar saldo</p>
             </CardHeader>
             <CardContent className="px-3 py-0 max-h-[500px] overflow-y-auto">
-              {consolidated?.allVenues && consolidated.allVenues.length > 0 ? (
-                consolidated.allVenues.map((venue: any, i: number) => (
+              {allVenues.length > 0 ? (
+                allVenues.map((venue: any, i: number) => (
                   <VenueRow
                     key={venue.id}
                     venue={venue}
@@ -689,9 +876,9 @@ export default function Dashboard() {
           </Card>
 
           <LiveBankrollCard
-            liveBankroll={bankroll?.live.current || 0}
-            profit={bankroll?.live.profit || 0}
-            sessions={bankroll?.live.sessions || 0}
+            liveBankroll={consolidated?.live.current || 0}
+            profit={consolidated?.live.profit || 0}
+            sessions={consolidated?.live.sessions || 0}
             onSetBankroll={(v) => updateLiveBankrollMutation.mutate({ initialLive: v })}
           />
 
