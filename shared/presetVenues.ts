@@ -99,11 +99,6 @@ export const PRESET_VENUES: PresetVenue[] = [
     logoUrl: `${CDN}/h2club_58b7eae7.png`,
     website: "https://campinas.h2club.com.br",
   },
-  {
-    name: "Players Poker Club",
-    type: "live",
-    logoUrl: `${CDN}/players_icon_63bc2826.png`,
-  },
 ];
 
 export function getVenueEmoji(type: "online" | "live"): string {
