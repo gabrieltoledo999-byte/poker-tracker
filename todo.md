@@ -312,6 +312,7 @@
 - [x] Aumentar ainda mais o logo The Rail na sidebar (muito pequeno ainda)
 - [x] Adicionar botão de cor na topbar superior do conteúdo principal
 - [x] Aplicar efeito hover CSS no logo (scale + drop-shadow vermelho)
+- [x] Adicionar gráfico de evolução do bankroll no card Meu Desempenho da tela inicial
 
 ## Moeda Padrão nas Plataformas
 

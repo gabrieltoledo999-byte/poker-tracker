@@ -24,6 +24,8 @@ import {
   Area,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -906,9 +908,59 @@ export default function Dashboard() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                {perfData.length > 0 ? (
-                  <div className="h-52">
+              <CardContent className="space-y-4">
+                {/* Gráfico de evolução do dinheiro */}
+                {chartData.length > 1 ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">Evolução da Banca</p>
+                    <div className="h-36">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.01 240)" vertical={false} />
+                          <XAxis dataKey="date" stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false} />
+                          <YAxis stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false}
+                            tickFormatter={(v) => `R$${Math.abs(v) >= 1000 ? `${(v/1000).toFixed(1)}k` : v}`}
+                            domain={chartYDomain} width={48} />
+                          <RechartsTooltip
+                            content={({ active, payload, label }: any) => {
+                              if (!active || !payload?.length) return null;
+                              return (
+                                <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
+                                  <p className="font-semibold mb-1">{label}</p>
+                                  {payload.map((p: any) => (
+                                    <p key={p.dataKey} style={{ color: p.color }}>
+                                      {p.dataKey === "total" ? "Total" : p.dataKey === "online" ? "Online" : "Live"}: R$ {Number(p.value).toFixed(2)}
+                                    </p>
+                                  ))}
+                                </div>
+                              );
+                            }}
+                          />
+                          <Line type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} name="Total" />
+                          <Line type="monotone" dataKey="online" stroke="#06b6d4" strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="Online" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex gap-3 mt-1">
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className="h-2 w-4 rounded-full inline-block" style={{ background: "var(--primary)" }} /> Total
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-cyan-400" /> Online
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-36 flex flex-col items-center justify-center gap-2 text-center border border-dashed border-border/40 rounded-lg">
+                    <TrendingUp className="h-8 w-8 text-muted-foreground/30" />
+                    <p className="text-xs text-muted-foreground">Registre sessões para ver a evolução</p>
+                  </div>
+                )}
+                {/* Gráfico de barras de desempenho por plataforma */}
+                {perfData.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">Desempenho por Plataforma</p>
+                    <div className="h-40">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={perfData} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
                         <XAxis type="number" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false}
@@ -939,14 +991,7 @@ export default function Dashboard() {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-52 flex flex-col items-center justify-center gap-2 text-center">
-                    <BarChart2 className="h-10 w-10 text-muted-foreground/30" />
-                    <p className="text-xs text-muted-foreground">Registre sessões para ver o desempenho</p>
-                    <Link href="/sessions">
-                      <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs"><Plus className="h-3 w-3" /> Nova Sessão</Button>
-                    </Link>
+                    </div>
                   </div>
                 )}
               </CardContent>
