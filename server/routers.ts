@@ -36,7 +36,7 @@ import {
   deleteFundTransaction,
   getFundTransactionsTotals,
 } from "./db";
-import { getUsdToBrlRate, convertUsdToBrl } from "./currency";
+import { getUsdToBrlRate, convertUsdToBrl, convertToBrl } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
 
 // Game format enum for validation
@@ -246,10 +246,35 @@ export const appRouter = router({
         website: z.string().optional(),
         address: z.string().optional(),
         notes: z.string().optional(),
+        currency: z.enum(["BRL", "USD", "JPY"]).optional(),
+        balance: z.number().int().min(0).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
         return await updateVenue(id, ctx.user.id, data);
+      }),
+    // Update venue balance only (quick update for dashboard)
+    updateBalance: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        balance: z.number().int().min(0),
+        currency: z.enum(["BRL", "USD", "JPY"]).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        return await updateVenue(id, ctx.user.id, data);
+      }),
+    // Get venues with stats (for TradeMap-style dashboard)
+    listWithStats: protectedProcedure
+      .query(async ({ ctx }) => {
+        await initializePresetVenues(ctx.user.id, PRESET_VENUES);
+        const allVenues = await getUserVenues(ctx.user.id);
+        const venueStats = await getStatsByVenue(ctx.user.id);
+        const statsMap = new Map(venueStats.map(s => [s.venueId, s]));
+        return allVenues.map(v => ({
+          ...v,
+          stats: statsMap.get(v.id) || null,
+        }));
       }),
 
     // Delete a venue
@@ -422,14 +447,15 @@ export const appRouter = router({
     // Update bankroll settings
     updateSettings: protectedProcedure
       .input(z.object({
-        initialOnline: z.number().int().min(0),
-        initialLive: z.number().int().min(0),
+        initialOnline: z.number().int().min(0).optional(),
+        initialLive: z.number().int().min(0).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const current = await getBankrollSettings(ctx.user.id);
         return await upsertBankrollSettings(
           ctx.user.id,
-          input.initialOnline,
-          input.initialLive
+          input.initialOnline ?? current?.initialOnline ?? 0,
+          input.initialLive ?? current?.initialLive ?? 0
         );
       }),
 
@@ -474,6 +500,65 @@ export const appRouter = router({
         };
       }),
 
+    // Get consolidated bankroll including venue balances (TradeMap-style)
+    getConsolidated: protectedProcedure
+      .query(async ({ ctx }) => {
+        const settings = await getBankrollSettings(ctx.user.id);
+        const initialLive = settings?.initialLive ?? 0;
+        const liveStats = await getSessionStats(ctx.user.id, "live");
+        const onlineStats = await getSessionStats(ctx.user.id, "online");
+        const fundTotals = await getFundTransactionsTotals(ctx.user.id);
+        
+        // Get all venues with their balances
+        const allVenues = await getUserVenues(ctx.user.id);
+        const venueStats = await getStatsByVenue(ctx.user.id);
+        const statsMap = new Map(venueStats.map(s => [s.venueId, s]));
+        
+        // Convert venue balances to BRL
+        const venuesWithBrl = await Promise.all(
+          allVenues.map(async (v) => {
+            const balanceBrl = await convertToBrl(v.balance, v.currency as "BRL" | "USD" | "JPY");
+            return {
+              ...v,
+              balanceBrl,
+              stats: statsMap.get(v.id) || null,
+            };
+          })
+        );
+        
+        // Online venues total (sum of balances)
+        const onlineVenues = venuesWithBrl.filter(v => v.type === "online");
+        const liveVenues = venuesWithBrl.filter(v => v.type === "live");
+        const onlineBalanceTotal = onlineVenues.reduce((sum, v) => sum + v.balanceBrl, 0);
+        
+        // Live bankroll = defined by user (initialLive) + live session profit
+        const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
+        
+        // Total = sum of all online venue balances + live bankroll
+        const totalCurrent = onlineBalanceTotal + Math.max(0, liveCurrent);
+        
+        return {
+          online: {
+            current: onlineBalanceTotal,
+            profit: onlineStats.totalProfit,
+            sessions: onlineStats.totalSessions,
+            venues: onlineVenues,
+          },
+          live: {
+            initial: initialLive,
+            current: Math.max(0, liveCurrent),
+            profit: liveStats.totalProfit,
+            sessions: liveStats.totalSessions,
+            venues: liveVenues,
+          },
+          total: {
+            current: totalCurrent,
+            profit: onlineStats.totalProfit + liveStats.totalProfit,
+            sessions: onlineStats.totalSessions + liveStats.totalSessions,
+          },
+          allVenues: venuesWithBrl,
+        };
+      }),
     // Get bankroll history for charts
     history: protectedProcedure
       .input(z.object({

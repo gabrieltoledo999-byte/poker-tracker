@@ -116,6 +116,14 @@ export const venues = mysqlTable("venues", {
   // Is this a preset venue (not deletable by user)
   isPreset: int("isPreset").default(0).notNull(), // 0 = false, 1 = true
   
+  // Currency for this venue's balance (BRL, USD, JPY)
+  currency: mysqlEnum("currency", ["BRL", "USD", "JPY"]).default("BRL").notNull(),
+  
+  // Current balance in the venue (in original currency cents/units)
+  // For online venues: money deposited on the platform
+  // For live venues: NOT used (live bankroll is managed separately)
+  balance: int("balance").default(0).notNull(),
+  
   // Optional details
   website: varchar("website", { length: 256 }),
   address: text("address"),

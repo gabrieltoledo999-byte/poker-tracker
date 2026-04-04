@@ -64,3 +64,40 @@ export function convertBrlToUsd(brlCentavos: number, rate: number): number {
   // Convert from BRL centavos to USD centavos
   return Math.round(brlCentavos / rate);
 }
+
+// JPY exchange rate cache
+let cachedJpyRate: { rate: number; timestamp: number } | null = null;
+
+export async function getJpyToBrlRate(): Promise<number> {
+  // Return cached rate if still valid
+  if (cachedJpyRate && Date.now() - cachedJpyRate.timestamp < CACHE_DURATION) {
+    return cachedJpyRate.rate;
+  }
+  try {
+    const response = await fetch("https://economia.awesomeapi.com.br/json/last/JPY-BRL");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch JPY/BRL rate: ${response.status}`);
+    }
+    const data: any = await response.json();
+    const rate = parseFloat(data.JPYBRL.bid);
+    cachedJpyRate = { rate, timestamp: Date.now() };
+    return rate;
+  } catch (error) {
+    console.error("[Currency] Failed to fetch JPY/BRL rate:", error);
+    if (cachedJpyRate) return cachedJpyRate.rate;
+    return 0.033; // Approximate fallback (1 JPY ≈ R$ 0.033)
+  }
+}
+
+export async function convertToBrl(amount: number, currency: "BRL" | "USD" | "JPY"): Promise<number> {
+  if (currency === "BRL") return amount;
+  if (currency === "USD") {
+    const rate = await getUsdToBrlRate();
+    return Math.round(amount * rate);
+  }
+  if (currency === "JPY") {
+    const rate = await getJpyToBrlRate();
+    return Math.round(amount * rate);
+  }
+  return amount;
+}

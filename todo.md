@@ -183,3 +183,12 @@
 ## Avatares Pré-definidos
 
 - [ ] Adicionar galeria de avatares pré-definidos na página de perfil/configurações
+## Dashboard TradeMap-Style Redesign
+- [ ] Adicionar campo de moeda (BRL/USD/JPY) e saldo alocado à tabela venues
+- [ ] Adicionar procedure de venues.getWithStats (saldo + métricas por venue)
+- [ ] Redesenhar dashboard: banca total consolidada (estilo TradeMap)
+- [ ] Card Live: sem depósito/saque, apenas bankroll definido pelo jogador
+- [ ] Gráfico rosca: distribuição da banca por plataforma
+- [ ] Bloco "Meu Desempenho": barras horizontais por plataforma (ROI/Win Rate)
+- [ ] Painel "Minhas Plataformas": lista expansível estilo "Meus Ativos" do TradeMap
+- [ ] Conversão automática USD/JPY para BRL no total consolidado
