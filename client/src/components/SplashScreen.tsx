@@ -3,10 +3,7 @@ export function SplashScreen() {
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden"
       style={{
-        backgroundImage: `url(https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/IMG_6444(1)_08b01db5.webp)`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
+        background: "radial-gradient(1200px 600px at 30% 20%, rgba(109,40,217,0.35), transparent 60%), radial-gradient(900px 500px at 80% 80%, rgba(6,182,212,0.25), transparent 60%), #050816",
       }}
     >
       {/* Overlay escuro leve para dar profundidade */}
@@ -15,7 +12,7 @@ export function SplashScreen() {
       {/* Logo grande centralizado */}
       <div className="relative z-10 flex flex-col items-center animate-fade-in">
         <img
-          src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/favicon-icon-only_790197ec.png"
+          src="/favicon-symbol-large.png"
           alt="The Rail"
           className="w-[85vw] h-[85vw] max-w-[600px] max-h-[600px] sm:w-[70vw] sm:h-[70vw] md:w-[60vw] md:h-[60vw] object-contain drop-shadow-[0_0_40px_rgba(34,211,238,0.8)]"
         />

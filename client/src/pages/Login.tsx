@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spade, Eye, EyeOff, Loader2, Mail, Lock, User, KeyRound } from "lucide-react";
+import { Eye, EyeOff, Loader2, Mail, Lock, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
 function GoogleIcon() {
@@ -164,18 +164,12 @@ export default function Login() {
       <div className="w-full max-w-sm space-y-8">
 
         {/* Logo */}
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex items-center justify-center w-20 h-20 rounded-3xl border-2 border-primary/40 bg-primary/10 shadow-2xl shadow-primary/20">
-            <Spade className="h-10 w-10 text-primary" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-5xl font-black tracking-tight text-foreground">
-              The<span className="text-primary">Rail</span>
-            </h1>
-            <p className="text-xs text-muted-foreground uppercase tracking-[0.2em] mt-1.5 font-medium">
-              Poker Bankroll Tracker
-            </p>
-          </div>
+        <div className="flex justify-center">
+          <img
+            src="/favicon-symbol-large.png"
+            alt="The Rail"
+            className="h-36 w-auto object-contain drop-shadow-xl"
+          />
         </div>
 
         {/* Card */}
@@ -337,65 +331,47 @@ export default function Login() {
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    {mode === "login" && "Entrando..."}
+                    {mode === "login" && "Continuando com e-mail..."}
                     {mode === "register" && "Criando conta..."}
                     {mode === "setup_password" && "Salvando senha..."}
                   </>
                 ) : (
                   <>
-                    {mode === "login" && "Entrar"}
+                    {mode === "login" && "Continuar com e-mail"}
                     {mode === "register" && "Criar conta"}
                     {mode === "setup_password" && "Salvar senha e entrar"}
                   </>
                 )}
               </Button>
 
-              <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                  Login social
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground/90">
-                  Entre mais rapido com sua conta Google ou Apple.
-                </p>
+              <div className="mt-3 space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full justify-start rounded-xl !border-[#dadce0] !bg-white !text-[#5f6368] hover:!bg-[#f8f9fa] hover:!text-[#3c4043]"
+                  style={{ backgroundColor: "#ffffff", color: "#5f6368" }}
+                  disabled={isLoading}
+                  onClick={() => handleSocialLogin("Google")}
+                >
+                  <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
+                    <GoogleIcon />
+                  </span>
+                  Continuar com Google
+                </Button>
 
-                <div className="relative my-3">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-border/60" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase tracking-wide">
-                    <span className="bg-background px-2 text-muted-foreground">escolha um provedor</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 w-full justify-start rounded-xl !border-[#dadce0] !bg-white !text-[#5f6368] hover:!bg-[#f8f9fa] hover:!text-[#3c4043]"
-                    style={{ backgroundColor: "#ffffff", color: "#5f6368" }}
-                    disabled={isLoading}
-                    onClick={() => handleSocialLogin("Google")}
-                  >
-                    <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
-                      <GoogleIcon />
-                    </span>
-                    Continuar com Google
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 w-full justify-start rounded-xl !border-black !bg-black !text-white font-semibold tracking-[0.01em] hover:!bg-[#111111]"
-                    style={{ backgroundColor: "#000000", color: "#ffffff" }}
-                    disabled={isLoading}
-                    onClick={() => handleSocialLogin("Apple")}
-                  >
-                    <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
-                      <AppleIcon />
-                    </span>
-                    Continuar com Apple
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full justify-start rounded-xl !border-black !bg-black !text-white font-semibold tracking-[0.01em] hover:!bg-[#111111]"
+                  style={{ backgroundColor: "#000000", color: "#ffffff" }}
+                  disabled={isLoading}
+                  onClick={() => handleSocialLogin("Apple")}
+                >
+                  <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
+                    <AppleIcon />
+                  </span>
+                  Continuar com Apple
+                </Button>
               </div>
             </form>
 

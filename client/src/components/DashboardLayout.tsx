@@ -137,7 +137,7 @@ export default function DashboardLayout({
           {/* Logo grande */}
           <div className="flex flex-col items-center gap-4">
             <img
-              src="/therail-logo.png"
+              src="/favicon-symbol-large.png"
               alt="The Rail"
               className="h-32 w-auto object-contain drop-shadow-xl"
             />
