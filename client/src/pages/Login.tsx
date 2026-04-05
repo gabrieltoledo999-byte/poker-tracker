@@ -168,7 +168,7 @@ export default function Login() {
           <img
             src="/favicon-symbol-large.png"
             alt="The Rail"
-            className="h-36 w-auto object-contain drop-shadow-xl"
+            className="h-44 md:h-48 w-auto object-contain drop-shadow-xl"
           />
         </div>
 

@@ -139,7 +139,7 @@ export default function DashboardLayout({
             <img
               src="/favicon-symbol-large.png"
               alt="The Rail"
-              className="h-32 w-auto object-contain drop-shadow-xl"
+              className="h-44 md:h-48 w-auto object-contain drop-shadow-xl"
             />
             <div className="flex flex-col items-center gap-1">
               <span className="text-sm text-muted-foreground tracking-widest uppercase">Poker Bankroll Tracker</span>
