@@ -259,7 +259,7 @@ function DashboardLayoutContent({
                   <img
                     src="/therail-logo.png"
                     alt="The Rail"
-                    className="h-10 w-auto object-contain transition-all hover:drop-shadow-[0_0_8px_rgba(229,9,20,0.8)] hover:scale-105"
+                    className="h-12 w-auto object-contain transition-all hover:drop-shadow-[0_0_8px_rgba(229,9,20,0.8)] hover:scale-105"
                   />
                 </div>
               ) : (
@@ -267,7 +267,7 @@ function DashboardLayoutContent({
                   <img
                     src="/therail-logo.png"
                     alt="The Rail"
-                    className="h-8 w-auto object-contain"
+                    className="h-10 w-auto object-contain"
                   />
                 </div>
               )}

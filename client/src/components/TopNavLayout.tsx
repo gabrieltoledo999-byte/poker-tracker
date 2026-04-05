@@ -68,9 +68,9 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
           onClick={() => setLocation("/")}
         >
           <img
-            src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+            src="/favicon-symbol-large.png"
             alt="The Rail"
-            className="h-10 w-10 object-contain"
+            className="h-14 w-14 object-contain"
           />
           <span className="text-xl font-bold tracking-tight gradient-text">The Rail</span>
         </div>
@@ -134,9 +134,9 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 h-14 bg-card/90 backdrop-blur border-b border-border/50">
         <div className="flex items-center gap-2" onClick={() => setLocation("/")}>
           <img
-            src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+            src="/favicon-symbol-large.png"
             alt="The Rail"
-            className="h-8 w-8 object-contain"
+            className="h-10 w-10 object-contain"
           />
           <span className="font-bold gradient-text">The Rail</span>
         </div>
@@ -158,9 +158,9 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
             <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
               <div className="flex items-center gap-2">
                 <img
-                  src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
+                  src="/favicon-symbol-large.png"
                   alt="The Rail"
-                  className="h-9 w-9 object-contain"
+                  className="h-11 w-11 object-contain"
                 />
                 <span className="font-bold text-lg gradient-text">The Rail</span>
               </div>
