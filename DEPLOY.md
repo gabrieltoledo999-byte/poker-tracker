@@ -3,7 +3,7 @@
 ## Requisitos do Servidor
 
 - **Node.js** v18 ou superior
-- **MySQL** 8.0 ou superior (ou TiDB / PlanetScale)
+- **MySQL** 8.0 ou superior
 - **pnpm** v8+ (ou npm/yarn)
 - Acesso SSH ao servidor
 
@@ -14,8 +14,8 @@
 Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
 
 ```env
-# Banco de Dados
-DATABASE_URL=mysql://usuario:senha@localhost:3306/poker_tracker
+# Banco de Dados (interno ao ambiente)
+DATABASE_URL=mysql://usuario:senha@mysql-interno:3306/poker_tracker
 
 # Autenticação (use uma string longa e aleatória)
 JWT_SECRET=troque_por_uma_string_secreta_longa_e_aleatoria

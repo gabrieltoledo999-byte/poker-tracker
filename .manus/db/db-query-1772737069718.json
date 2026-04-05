@@ -1,9 +1,0 @@
-{
-  "query": "UPDATE bankroll_settings SET initialOnline = 0, initialLive = 0;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user UTq9yfJAu56Cosf.ee2cb8494ba1 --database D9ekUW97UoPRMShDJUiuZL --execute UPDATE bankroll_settings SET initialOnline = 0, initialLive = 0;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 206
-}
