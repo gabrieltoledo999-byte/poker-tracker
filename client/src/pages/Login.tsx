@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,38 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spade, Eye, EyeOff, Loader2, Mail, Lock, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.5 14.6 2.6 12 2.6 6.9 2.6 2.8 6.7 2.8 11.8S6.9 21 12 21c6.9 0 9.1-4.8 9.1-7.3 0-.5-.1-.9-.1-1.3H12z"
+      />
+      <path
+        fill="#34A853"
+        d="M3.9 7.3l3.2 2.4c.9-1.8 2.8-3 4.9-3 1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.5 14.6 2.6 12 2.6c-3.7 0-6.9 2.1-8.5 5.2z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M12 21c2.5 0 4.6-.8 6.1-2.3l-2.8-2.3c-.7.5-1.7.9-3.3.9-2.5 0-4.5-1.7-5.3-3.9l-3.2 2.5C5.1 18.9 8.2 21 12 21z"
+      />
+      <path
+        fill="#4285F4"
+        d="M21.1 13.7c0-.6-.1-1-.1-1.5H12v3.9h5.5c-.3 1.4-1.1 2.5-2.2 3.2l2.8 2.3c1.6-1.5 3-4 3-7.9z"
+      />
+    </svg>
+  );
+}
+
+function AppleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current">
+      <path d="M17.05 12.54c.03 3.16 2.77 4.21 2.8 4.22-.02.08-.43 1.5-1.42 2.97-.86 1.27-1.75 2.54-3.16 2.57-1.39.03-1.84-.82-3.43-.82-1.59 0-2.09.79-3.41.85-1.36.05-2.4-1.36-3.27-2.62-1.77-2.56-3.12-7.23-1.31-10.38.9-1.56 2.5-2.55 4.24-2.58 1.33-.03 2.58.89 3.4.89.81 0 2.35-1.1 3.97-.94.68.03 2.58.28 3.8 2.06-.1.06-2.26 1.32-2.23 3.78z" />
+      <path d="M14.97 3.78c.72-.87 1.21-2.08 1.08-3.28-1.03.04-2.27.69-3.01 1.56-.67.77-1.25 1.99-1.09 3.16 1.15.09 2.3-.58 3.02-1.44z" />
+    </svg>
+  );
+}
 
 export default function Login() {
   const [mode, setMode] = useState<"login" | "register" | "setup_password">("login");
@@ -96,6 +128,27 @@ export default function Login() {
   };
 
   const isLoading = loginMutation.isPending || registerMutation.isPending || setupPasswordMutation.isPending;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("oauthError");
+    if (!oauthError) return;
+
+    toast.error(decodeURIComponent(oauthError));
+    params.delete("oauthError");
+    const next = params.toString();
+    const nextUrl = `${window.location.pathname}${next ? `?${next}` : ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
+
+  const handleSocialLogin = (provider: "Google" | "Apple") => {
+    if (provider === "Google") {
+      window.location.href = "/api/oauth/google";
+      return;
+    }
+
+    toast.info("Login com Apple em breve.");
+  };
 
   const passwordStrength = password.length === 0 ? 0
     : password.length < 6 ? 1
@@ -296,6 +349,54 @@ export default function Login() {
                   </>
                 )}
               </Button>
+
+              <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Login social
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground/90">
+                  Entre mais rapido com sua conta Google ou Apple.
+                </p>
+
+                <div className="relative my-3">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border/60" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase tracking-wide">
+                    <span className="bg-background px-2 text-muted-foreground">escolha um provedor</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full justify-start rounded-xl !border-[#dadce0] !bg-white !text-[#5f6368] hover:!bg-[#f8f9fa] hover:!text-[#3c4043]"
+                    style={{ backgroundColor: "#ffffff", color: "#5f6368" }}
+                    disabled={isLoading}
+                    onClick={() => handleSocialLogin("Google")}
+                  >
+                    <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
+                      <GoogleIcon />
+                    </span>
+                    Continuar com Google
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full justify-start rounded-xl !border-black !bg-black !text-white font-semibold tracking-[0.01em] hover:!bg-[#111111]"
+                    style={{ backgroundColor: "#000000", color: "#ffffff" }}
+                    disabled={isLoading}
+                    onClick={() => handleSocialLogin("Apple")}
+                  >
+                    <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
+                      <AppleIcon />
+                    </span>
+                    Continuar com Apple
+                  </Button>
+                </div>
+              </div>
             </form>
 
             {/* Alternância entre modos */}

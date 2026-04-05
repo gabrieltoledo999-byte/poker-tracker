@@ -34,7 +34,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     };
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "email", "avatarUrl", "loginMethod"] as const;
     type TextField = (typeof textFields)[number];
 
     const assignNullable = (field: TextField) => {
@@ -86,6 +86,46 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get user by email: database not available");
+    return undefined;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const result = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function linkUserToGoogle(params: {
+  userId: number;
+  googleSub: string;
+  name?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const openId = `google_${params.googleSub}`;
+
+  await db.update(users)
+    .set({
+      openId,
+      name: params.name ?? null,
+      email: params.email ? params.email.trim().toLowerCase() : null,
+      avatarUrl: params.avatarUrl ?? null,
+      loginMethod: "google",
+      lastSignedIn: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, params.userId));
+
+  const [updated] = await db.select().from(users).where(eq(users.id, params.userId)).limit(1);
+  return updated;
 }
 
 // ============== SESSION QUERIES ==============

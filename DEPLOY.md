@@ -20,7 +20,11 @@ DATABASE_URL=mysql://usuario:senha@localhost:3306/poker_tracker
 # Autenticação (use uma string longa e aleatória)
 JWT_SECRET=troque_por_uma_string_secreta_longa_e_aleatoria
 
-# OAuth Manus (necessário para o sistema de login)
+# Google OAuth (opcional, recomendado)
+GOOGLE_CLIENT_ID=seu_google_client_id
+GOOGLE_CLIENT_SECRET=seu_google_client_secret
+
+# OAuth Manus (legado)
 VITE_APP_ID=seu_app_id_manus
 OAUTH_SERVER_URL=https://api.manus.im
 VITE_OAUTH_PORTAL_URL=https://manus.im
@@ -112,7 +116,9 @@ O servidor Express serve automaticamente os arquivos do `client/dist/` em produ�
 
 ## Notas Importantes
 
-- **Login**: O sistema usa OAuth da plataforma Manus. Você precisará de credenciais válidas da Manus para o login funcionar.
+- **Login por e-mail/senha**: Funciona sem OAuth.
+- **Google OAuth**: Configure `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no Railway.
+- **Redirect URI Google**: `https://seu-dominio.com/api/oauth/google/callback`
 - **Banco de dados**: O projeto usa Drizzle ORM com MySQL. Certifique-se de que o usuário do banco tem permissões de CREATE, ALTER, INSERT, UPDATE, DELETE e SELECT.
 - **Porta**: Por padrão usa a porta 3000. Configure um proxy reverso (Nginx/Apache) para apontar o domínio para essa porta.
 
