@@ -50,6 +50,7 @@ import {
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
+import { registerUser, loginUser } from "./auth";
 
 // Game format enum for validation
 const gameFormatEnum = z.enum([
@@ -77,6 +78,41 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    register: publicProcedure
+      .input(z.object({
+        name: z.string().min(2).max(100),
+        email: z.string().email(),
+        password: z.string().min(6),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const user = await registerUser(input);
+          const { token } = await loginUser({ email: input.email, password: input.password });
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+          return { success: true, user };
+        } catch (err: any) {
+          if (err.message === "EMAIL_ALREADY_EXISTS") {
+            throw new Error("Este e-mail já está cadastrado.");
+          }
+          throw new Error("Erro ao criar conta. Tente novamente.");
+        }
+      }),
+    login: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const { user, token } = await loginUser(input);
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+          return { success: true, user };
+        } catch (err: any) {
+          throw new Error("E-mail ou senha incorretos.");
+        }
+      }),
   }),
 
   // Sessions router

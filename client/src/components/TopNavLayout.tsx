@@ -8,7 +8,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "./ui/button";
-import { getLoginUrl } from "@/const";
 import {
   LayoutDashboard,
   LogOut,
@@ -49,35 +48,14 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const { theme, toggleTheme } = useTheme();
 
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => { window.location.href = getLoginUrl(); },
+    onSuccess: () => { window.location.href = "/login"; },
   });
 
   if (loading) return <SplashScreen />;
 
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-4">
-            <img
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310419663029227103/D9ekUW97UoPRMShDJUiuZL/therail-logo-no-bg_405c3687.png"
-              alt="The Rail"
-              className="h-20 w-20 object-contain"
-            />
-            <h1 className="text-2xl font-semibold tracking-tight text-center">Entre para continuar</h1>
-            <p className="text-muted-foreground text-center text-sm">
-              Faça login para acessar seu bankroll tracker
-            </p>
-          </div>
-          <a href={getLoginUrl()} className="w-full">
-            <Button size="lg" className="w-full gap-2 bg-primary hover:bg-primary/90">
-              Entrar com Manus
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </a>
-        </div>
-      </div>
-    );
+    window.location.replace("/login");
+    return <SplashScreen />;
   }
 
   return (
