@@ -50,7 +50,7 @@ import {
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
-import { registerUser, loginUser } from "./auth";
+import { registerUser, loginUser, setupPasswordForExistingUser } from "./auth";
 
 // Game format enum for validation
 const gameFormatEnum = z.enum([
@@ -108,9 +108,30 @@ export const appRouter = router({
           const { user, token } = await loginUser(input);
           const cookieOptions = getSessionCookieOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+          return { success: true, user, needsPasswordSetup: false };
+        } catch (err: any) {
+          if (err.message === "NEEDS_PASSWORD_SETUP") {
+            return { success: false, needsPasswordSetup: true, user: null, token: null };
+          }
+          throw new Error("E-mail ou senha incorretos.");
+        }
+      }),
+    // Fluxo de primeiro acesso: define senha para conta antiga sem senha
+    setupPassword: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string().min(6),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const { user, token } = await setupPasswordForExistingUser(input);
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           return { success: true, user };
         } catch (err: any) {
-          throw new Error("E-mail ou senha incorretos.");
+          if (err.message === "USER_NOT_FOUND") throw new Error("E-mail não encontrado.");
+          if (err.message === "PASSWORD_ALREADY_SET") throw new Error("Esta conta já possui senha. Use o login normal.");
+          throw new Error("Erro ao configurar senha. Tente novamente.");
         }
       }),
   }),

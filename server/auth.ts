@@ -63,8 +63,9 @@ export async function loginUser(params: {
 
   const user = result[0];
 
+  // Conta antiga sem senha — retornar erro especial para o frontend tratar
   if (!user.passwordHash) {
-    throw new Error("INVALID_CREDENTIALS");
+    throw new Error("NEEDS_PASSWORD_SETUP");
   }
 
   const valid = await verifyPassword(password, user.passwordHash);
@@ -79,4 +80,42 @@ export async function loginUser(params: {
   const token = await sdk.createSessionToken(user.openId, { name: user.name || "" });
 
   return { user, token };
+}
+
+/**
+ * Fluxo de primeiro acesso: define senha para conta antiga (sem passwordHash).
+ * Verifica que o email existe e que a conta ainda não tem senha.
+ */
+export async function setupPasswordForExistingUser(params: {
+  email: string;
+  password: string;
+}): Promise<{ user: User; token: string }> {
+  const { email, password } = params;
+  const db = await getDb();
+  if (!db) throw new Error("DB_UNAVAILABLE");
+
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  if (result.length === 0) {
+    throw new Error("USER_NOT_FOUND");
+  }
+
+  const user = result[0];
+
+  // Segurança: só permite setup se a conta ainda não tiver senha
+  if (user.passwordHash) {
+    throw new Error("PASSWORD_ALREADY_SET");
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  await db.update(users)
+    .set({ passwordHash, loginMethod: "email", lastSignedIn: new Date() })
+    .where(eq(users.id, user.id));
+
+  // Buscar usuário atualizado
+  const updated = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+  const updatedUser = updated[0];
+
+  const token = await sdk.createSessionToken(updatedUser.openId, { name: updatedUser.name || "" });
+  return { user: updatedUser, token };
 }

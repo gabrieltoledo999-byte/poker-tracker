@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spade, Eye, EyeOff, Loader2, Mail, Lock, User } from "lucide-react";
+import { Spade, Eye, EyeOff, Loader2, Mail, Lock, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Login() {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "setup_password">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,7 +19,17 @@ export default function Login() {
   const utils = trpc.useUtils();
 
   const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Conta antiga sem senha — redirecionar para fluxo de primeiro acesso
+      if (data.needsPasswordSetup) {
+        setMode("setup_password");
+        setPassword("");
+        setConfirmPassword("");
+        setShowPassword(false);
+        setShowConfirmPassword(false);
+        toast.info("Conta encontrada! Crie uma senha para acessar seu histórico.");
+        return;
+      }
       utils.auth.me.invalidate();
       window.location.href = "/";
     },
@@ -39,11 +49,22 @@ export default function Login() {
     },
   });
 
+  const setupPasswordMutation = trpc.auth.setupPassword.useMutation({
+    onSuccess: () => {
+      toast.success("Senha criada! Bem-vindo de volta — seu histórico está intacto.");
+      utils.auth.me.invalidate();
+      window.location.href = "/";
+    },
+    onError: (err) => {
+      toast.error(err.message || "Erro ao configurar senha.");
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === "login") {
       loginMutation.mutate({ email, password });
-    } else {
+    } else if (mode === "register") {
       if (password !== confirmPassword) {
         toast.error("As senhas não conferem.");
         return;
@@ -53,10 +74,20 @@ export default function Login() {
         return;
       }
       registerMutation.mutate({ name, email, password });
+    } else if (mode === "setup_password") {
+      if (password !== confirmPassword) {
+        toast.error("As senhas não conferem.");
+        return;
+      }
+      if (password.length < 6) {
+        toast.error("A senha deve ter pelo menos 6 caracteres.");
+        return;
+      }
+      setupPasswordMutation.mutate({ email, password });
     }
   };
 
-  const switchMode = (newMode: "login" | "register") => {
+  const switchMode = (newMode: "login" | "register" | "setup_password") => {
     setMode(newMode);
     setPassword("");
     setConfirmPassword("");
@@ -64,7 +95,7 @@ export default function Login() {
     setShowConfirmPassword(false);
   };
 
-  const isLoading = loginMutation.isPending || registerMutation.isPending;
+  const isLoading = loginMutation.isPending || registerMutation.isPending || setupPasswordMutation.isPending;
 
   const passwordStrength = password.length === 0 ? 0
     : password.length < 6 ? 1
@@ -97,13 +128,21 @@ export default function Login() {
         {/* Card */}
         <Card className="border border-border/60 shadow-2xl">
           <CardHeader className="pb-2 pt-6 px-6">
-            <CardTitle className="text-lg font-bold">
-              {mode === "login" ? "Entrar na sua conta" : "Criar nova conta"}
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              {mode === "setup_password" && <KeyRound className="h-5 w-5 text-primary" />}
+              {mode === "login" && "Entrar na sua conta"}
+              {mode === "register" && "Criar nova conta"}
+              {mode === "setup_password" && "Criar sua senha"}
             </CardTitle>
             <CardDescription className="text-sm">
-              {mode === "login"
-                ? "Acesse seu bankroll e sessões."
-                : "Comece a rastrear seu bankroll agora."}
+              {mode === "login" && "Acesse seu bankroll e sessões."}
+              {mode === "register" && "Comece a rastrear seu bankroll agora."}
+              {mode === "setup_password" && (
+                <span>
+                  Conta encontrada para <strong className="text-foreground">{email}</strong>.
+                  {" "}Crie uma senha para acessar seu histórico completo.
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
 
@@ -132,24 +171,26 @@ export default function Login() {
                 </div>
               )}
 
-              {/* E-mail */}
-              <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-sm font-medium">E-mail</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="seu@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    className="pl-9"
-                    autoComplete="email"
-                  />
+              {/* E-mail (oculto no setup_password pois já foi preenchido) */}
+              {mode !== "setup_password" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="text-sm font-medium">E-mail</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      disabled={isLoading}
+                      className="pl-9"
+                      autoComplete="email"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Senha */}
               <div className="space-y-1.5">
@@ -159,11 +200,11 @@ export default function Login() {
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder={mode === "register" ? "Mínimo 6 caracteres" : "Sua senha"}
+                    placeholder={mode === "login" ? "Sua senha" : "Mínimo 6 caracteres"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={mode === "register" ? 6 : 1}
+                    minLength={mode === "login" ? 1 : 6}
                     disabled={isLoading}
                     className="pl-9 pr-10"
                     autoComplete={mode === "login" ? "current-password" : "new-password"}
@@ -180,8 +221,8 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Confirmar senha + indicador de força (só no registro) */}
-              {mode === "register" && (
+              {/* Confirmar senha + indicador de força (registro e setup_password) */}
+              {(mode === "register" || mode === "setup_password") && (
                 <>
                   <div className="space-y-1.5">
                     <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirmar senha</Label>
@@ -243,19 +284,23 @@ export default function Login() {
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    {mode === "login" ? "Entrando..." : "Criando conta..."}
+                    {mode === "login" && "Entrando..."}
+                    {mode === "register" && "Criando conta..."}
+                    {mode === "setup_password" && "Salvando senha..."}
                   </>
-                ) : mode === "login" ? (
-                  "Entrar"
                 ) : (
-                  "Criar conta"
+                  <>
+                    {mode === "login" && "Entrar"}
+                    {mode === "register" && "Criar conta"}
+                    {mode === "setup_password" && "Salvar senha e entrar"}
+                  </>
                 )}
               </Button>
             </form>
 
-            {/* Alternância entre login e registro */}
+            {/* Alternância entre modos */}
             <div className="mt-5 pt-4 border-t border-border/50 text-center text-sm text-muted-foreground">
-              {mode === "login" ? (
+              {mode === "login" && (
                 <>
                   Não tem conta?{" "}
                   <button
@@ -266,7 +311,8 @@ export default function Login() {
                     Criar conta grátis
                   </button>
                 </>
-              ) : (
+              )}
+              {mode === "register" && (
                 <>
                   Já tem conta?{" "}
                   <button
@@ -277,6 +323,15 @@ export default function Login() {
                     Entrar
                   </button>
                 </>
+              )}
+              {mode === "setup_password" && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("login")}
+                  className="text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  ← Voltar ao login
+                </button>
               )}
             </div>
           </CardContent>
