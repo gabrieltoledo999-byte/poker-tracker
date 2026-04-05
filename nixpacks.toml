@@ -3,8 +3,7 @@ nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [
-  "corepack enable",
-  "corepack prepare pnpm@10.4.1 --activate",
+  "npm install -g pnpm --ignore-scripts",
   "pnpm install --frozen-lockfile"
 ]
 
@@ -12,4 +11,4 @@ cmds = [
 cmds = ["pnpm build"]
 
 [start]
-cmd = "pnpm start"
+cmd = "node dist/index.js"
