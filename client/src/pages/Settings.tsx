@@ -29,6 +29,13 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+const POKER_GENERIC_AVATARS = [
+  "/avatars/poker-generic-1.svg",
+  "/avatars/poker-generic-2.svg",
+  "/avatars/poker-generic-3.svg",
+  "/avatars/poker-generic-4.svg",
+];
+
 export default function Settings() {
   const { user } = useAuth();
   const [onlineBankroll, setOnlineBankroll] = useState("");
@@ -38,6 +45,7 @@ export default function Settings() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedPresetAvatar, setSelectedPresetAvatar] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: settings, isLoading } = trpc.bankroll.getSettings.useQuery();
@@ -57,8 +65,9 @@ export default function Settings() {
   });
 
   const uploadAvatarMutation = trpc.profile.uploadAvatar.useMutation({
-    onSuccess: (data) => {
-      toast.success("Foto de perfil atualizada! Recarregue a página para ver as alterações.");
+    onSuccess: async (data) => {
+      await utils.auth.me.invalidate();
+      toast.success("Foto de perfil atualizada!");
       setAvatarUrl(data.url);
       setAvatarPreview("");
       setSelectedFile(null);
@@ -69,8 +78,10 @@ export default function Settings() {
   });
 
   const updateAvatarMutation = trpc.profile.updateAvatar.useMutation({
-    onSuccess: () => {
-      toast.success("Foto de perfil atualizada! Recarregue a página para ver as alterações.");
+    onSuccess: async () => {
+      await utils.auth.me.invalidate();
+      toast.success("Foto de perfil atualizada!");
+      setSelectedPresetAvatar(null);
     },
     onError: (error) => {
       toast.error("Erro ao atualizar foto: " + error.message);
@@ -127,9 +138,9 @@ export default function Settings() {
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("A imagem deve ter no máximo 5MB");
+    // Keep client/server constraints aligned.
+    if (file.size > 1 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 1MB");
       return;
     }
 
@@ -192,6 +203,18 @@ export default function Settings() {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  const handleSelectPresetAvatar = (avatar: string) => {
+    setSelectedPresetAvatar(avatar);
+    setAvatarPreview("");
+    setSelectedFile(null);
+    setAvatarUrl(avatar);
+  };
+
+  const handleApplyPresetAvatar = () => {
+    if (!selectedPresetAvatar) return;
+    updateAvatarMutation.mutate({ avatarUrl: selectedPresetAvatar });
   };
 
   const { theme, toggleTheme, accentColor, setAccentColor } = useTheme();
@@ -282,7 +305,7 @@ export default function Settings() {
                       {isDragging ? "Solte a imagem aqui" : "Arraste sua foto aqui"}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      ou clique para selecionar (máx. 5MB)
+                      ou clique para selecionar (máx. 1MB)
                     </p>
                   </div>
                 </div>
@@ -316,6 +339,47 @@ export default function Settings() {
               )}
 
               {/* URL Input (alternative) */}
+              <div className="pt-2 border-t space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Avatares genéricos de poker:
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {POKER_GENERIC_AVATARS.map((avatar, idx) => {
+                    const isActive = avatarUrl === avatar || selectedPresetAvatar === avatar;
+                    return (
+                      <button
+                        key={avatar}
+                        type="button"
+                        onClick={() => handleSelectPresetAvatar(avatar)}
+                        className={`rounded-lg border p-1 transition-all ${
+                          isActive
+                            ? "border-primary ring-2 ring-primary/30"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                        aria-label={`Selecionar avatar poker ${idx + 1}`}
+                      >
+                        <img
+                          src={avatar}
+                          alt={`Avatar poker ${idx + 1}`}
+                          className="h-16 w-16 mx-auto rounded-md object-cover"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleApplyPresetAvatar}
+                    disabled={!selectedPresetAvatar || updateAvatarMutation.isPending}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Usar avatar selecionado
+                  </Button>
+                </div>
+              </div>
+
               <div className="pt-2 border-t">
                 <p className="text-xs text-muted-foreground mb-2">
                   Ou cole a URL de uma imagem:

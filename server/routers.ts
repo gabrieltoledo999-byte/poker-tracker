@@ -92,6 +92,7 @@ export const appRouter = router({
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           return { success: true, user };
         } catch (err: any) {
+          console.error("[auth.register] failed:", err);
           if (err.message === "EMAIL_ALREADY_EXISTS") {
             throw new Error("Este e-mail já está cadastrado.");
           }
@@ -110,6 +111,7 @@ export const appRouter = router({
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           return { success: true, user, needsPasswordSetup: false };
         } catch (err: any) {
+          console.error("[auth.login] failed:", err);
           if (err.message === "NEEDS_PASSWORD_SETUP") {
             return { success: false, needsPasswordSetup: true, user: null, token: null };
           }
@@ -129,6 +131,7 @@ export const appRouter = router({
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           return { success: true, user };
         } catch (err: any) {
+          console.error("[auth.setupPassword] failed:", err);
           if (err.message === "USER_NOT_FOUND") throw new Error("E-mail não encontrado.");
           if (err.message === "PASSWORD_ALREADY_SET") throw new Error("Esta conta já possui senha. Use o login normal.");
           throw new Error("Erro ao configurar senha. Tente novamente.");
@@ -591,24 +594,18 @@ export const appRouter = router({
         fileName: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { storagePut } = await import("./storage");
-        const { nanoid } = await import("nanoid");
-        
         // Decode base64
         const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
         const buffer = Buffer.from(base64Data, "base64");
-        
-        // Generate unique file key
-        const ext = input.fileName.split(".").pop() || "jpg";
-        const fileKey = `avatars/${ctx.user.id}-${nanoid(8)}.${ext}`;
-        
-        // Upload to S3
-        const { url } = await storagePut(fileKey, buffer, input.mimeType);
-        
-        // Update user avatar URL
-        await updateUserAvatar(ctx.user.id, url);
-        
-        return { success: true, url };
+
+        // Store avatar directly in DB as data URL to avoid external storage dependency.
+        if (buffer.length > 1_000_000) {
+          throw new Error("A imagem deve ter no maximo 1MB.");
+        }
+
+        const inlineUrl = `data:${input.mimeType};base64,${base64Data}`;
+        await updateUserAvatar(ctx.user.id, inlineUrl);
+        return { success: true, url: inlineUrl };
       }),
 
     // Get user by invite code (for invite page)
