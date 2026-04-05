@@ -1,0 +1,3 @@
+# Defensive ignore in case monorepo paths are included during packaging
+HSL/
+**/HSL/**
