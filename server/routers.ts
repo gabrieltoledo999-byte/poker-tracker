@@ -48,6 +48,7 @@ import {
   discardActiveSession,
   getSessionTables,
   getRecentPlayedTables,
+  getHandPatternStats,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -391,6 +392,12 @@ export const appRouter = router({
       .input(z.object({ limit: z.number().int().min(1).max(50).optional() }).optional())
       .query(async ({ ctx, input }) => {
         return await getRecentPlayedTables(ctx.user.id, input?.limit ?? 8);
+      }),
+
+    // Hand pattern counters from table notes (KK/JJ)
+    handPatternStats: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getHandPatternStats(ctx.user.id);
       }),
   }),
   // Venues router

@@ -155,11 +155,61 @@ export async function updateSession(id: number, userId: number, data: Partial<In
 export async function deleteSession(id: number, userId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Remove finalized tables linked to this session so dashboard/platform stats stay consistent.
+  await db.delete(sessionTables)
+    .where(and(eq(sessionTables.sessionId, id), eq(sessionTables.userId, userId)));
   
   const result = await db.delete(sessions)
     .where(and(eq(sessions.id, id), eq(sessions.userId, userId)));
   
   return (result[0] as any).affectedRows > 0;
+}
+
+export async function getHandPatternStats(userId: number): Promise<{
+  kk: { hands: number; wins: number; losses: number; winRate: number };
+  jj: { hands: number; wins: number; losses: number; winRate: number };
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const tableRows = await db
+    .select({
+      notes: sessionTables.notes,
+      buyIn: sessionTables.buyIn,
+      cashOut: sessionTables.cashOut,
+      sessionId: sessionTables.sessionId,
+    })
+    .from(sessionTables)
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`, sql`${sessionTables.notes} IS NOT NULL`));
+
+  const kkRegex = /\b(kk|rei\s*rei|k\s*k)\b/i;
+  const jjRegex = /\b(jj|vala\s*vala|j\s*j)\b/i;
+
+  const kk = { hands: 0, wins: 0, losses: 0, winRate: 0 };
+  const jj = { hands: 0, wins: 0, losses: 0, winRate: 0 };
+
+  for (const row of tableRows) {
+    const notes = (row.notes ?? "").toString();
+    const profit = (row.cashOut ?? row.buyIn ?? 0) - (row.buyIn ?? 0);
+
+    if (kkRegex.test(notes)) {
+      kk.hands += 1;
+      if (profit > 0) kk.wins += 1;
+      else if (profit < 0) kk.losses += 1;
+    }
+
+    if (jjRegex.test(notes)) {
+      jj.hands += 1;
+      if (profit > 0) jj.wins += 1;
+      else if (profit < 0) jj.losses += 1;
+    }
+  }
+
+  kk.winRate = kk.hands > 0 ? Math.round((kk.wins / kk.hands) * 100) : 0;
+  jj.winRate = jj.hands > 0 ? Math.round((jj.wins / jj.hands) * 100) : 0;
+
+  return { kk, jj };
 }
 
 export async function getSessionById(id: number, userId: number): Promise<Session | null> {

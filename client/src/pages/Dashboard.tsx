@@ -193,6 +193,7 @@ export default function Dashboard() {
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
+  const { data: handPatternStats } = trpc.sessions.handPatternStats.useQuery();
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
   const { data: fxRates } = trpc.currency.getRates.useQuery(undefined, { refetchInterval: 60000 });
@@ -906,6 +907,27 @@ export default function Dashboard() {
                   </Link>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/60 border-border/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Contador de Mãos</CardTitle>
+              <p className="text-xs text-muted-foreground">Vitórias e derrotas de KK (rei rei) e JJ (vala vala)</p>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground mb-1">KK (Rei Rei)</p>
+                <p className="text-lg font-bold mb-2">{handPatternStats?.kk?.hands ?? 0}</p>
+                <p className="text-xs text-emerald-400">Vitórias: {handPatternStats?.kk?.wins ?? 0}</p>
+                <p className="text-xs text-red-400">Derrotas: {handPatternStats?.kk?.losses ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground mb-1">JJ (Vala Vala)</p>
+                <p className="text-lg font-bold mb-2">{handPatternStats?.jj?.hands ?? 0}</p>
+                <p className="text-xs text-emerald-400">Vitórias: {handPatternStats?.jj?.wins ?? 0}</p>
+                <p className="text-xs text-red-400">Derrotas: {handPatternStats?.jj?.losses ?? 0}</p>
+              </div>
             </CardContent>
           </Card>
 
