@@ -113,6 +113,13 @@
       "when": 1775342400000,
       "tag": "0015_crystal_avatar_inline",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1775443200000,
+      "tag": "0016_hands_premium_stats",
+      "breakpoints": true
     }
   ]
 }

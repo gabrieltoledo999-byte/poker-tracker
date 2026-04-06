@@ -101,6 +101,29 @@ export type BankrollSettings = typeof bankrollSettings.$inferSelect;
 export type InsertBankrollSettings = typeof bankrollSettings.$inferInsert;
 
 /**
+ * Hand pattern counters (manual + quick actions on dashboard).
+ * Keeps persistent KK/JJ results per user for social/ranking interactions.
+ */
+export const handPatternCounters = mysqlTable("hand_pattern_counters", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+
+  kkHands: int("kkHands").default(0).notNull(),
+  kkWins: int("kkWins").default(0).notNull(),
+  kkLosses: int("kkLosses").default(0).notNull(),
+
+  jjHands: int("jjHands").default(0).notNull(),
+  jjWins: int("jjWins").default(0).notNull(),
+  jjLosses: int("jjLosses").default(0).notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type HandPatternCounters = typeof handPatternCounters.$inferSelect;
+export type InsertHandPatternCounters = typeof handPatternCounters.$inferInsert;
+
+/**
  * Venues table - stores poker venues (online sites and live clubs)
  */
 export const venues = mysqlTable("venues", {

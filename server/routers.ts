@@ -49,6 +49,9 @@ import {
   getSessionTables,
   getRecentPlayedTables,
   getHandPatternStats,
+  getGlobalHandPatternStats,
+  registerHandPatternResult,
+  updateHandPatternManualStats,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -398,6 +401,23 @@ export const appRouter = router({
     handPatternStats: protectedProcedure
       .query(async ({ ctx }) => {
         return await getHandPatternStats(ctx.user.id);
+      }),
+
+    // Fast increment for KK/JJ result on dashboard cards
+    registerHandResult: protectedProcedure
+      .input(z.object({ hand: z.enum(["kk", "jj"]), outcome: z.enum(["win", "loss"]) }))
+      .mutation(async ({ ctx, input }) => {
+        return await registerHandPatternResult(ctx.user.id, input.hand, input.outcome);
+      }),
+
+    // Full edit for KK/JJ counters (correction modal)
+    updateHandStats: protectedProcedure
+      .input(z.object({
+        kk: z.object({ hands: z.number().int().min(0), wins: z.number().int().min(0), losses: z.number().int().min(0) }),
+        jj: z.object({ hands: z.number().int().min(0), wins: z.number().int().min(0), losses: z.number().int().min(0) }),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await updateHandPatternManualStats(ctx.user.id, input);
       }),
   }),
   // Venues router
@@ -934,6 +954,14 @@ export const appRouter = router({
 
   // Community feed router
   feed: router({
+    handPatternStats: protectedProcedure
+      .input(z.object({
+        limit: z.number().int().min(1).max(50).optional(),
+        minHands: z.number().int().min(1).max(200).optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getGlobalHandPatternStats(input?.limit ?? 10, input?.minHands ?? 6);
+      }),
     list: protectedProcedure
       .input(z.object({ limit: z.number().int().optional(), offset: z.number().int().optional() }).optional())
       .query(async ({ ctx, input }) => {

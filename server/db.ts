@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, lte, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAllRates } from "./currency";
 
@@ -181,7 +181,14 @@ export async function getHandPatternStats(userId: number): Promise<{
       sessionId: sessionTables.sessionId,
     })
     .from(sessionTables)
-    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`, sql`${sessionTables.notes} IS NOT NULL`));
+    .innerJoin(
+      sessions,
+      and(
+        eq(sessionTables.sessionId, sessions.id),
+        eq(sessions.userId, userId),
+      )
+    )
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.notes} IS NOT NULL`));
 
   const kkRegex = /\b(kk|rei\s*rei|k\s*k)\b/i;
   const jjRegex = /\b(jj|vala\s*vala|j\s*j)\b/i;
@@ -206,10 +213,267 @@ export async function getHandPatternStats(userId: number): Promise<{
     }
   }
 
+  const [manual] = await db
+    .select({
+      kkHands: handPatternCounters.kkHands,
+      kkWins: handPatternCounters.kkWins,
+      kkLosses: handPatternCounters.kkLosses,
+      jjHands: handPatternCounters.jjHands,
+      jjWins: handPatternCounters.jjWins,
+      jjLosses: handPatternCounters.jjLosses,
+    })
+    .from(handPatternCounters)
+    .where(eq(handPatternCounters.userId, userId))
+    .limit(1);
+
+  if (manual) {
+    kk.hands += Math.max(0, Number(manual.kkHands ?? 0));
+    kk.wins += Math.max(0, Number(manual.kkWins ?? 0));
+    kk.losses += Math.max(0, Number(manual.kkLosses ?? 0));
+
+    jj.hands += Math.max(0, Number(manual.jjHands ?? 0));
+    jj.wins += Math.max(0, Number(manual.jjWins ?? 0));
+    jj.losses += Math.max(0, Number(manual.jjLosses ?? 0));
+  }
+
+  kk.hands = Math.max(kk.hands, kk.wins + kk.losses);
+  jj.hands = Math.max(jj.hands, jj.wins + jj.losses);
+
   kk.winRate = kk.hands > 0 ? Math.round((kk.wins / kk.hands) * 100) : 0;
   jj.winRate = jj.hands > 0 ? Math.round((jj.wins / jj.hands) * 100) : 0;
 
   return { kk, jj };
+}
+
+export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promise<Array<{
+  userId: number;
+  name: string | null;
+  avatarUrl: string | null;
+  kk: { hands: number; wins: number; losses: number; winRate: number };
+  jj: { hands: number; wins: number; losses: number; winRate: number };
+  totalHands: number;
+  totalWins: number;
+  totalLosses: number;
+  overallWinRate: number;
+  performanceScore: number;
+}>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const tableRows = await db
+    .select({
+      userId: users.id,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+      notes: sessionTables.notes,
+      buyIn: sessionTables.buyIn,
+      cashOut: sessionTables.cashOut,
+    })
+    .from(sessionTables)
+    .innerJoin(sessions, and(eq(sessionTables.sessionId, sessions.id), eq(sessionTables.userId, sessions.userId)))
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(sql`${sessionTables.notes} IS NOT NULL`);
+
+  const kkRegex = /\b(kk|rei\s*rei|k\s*k)\b/i;
+  const jjRegex = /\b(jj|vala\s*vala|j\s*j)\b/i;
+
+  const byUser = new Map<number, {
+    userId: number;
+    name: string | null;
+    avatarUrl: string | null;
+    kk: { hands: number; wins: number; losses: number; winRate: number };
+    jj: { hands: number; wins: number; losses: number; winRate: number };
+    totalHands: number;
+  }>();
+
+  for (const row of tableRows) {
+    const id = Number(row.userId);
+    if (!byUser.has(id)) {
+      byUser.set(id, {
+        userId: id,
+        name: row.name ?? null,
+        avatarUrl: row.avatarUrl ?? null,
+        kk: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        jj: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        totalHands: 0,
+      });
+    }
+
+    const entry = byUser.get(id)!;
+    const notes = (row.notes ?? "").toString();
+    const profit = (row.cashOut ?? row.buyIn ?? 0) - (row.buyIn ?? 0);
+
+    let matched = false;
+    if (kkRegex.test(notes)) {
+      entry.kk.hands += 1;
+      if (profit > 0) entry.kk.wins += 1;
+      else if (profit < 0) entry.kk.losses += 1;
+      matched = true;
+    }
+
+    if (jjRegex.test(notes)) {
+      entry.jj.hands += 1;
+      if (profit > 0) entry.jj.wins += 1;
+      else if (profit < 0) entry.jj.losses += 1;
+      matched = true;
+    }
+
+    if (matched) entry.totalHands += 1;
+  }
+
+  const manualRows = await db
+    .select({
+      userId: handPatternCounters.userId,
+      kkHands: handPatternCounters.kkHands,
+      kkWins: handPatternCounters.kkWins,
+      kkLosses: handPatternCounters.kkLosses,
+      jjHands: handPatternCounters.jjHands,
+      jjWins: handPatternCounters.jjWins,
+      jjLosses: handPatternCounters.jjLosses,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(handPatternCounters)
+    .innerJoin(users, eq(handPatternCounters.userId, users.id));
+
+  for (const row of manualRows) {
+    const id = Number(row.userId);
+    if (!byUser.has(id)) {
+      byUser.set(id, {
+        userId: id,
+        name: row.name ?? null,
+        avatarUrl: row.avatarUrl ?? null,
+        kk: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        jj: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        totalHands: 0,
+      });
+    }
+
+    const entry = byUser.get(id)!;
+    entry.name = entry.name ?? row.name ?? null;
+    entry.avatarUrl = entry.avatarUrl ?? row.avatarUrl ?? null;
+
+    entry.kk.hands += Math.max(0, Number(row.kkHands ?? 0));
+    entry.kk.wins += Math.max(0, Number(row.kkWins ?? 0));
+    entry.kk.losses += Math.max(0, Number(row.kkLosses ?? 0));
+
+    entry.jj.hands += Math.max(0, Number(row.jjHands ?? 0));
+    entry.jj.wins += Math.max(0, Number(row.jjWins ?? 0));
+    entry.jj.losses += Math.max(0, Number(row.jjLosses ?? 0));
+  }
+
+  const data = Array.from(byUser.values())
+    .map((entry) => {
+      entry.kk.hands = Math.max(entry.kk.hands, entry.kk.wins + entry.kk.losses);
+      entry.jj.hands = Math.max(entry.jj.hands, entry.jj.wins + entry.jj.losses);
+      entry.kk.winRate = entry.kk.hands > 0 ? Math.round((entry.kk.wins / entry.kk.hands) * 100) : 0;
+      entry.jj.winRate = entry.jj.hands > 0 ? Math.round((entry.jj.wins / entry.jj.hands) * 100) : 0;
+      const totalHands = entry.kk.hands + entry.jj.hands;
+      const totalWins = entry.kk.wins + entry.jj.wins;
+      const totalLosses = entry.kk.losses + entry.jj.losses;
+      const overallWinRate = totalHands > 0 ? Math.round((totalWins / totalHands) * 100) : 0;
+      const performanceScore = totalHands > 0 ? Number((overallWinRate * Math.log10(totalHands + 1)).toFixed(4)) : 0;
+      return {
+        ...entry,
+        totalHands,
+        totalWins,
+        totalLosses,
+        overallWinRate,
+        performanceScore,
+      };
+    })
+    .filter((entry) => entry.totalHands >= Math.max(1, minHands))
+    .sort((a, b) => {
+      if (b.performanceScore !== a.performanceScore) return b.performanceScore - a.performanceScore;
+      if (b.overallWinRate !== a.overallWinRate) return b.overallWinRate - a.overallWinRate;
+      return b.totalHands - a.totalHands;
+    })
+    .slice(0, Math.max(1, limit));
+
+  return data;
+}
+
+function normalizeHandCounters(stats: { hands: number; wins: number; losses: number }) {
+  const wins = Math.max(0, Math.round(Number(stats.wins ?? 0)));
+  const losses = Math.max(0, Math.round(Number(stats.losses ?? 0)));
+  const hands = Math.max(Math.max(0, Math.round(Number(stats.hands ?? 0))), wins + losses);
+  return { hands, wins, losses };
+}
+
+export async function updateHandPatternManualStats(
+  userId: number,
+  input: {
+    kk: { hands: number; wins: number; losses: number };
+    jj: { hands: number; wins: number; losses: number };
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const kk = normalizeHandCounters(input.kk);
+  const jj = normalizeHandCounters(input.jj);
+
+  await db
+    .insert(handPatternCounters)
+    .values({
+      userId,
+      kkHands: kk.hands,
+      kkWins: kk.wins,
+      kkLosses: kk.losses,
+      jjHands: jj.hands,
+      jjWins: jj.wins,
+      jjLosses: jj.losses,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        kkHands: kk.hands,
+        kkWins: kk.wins,
+        kkLosses: kk.losses,
+        jjHands: jj.hands,
+        jjWins: jj.wins,
+        jjLosses: jj.losses,
+      },
+    });
+
+  return getHandPatternStats(userId);
+}
+
+export async function registerHandPatternResult(
+  userId: number,
+  hand: "kk" | "jj",
+  outcome: "win" | "loss"
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .insert(handPatternCounters)
+    .values({ userId })
+    .onDuplicateKeyUpdate({ set: { userId } });
+
+  const [row] = await db
+    .select()
+    .from(handPatternCounters)
+    .where(eq(handPatternCounters.userId, userId))
+    .limit(1);
+
+  const kk = normalizeHandCounters({
+    hands: Number(row?.kkHands ?? 0),
+    wins: Number(row?.kkWins ?? 0),
+    losses: Number(row?.kkLosses ?? 0),
+  });
+  const jj = normalizeHandCounters({
+    hands: Number(row?.jjHands ?? 0),
+    wins: Number(row?.jjWins ?? 0),
+    losses: Number(row?.jjLosses ?? 0),
+  });
+
+  const target = hand === "kk" ? kk : jj;
+  target.hands += 1;
+  if (outcome === "win") target.wins += 1;
+  else target.losses += 1;
+
+  return updateHandPatternManualStats(userId, { kk, jj });
 }
 
 export async function getSessionById(id: number, userId: number): Promise<Session | null> {
@@ -886,7 +1150,14 @@ export async function getStatsByVenue(userId: number) {
       endedAt: sessionTables.endedAt,
     })
     .from(sessionTables)
-    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`, sql`${sessionTables.venueId} IS NOT NULL`));
+    .innerJoin(
+      sessions,
+      and(
+        eq(sessionTables.sessionId, sessions.id),
+        eq(sessions.userId, userId),
+      )
+    )
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.venueId} IS NOT NULL`));
 
   const rates = await getAllRates().catch(() => null);
   const toBrl = (amount: number, currency: string): number => {

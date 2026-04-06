@@ -42,6 +42,11 @@ import {
   Settings2,
   CheckCircle2,
   ListChecks,
+  Flame,
+  Swords,
+  Crown,
+  Trophy,
+  PencilLine,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useMemo } from "react";
@@ -187,13 +192,19 @@ export default function Dashboard() {
   const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("roi");
   const [showOnlineModal, setShowOnlineModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
+  const [showHandsEditModal, setShowHandsEditModal] = useState(false);
   const [onlineInputValue, setOnlineInputValue] = useState("");
   const [liveInputValue, setLiveInputValue] = useState("");
+  const [handEdit, setHandEdit] = useState({
+    kk: { hands: 0, wins: 0, losses: 0 },
+    jj: { hands: 0, wins: 0, losses: 0 },
+  });
 
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
   const { data: handPatternStats } = trpc.sessions.handPatternStats.useQuery();
+  const { data: globalHandPatternStats } = trpc.feed.handPatternStats.useQuery({ limit: 8, minHands: 6 });
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
   const { data: fxRates } = trpc.currency.getRates.useQuery(undefined, { refetchInterval: 60000 });
@@ -206,6 +217,46 @@ export default function Dashboard() {
     },
     onError: (err) => toast.error(`Erro ao atualizar bankroll: ${err.message}`),
   });
+
+  const registerHandResultMutation = trpc.sessions.registerHandResult.useMutation({
+    onSuccess: () => {
+      utils.sessions.handPatternStats.invalidate();
+      utils.feed.handPatternStats.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao registrar mão: ${err.message}`),
+  });
+
+  const updateHandStatsMutation = trpc.sessions.updateHandStats.useMutation({
+    onSuccess: () => {
+      setShowHandsEditModal(false);
+      utils.sessions.handPatternStats.invalidate();
+      utils.feed.handPatternStats.invalidate();
+      toast.success("Contador de mãos atualizado.");
+    },
+    onError: (err) => toast.error(`Erro ao atualizar contador: ${err.message}`),
+  });
+
+  const openHandsEditModal = () => {
+    setHandEdit({
+      kk: {
+        hands: handPatternStats?.kk?.hands ?? 0,
+        wins: handPatternStats?.kk?.wins ?? 0,
+        losses: handPatternStats?.kk?.losses ?? 0,
+      },
+      jj: {
+        hands: handPatternStats?.jj?.hands ?? 0,
+        wins: handPatternStats?.jj?.wins ?? 0,
+        losses: handPatternStats?.jj?.losses ?? 0,
+      },
+    });
+    setShowHandsEditModal(true);
+  };
+
+  const handRankMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (globalHandPatternStats ?? []).forEach((p: any, idx: number) => map.set(p.userId, idx + 1));
+    return map;
+  }, [globalHandPatternStats]);
 
   const chartData = useMemo(() => {
     if (!history) return [];
@@ -470,6 +521,63 @@ export default function Dashboard() {
             >
               <CheckCircle2 className="h-4 w-4" />
               {updateBankrollMutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHandsEditModal} onOpenChange={setShowHandsEditModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PencilLine className="h-5 w-5 text-amber-500" />
+              Editar Contador KK/JJ
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            {(["kk", "jj"] as const).map((hand) => (
+              <div key={hand} className="rounded-lg border border-border/60 p-3 space-y-2">
+                <p className="text-sm font-semibold">{hand.toUpperCase()} {hand === "kk" ? "(Rei Rei)" : "(Vala Vala)"}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <Label className="text-[11px]">Total</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={(handEdit as any)[hand].hands}
+                      onChange={(e) => setHandEdit((prev) => ({ ...prev, [hand]: { ...(prev as any)[hand], hands: Math.max(0, Number(e.target.value || 0)) } }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Vitórias</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={(handEdit as any)[hand].wins}
+                      onChange={(e) => setHandEdit((prev) => ({ ...prev, [hand]: { ...(prev as any)[hand], wins: Math.max(0, Number(e.target.value || 0)) } }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Derrotas</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={(handEdit as any)[hand].losses}
+                      onChange={(e) => setHandEdit((prev) => ({ ...prev, [hand]: { ...(prev as any)[hand], losses: Math.max(0, Number(e.target.value || 0)) } }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowHandsEditModal(false)}>Cancelar</Button>
+            <Button
+              size="sm"
+              disabled={updateHandStatsMutation.isPending}
+              onClick={() => updateHandStatsMutation.mutate(handEdit as any)}
+            >
+              {updateHandStatsMutation.isPending ? "Salvando..." : "Salvar alterações"}
             </Button>
           </div>
         </DialogContent>
@@ -910,23 +1018,106 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="bg-card/60 border-border/40">
+          <Card className="bg-gradient-to-br from-zinc-50/90 via-amber-50/40 to-red-50/40 border-amber-200/60 overflow-hidden">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Contador de Mãos</CardTitle>
-              <p className="text-xs text-muted-foreground">Vitórias e derrotas de KK (rei rei) e JJ (vala vala)</p>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-border/50 p-3">
-                <p className="text-xs text-muted-foreground mb-1">KK (Rei Rei)</p>
-                <p className="text-lg font-bold mb-2">{handPatternStats?.kk?.hands ?? 0}</p>
-                <p className="text-xs text-emerald-400">Vitórias: {handPatternStats?.kk?.wins ?? 0}</p>
-                <p className="text-xs text-red-400">Derrotas: {handPatternStats?.kk?.losses ?? 0}</p>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-amber-500" /> Contador de Mãos <span className="text-amber-500">Premium</span>
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">Seu desempenho com mãos fortes e perigosas.</p>
+                </div>
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={openHandsEditModal}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                </Button>
               </div>
-              <div className="rounded-lg border border-border/50 p-3">
-                <p className="text-xs text-muted-foreground mb-1">JJ (Vala Vala)</p>
-                <p className="text-lg font-bold mb-2">{handPatternStats?.jj?.hands ?? 0}</p>
-                <p className="text-xs text-emerald-400">Vitórias: {handPatternStats?.jj?.wins ?? 0}</p>
-                <p className="text-xs text-red-400">Derrotas: {handPatternStats?.jj?.losses ?? 0}</p>
+            </CardHeader>
+
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-amber-300/50 overflow-hidden bg-gradient-to-br from-zinc-950 via-zinc-900 to-amber-900 text-white">
+                  <div className="p-3 border-b border-amber-300/20 flex items-center justify-between">
+                    <p className="text-2xl font-black tracking-tight text-amber-300">KK <span className="text-white text-base">(Rei Rei)</span></p>
+                    <Crown className="h-5 w-5 text-amber-300" />
+                  </div>
+                  <div className="p-3 space-y-1.5 text-sm">
+                    <p><Flame className="h-4 w-4 inline mr-1 text-orange-300" /> Total: <span className="font-bold">{handPatternStats?.kk?.hands ?? 0}</span></p>
+                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.kk?.wins ?? 0}</span></p>
+                    <p className="text-red-300">Derrotas: <span className="font-bold">{handPatternStats?.kk?.losses ?? 0}</span></p>
+                    <p className="text-zinc-200">Win rate: <span className="font-bold">{handPatternStats?.kk?.winRate ?? 0}%</span></p>
+                    <div className="pt-2 grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "kk", outcome: "win" })}
+                      >+ Vitória</Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-red-600 hover:bg-red-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "kk", outcome: "loss" })}
+                      >+ Derrota</Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-red-300/50 overflow-hidden bg-gradient-to-br from-red-950 via-red-900 to-orange-700 text-white">
+                  <div className="p-3 border-b border-red-300/20 flex items-center justify-between">
+                    <p className="text-2xl font-black tracking-tight text-orange-200">JJ <span className="text-white text-base">(Vala Vala)</span></p>
+                    <Swords className="h-5 w-5 text-orange-200" />
+                  </div>
+                  <div className="p-3 space-y-1.5 text-sm">
+                    <p><Flame className="h-4 w-4 inline mr-1 text-orange-200" /> Total: <span className="font-bold">{handPatternStats?.jj?.hands ?? 0}</span></p>
+                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.jj?.wins ?? 0}</span></p>
+                    <p className="text-red-200">Derrotas: <span className="font-bold">{handPatternStats?.jj?.losses ?? 0}</span></p>
+                    <p className="text-zinc-100">Win rate: <span className="font-bold">{handPatternStats?.jj?.winRate ?? 0}%</span></p>
+                    <div className="pt-2 grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "jj", outcome: "win" })}
+                      >+ Vitória</Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-red-600 hover:bg-red-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "jj", outcome: "loss" })}
+                      >+ Derrota</Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold flex items-center gap-1.5"><Crown className="h-4 w-4 text-amber-500" /> Ranking Global KK/JJ</p>
+                  <p className="text-[11px] text-muted-foreground">Mínimo 6 mãos para entrar</p>
+                </div>
+                {globalHandPatternStats && globalHandPatternStats.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {globalHandPatternStats.map((player: any, idx: number) => (
+                      <div key={player.userId} className="rounded-lg border border-border/40 px-2.5 py-2 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
+                          <p className="text-[11px] text-muted-foreground">{player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
+                          <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {handRankMap.size > 0 && !Array.from(handRankMap.values()).includes(1) && (
+                      <p className="text-[11px] text-muted-foreground pt-1">Continue registrando para subir no ranking.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-3 text-xs text-muted-foreground">
+                    Sem ranking elegível ainda. Registre mãos para entrar na disputa.
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

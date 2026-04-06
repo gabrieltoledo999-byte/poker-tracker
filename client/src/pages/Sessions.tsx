@@ -955,6 +955,12 @@ function SessionCard({ session }: { session: any }) {
   const deleteMutation = trpc.sessions.delete.useMutation({
     onSuccess: () => {
       utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.history.invalidate();
+      utils.bankroll.getCurrent.invalidate();
       toast.success("Sessão excluída!");
       setShowDeleteConfirm(false);
     },
