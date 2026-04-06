@@ -376,33 +376,29 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
+      {rateItems.length > 0 && (
+        <div className="fx-ticker -mx-4 -mt-4">
+          <div className="fx-track">
+            {[...rateItems, ...rateItems, ...rateItems, ...rateItems].map((item, i) => (
+              <div key={`${item.code}-${i}`} className="fx-item">
+                <span className="fx-code">{item.code}</span>
+                <span className="fx-label">{item.label}</span>
+                <span className="fx-value">R$ {item.rate.toFixed(4)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Banca Total</h1>
-          <p className="text-sm text-muted-foreground">Visão consolidada do seu patrimônio poker</p>
+          <h1 className="text-2xl font-bold tracking-tight">Bankroll</h1>
+          <p className="text-sm text-muted-foreground">Visão consolidada do seu stack</p>
         </div>
         <Link href="/sessions">
           <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nova Sessão</Button>
         </Link>
       </div>
-
-      {rateItems.length > 0 && (
-        <Card className="bg-card/70 border-border/40 overflow-hidden">
-          <CardContent className="p-0">
-            <div className="fx-ticker">
-              <div className="fx-track">
-                {[...rateItems, ...rateItems].map((item, i) => (
-                  <div key={`${item.code}-${i}`} className="fx-item">
-                    <span className="fx-code">{item.code}</span>
-                    <span className="fx-label">{item.label}</span>
-                    <span className="fx-value">R$ {item.rate.toFixed(4)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Modal: Definir/Editar Bankroll Online */}
       <Dialog open={showOnlineModal} onOpenChange={setShowOnlineModal}>
@@ -591,7 +587,7 @@ export default function Dashboard() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Patrimônio Poker</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Stack Total</p>
                   <p className={`text-4xl font-bold tracking-tight ${!hasAnyBalance ? "text-muted-foreground" : ""}`}>
                     {formatCurrencyCompact(consolidatedTotal)}
                   </p>
@@ -675,7 +671,7 @@ export default function Dashboard() {
             {/* Donut: Online vs Live */}
             <Card className="bg-card/60 border-border/40">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">Distribuição da Banca</CardTitle>
+                <CardTitle className="text-sm font-semibold">Distribuição do Bankroll</CardTitle>
               </CardHeader>
               <CardContent>
                 {donutData.length > 0 ? (
@@ -765,7 +761,7 @@ export default function Dashboard() {
                 {/* Gráfico de evolução do dinheiro */}
                 {chartData.length > 1 ? (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-2 font-medium">Evolução da Banca</p>
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">Evolução do Bankroll</p>
                     <div className="h-36">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>

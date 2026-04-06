@@ -151,7 +151,7 @@ export default function Funds() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Wallet className="h-6 w-6" />
-            Gerenciar Fundos
+            Caixa
           </h1>
           <p className="text-muted-foreground">
             Adicione depósitos ou saques ao seu bankroll

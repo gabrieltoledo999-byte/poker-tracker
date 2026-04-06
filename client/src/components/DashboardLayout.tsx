@@ -100,8 +100,8 @@ function ColorPicker() {
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ListChecks, label: "Sessões", path: "/sessions" },
-  { icon: Wallet, label: "Fundos", path: "/funds" },
-  { icon: MapPin, label: "Locais", path: "/venues" },
+  { icon: Wallet, label: "Caixa", path: "/funds" },
+  { icon: MapPin, label: "Salas", path: "/venues" },
   { icon: Users, label: "Convites", path: "/invites" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];

@@ -655,7 +655,7 @@ export default function Venues() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Locais & Plataformas</h1>
+          <h1 className="text-2xl font-bold">Salas & Sites</h1>
           <p className="text-muted-foreground text-sm">Gerencie onde você joga e acompanhe seu saldo em cada plataforma</p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
