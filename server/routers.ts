@@ -47,6 +47,7 @@ import {
   finalizeActiveSession,
   discardActiveSession,
   getSessionTables,
+  getRecentPlayedTables,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -384,6 +385,13 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         return await getSessionTables(input.sessionId, ctx.user.id);
       }),
+
+    // Recent played tables (for dashboard/home)
+    recentTables: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(50).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        return await getRecentPlayedTables(ctx.user.id, input?.limit ?? 8);
+      }),
   }),
   // Venues router
   venues: router({
@@ -678,6 +686,7 @@ export const appRouter = router({
             profit: onlineStats.totalProfit,
             fundNet: fundTotals.online.net,
             sessions: onlineStats.totalSessions,
+            tables: onlineStats.totalTables,
           },
           live: {
             initial: initialLive,
@@ -685,6 +694,7 @@ export const appRouter = router({
             profit: liveStats.totalProfit,
             fundNet: fundTotals.live.net,
             sessions: liveStats.totalSessions,
+            tables: liveStats.totalTables,
           },
           total: {
             initial: initialOnline + initialLive,
@@ -692,6 +702,7 @@ export const appRouter = router({
             profit: onlineStats.totalProfit + liveStats.totalProfit,
             fundNet: fundTotals.total.net,
             sessions: onlineStats.totalSessions + liveStats.totalSessions,
+            tables: onlineStats.totalTables + liveStats.totalTables,
           },
         };
       }),
@@ -736,6 +747,7 @@ export const appRouter = router({
             initial: initialOnline,
             profit: onlineStats.totalProfit,
             sessions: onlineStats.totalSessions,
+            tables: onlineStats.totalTables,
             venues: onlineVenues,
           },
           live: {
@@ -743,12 +755,14 @@ export const appRouter = router({
             current: Math.max(0, liveCurrent),
             profit: liveStats.totalProfit,
             sessions: liveStats.totalSessions,
+            tables: liveStats.totalTables,
             venues: liveVenues,
           },
           total: {
             current: totalCurrent,
             profit: onlineStats.totalProfit + liveStats.totalProfit,
             sessions: onlineStats.totalSessions + liveStats.totalSessions,
+            tables: onlineStats.totalTables + liveStats.totalTables,
           },
           allVenues: venuesWithStats,
         };

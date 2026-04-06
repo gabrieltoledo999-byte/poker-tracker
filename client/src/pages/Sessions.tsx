@@ -38,7 +38,16 @@ function formatCurrency(value: number, currency: string) {
   if (currency === "USD") return `$${amount.toFixed(2)}`;
   if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
   if (currency === "JPY") return `¥${Math.round(amount)}`;
+  if (currency === "CNY") return `CN¥${amount.toFixed(2)}`;
   return `R$${amount.toFixed(2)}`;
+}
+
+function convertToBrlCents(value: number, currency: string, rates?: any) {
+  if (currency === "USD") return Math.round(value * (rates?.USD?.rate ?? 5.75));
+  if (currency === "CAD") return Math.round(value * (rates?.CAD?.rate ?? 4.20));
+  if (currency === "JPY") return Math.round(value * (rates?.JPY?.rate ?? 0.033));
+  if (currency === "CNY") return Math.round(value * (rates?.CNY?.rate ?? 0.80));
+  return value;
 }
 
 /** Format minutes as "Xh Ym" */
@@ -577,6 +586,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
   const [finalNotes, setFinalNotes] = useState("");
 
   const { data: venues } = trpc.venues.list.useQuery({});
+  const { data: fxRates } = trpc.currency.getRates.useQuery();
 
   // Live timer
   useEffect(() => {
@@ -621,11 +631,13 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
     },
   });
 
-  // Calculate totals (only from tables with cashOut set)
-  const totalBuyIn = session.tables.reduce((s, t) => s + t.buyIn, 0);
+  // Calculate totals in BRL for display consistency.
+  const totalBuyIn = session.tables.reduce((s, t) => s + convertToBrlCents(t.buyIn, t.currency, fxRates), 0);
   const completedTables = session.tables.filter(t => t.cashOut !== null && t.cashOut !== undefined);
-  const totalCashOut = completedTables.reduce((s, t) => s + (t.cashOut ?? 0), 0);
-  const totalProfit = completedTables.length > 0 ? totalCashOut - completedTables.reduce((s, t) => s + t.buyIn, 0) : null;
+  const totalCashOut = completedTables.reduce((s, t) => s + convertToBrlCents(t.cashOut ?? 0, t.currency, fxRates), 0);
+  const totalProfit = completedTables.length > 0
+    ? totalCashOut - completedTables.reduce((s, t) => s + convertToBrlCents(t.buyIn, t.currency, fxRates), 0)
+    : null;
 
   const cashOutTable = session.tables.find(t => t.id === cashOutTableId);
 
@@ -925,15 +937,9 @@ function SessionCard({ session }: { session: any }) {
     { sessionId: session.id },
     { enabled: expanded }
   );
-  const { data: venues } = trpc.venues.list.useQuery({});
 
-  // Edit form state
-  const [editVenueId, setEditVenueId] = useState(session.venueId?.toString() ?? "");
-  const [editBuyIn, setEditBuyIn] = useState(((session.originalBuyIn ?? session.buyIn) / 100).toFixed(2));
-  const [editCashOut, setEditCashOut] = useState(((session.originalCashOut ?? session.cashOut) / 100).toFixed(2));
+  // Session-level edit state (notes only)
   const [editNotes, setEditNotes] = useState(session.notes ?? "");
-  const [editFormat, setEditFormat] = useState(session.gameFormat);
-  const [editStakes, setEditStakes] = useState(session.stakes ?? "");
 
   const updateMutation = trpc.sessions.update.useMutation({
     onSuccess: () => {
@@ -944,25 +950,20 @@ function SessionCard({ session }: { session: any }) {
     onError: (err) => toast.error("Erro ao atualizar", { description: err.message }),
   });
 
-  const profit = session.cashOut - session.buyIn;
-  const profitPct = session.buyIn > 0 ? ((profit / session.buyIn) * 100).toFixed(1) : "0";
+  const sessionBuyIn = session.totalTableBuyIn ?? session.buyIn;
+  const sessionCashOut = session.totalTableCashOut ?? session.cashOut;
+  const profit = session.totalTableProfit ?? (sessionCashOut - sessionBuyIn);
+  const profitPct = typeof session.roi === "number" ? session.roi.toFixed(1) : (sessionBuyIn > 0 ? ((profit / sessionBuyIn) * 100).toFixed(1) : "0");
+  const tableCount = session.tableCount ?? (tables?.length ?? 0);
   const fmt = GAME_FORMATS.find(f => f.value === session.gameFormat);
   const date = new Date(session.sessionDate);
   const venueName = session.venueName;
   const venueLogoUrl = session.venueLogoUrl;
 
   function handleSaveEdit() {
-    const buyInCents = Math.round(parseFloat(editBuyIn) * 100);
-    const cashOutCents = Math.round(parseFloat(editCashOut) * 100);
     updateMutation.mutate({
       id: session.id,
-      venueId: editVenueId ? parseInt(editVenueId) : undefined,
-      buyIn: buyInCents,
-      cashOut: cashOutCents,
       notes: editNotes || undefined,
-      gameFormat: editFormat as any,
-      stakes: editStakes || undefined,
-      currency: session.currency ?? "BRL",
     });
   }
 
@@ -989,6 +990,7 @@ function SessionCard({ session }: { session: any }) {
           <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
             <span>{date.toLocaleDateString("pt-BR")}</span>
             <span>{Math.floor(session.durationMinutes / 60)}h{session.durationMinutes % 60}m</span>
+            <span>{tableCount} mesa{tableCount === 1 ? "" : "s"}</span>
             {venueName && <span className="sm:hidden flex items-center gap-0.5"><MapPin className="h-3 w-3" />{venueName}</span>}
           </div>
         </div>
@@ -1006,16 +1008,37 @@ function SessionCard({ session }: { session: any }) {
           <div className="grid grid-cols-3 gap-3 text-center text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Buy-in</p>
-              <p className="font-medium">R${(session.buyIn / 100).toFixed(2)}</p>
+              <p className="font-medium">R${(sessionBuyIn / 100).toFixed(2)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Cash-out</p>
-              <p className="font-medium">R${(session.cashOut / 100).toFixed(2)}</p>
+              <p className="font-medium">R${(sessionCashOut / 100).toFixed(2)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">R$/hora</p>
               <p className={`font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {session.durationMinutes > 0 ? `${profit >= 0 ? "+" : ""}R${((profit / session.durationMinutes) * 60 / 100).toFixed(2)}` : "—"}
+                {typeof session.hourlyRate === "number"
+                  ? `${session.hourlyRate >= 0 ? "+" : ""}R$${(session.hourlyRate / 100).toFixed(2)}`
+                  : (session.durationMinutes > 0 ? `${profit >= 0 ? "+" : ""}R${((profit / session.durationMinutes) * 60 / 100).toFixed(2)}` : "—")}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-center text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">ROI</p>
+              <p className={`font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>{profitPct}%</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Melhor mesa</p>
+              <p className={`font-medium ${(session.bestTableProfit ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {session.bestTableProfit == null ? "—" : `${session.bestTableProfit >= 0 ? "+" : ""}R$${(session.bestTableProfit / 100).toFixed(2)}`}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Pior mesa</p>
+              <p className={`font-medium ${(session.worstTableProfit ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {session.worstTableProfit == null ? "—" : `${session.worstTableProfit >= 0 ? "+" : ""}R$${(session.worstTableProfit / 100).toFixed(2)}`}
               </p>
             </div>
           </div>
@@ -1059,7 +1082,7 @@ function SessionCard({ session }: { session: any }) {
               className="gap-1.5 h-7 text-xs"
               onClick={(e) => { e.stopPropagation(); setEditing(true); }}
             >
-              <Edit2 className="h-3 w-3" /> Editar sessão
+              <Edit2 className="h-3 w-3" /> Editar notas da sessão
             </Button>
           </div>
         </div>
@@ -1070,58 +1093,16 @@ function SessionCard({ session }: { session: any }) {
     <Dialog open={editing} onOpenChange={setEditing}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Editar Sessão</DialogTitle>
+          <DialogTitle>Editar Notas da Sessão</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <div>
-            <Label className="text-xs">Local / Plataforma</Label>
-            <Select value={editVenueId} onValueChange={setEditVenueId}>
-              <SelectTrigger className="h-8 text-sm mt-1">
-                <SelectValue placeholder="Selecione o local" />
-              </SelectTrigger>
-              <SelectContent>
-                {venues?.map(v => (
-                  <SelectItem key={v.id} value={v.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
-                      {v.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Formato</Label>
-            <Select value={editFormat} onValueChange={setEditFormat}>
-              <SelectTrigger className="h-8 text-sm mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GAME_FORMATS.map(f => (
-                  <SelectItem key={f.value} value={f.value}>{f.emoji} {f.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">Buy-in ({session.currency ?? "BRL"})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={editBuyIn} onChange={e => setEditBuyIn(e.target.value)} />
-            </div>
-            <div>
-              <Label className="text-xs">Cash-out ({session.currency ?? "BRL"})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={editCashOut} onChange={e => setEditCashOut(e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Stakes (ex: 1/2)</Label>
-            <Input className="h-8 text-sm mt-1" placeholder="1/2" value={editStakes} onChange={e => setEditStakes(e.target.value)} />
-          </div>
           <div>
             <Label className="text-xs">Notas</Label>
             <Textarea className="text-sm mt-1 resize-none" rows={2} value={editNotes} onChange={e => setEditNotes(e.target.value)} />
           </div>
+          <p className="text-xs text-muted-foreground">
+            Os dados de plataforma, buy-in e resultado pertencem a cada mesa. Para alterar esses valores, edite as mesas dentro da sessão.
+          </p>
         </div>
         <DialogFooter className="mt-2">
           <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancelar</Button>
@@ -1156,10 +1137,10 @@ export default function Sessions() {
 
   if (!user) return null;
 
-  const totalProfit = sessions?.reduce((s, sess) => s + (sess.cashOut - sess.buyIn), 0) ?? 0;
+  const totalProfit = sessions?.reduce((s, sess) => s + (sess.totalTableProfit ?? (sess.cashOut - sess.buyIn)), 0) ?? 0;
   const totalSessions = sessions?.length ?? 0;
   const winRate = totalSessions > 0
-    ? ((sessions?.filter(s => s.cashOut > s.buyIn).length ?? 0) / totalSessions * 100).toFixed(0)
+    ? ((sessions?.filter(s => (s.totalTableProfit ?? (s.cashOut - s.buyIn)) > 0).length ?? 0) / totalSessions * 100).toFixed(0)
     : "0";
 
   return (

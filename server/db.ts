@@ -233,26 +233,137 @@ export async function getUserSessions(
     .where(and(...conditions))
     .orderBy(desc(sessions.sessionDate));
   
-  return result as any;
+  const sessionRows = result as any[];
+  if (sessionRows.length === 0) {
+    return sessionRows as any;
+  }
+
+  // Build metrics from session_tables so session is a true container and tables are the source of truth.
+  const sessionIds = sessionRows.map((s) => s.id);
+  const tableRows = await db
+    .select({
+      sessionId: sessionTables.sessionId,
+      buyIn: sessionTables.buyIn,
+      cashOut: sessionTables.cashOut,
+      venueId: sessionTables.venueId,
+      gameFormat: sessionTables.gameFormat,
+    })
+    .from(sessionTables)
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`));
+
+  const bySession = new Map<number, {
+    tableCount: number;
+    totalTableBuyIn: number;
+    totalTableCashOut: number;
+    bestTableProfit: number | null;
+    worstTableProfit: number | null;
+    venueIds: Set<number>;
+    gameFormats: Set<string>;
+  }>();
+
+  for (const row of tableRows) {
+    if (!row.sessionId) continue;
+    const key = Number(row.sessionId);
+    if (!bySession.has(key)) {
+      bySession.set(key, {
+        tableCount: 0,
+        totalTableBuyIn: 0,
+        totalTableCashOut: 0,
+        bestTableProfit: null,
+        worstTableProfit: null,
+        venueIds: new Set<number>(),
+        gameFormats: new Set<string>(),
+      });
+    }
+
+    const agg = bySession.get(key)!;
+    const buyIn = row.buyIn ?? 0;
+    const cashOut = row.cashOut ?? 0;
+    const profit = cashOut - buyIn;
+
+    agg.tableCount += 1;
+    agg.totalTableBuyIn += buyIn;
+    agg.totalTableCashOut += cashOut;
+    agg.bestTableProfit = agg.bestTableProfit === null ? profit : Math.max(agg.bestTableProfit, profit);
+    agg.worstTableProfit = agg.worstTableProfit === null ? profit : Math.min(agg.worstTableProfit, profit);
+    if (row.venueId != null) agg.venueIds.add(row.venueId);
+    agg.gameFormats.add(row.gameFormat);
+  }
+
+  const enriched = sessionRows.map((s) => {
+    const agg = bySession.get(s.id);
+    const totalBuyIn = agg ? agg.totalTableBuyIn : s.buyIn;
+    const totalCashOut = agg ? agg.totalTableCashOut : s.cashOut;
+    const totalProfit = totalCashOut - totalBuyIn;
+    const roi = totalBuyIn > 0 ? (totalProfit / totalBuyIn) * 100 : 0;
+    const hourlyRate = s.durationMinutes > 0 ? Math.round((totalProfit / s.durationMinutes) * 60) : 0;
+
+    return {
+      ...s,
+      tableCount: agg?.tableCount ?? 0,
+      totalTableBuyIn: totalBuyIn,
+      totalTableCashOut: totalCashOut,
+      totalTableProfit: totalProfit,
+      roi,
+      hourlyRate,
+      bestTableProfit: agg?.bestTableProfit ?? null,
+      worstTableProfit: agg?.worstTableProfit ?? null,
+      uniqueVenueCount: agg?.venueIds.size ?? 0,
+      uniqueGameFormatCount: agg?.gameFormats.size ?? 0,
+      isMultiTable: (agg?.tableCount ?? 0) > 1,
+      isMultiVenue: (agg?.venueIds.size ?? 0) > 1,
+      isMultiFormat: (agg?.gameFormats.size ?? 0) > 1,
+    };
+  });
+
+  return enriched as any;
+}
+
+export async function getRecentPlayedTables(userId: number, limit = 12) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select({
+      id: sessionTables.id,
+      sessionId: sessionTables.sessionId,
+      startedAt: sessionTables.startedAt,
+      endedAt: sessionTables.endedAt,
+      type: sessionTables.type,
+      gameFormat: sessionTables.gameFormat,
+      currency: sessionTables.currency,
+      buyIn: sessionTables.buyIn,
+      cashOut: sessionTables.cashOut,
+      stakes: sessionTables.stakes,
+      venueId: sessionTables.venueId,
+      venueName: venues.name,
+      venueLogoUrl: venues.logoUrl,
+      sessionDate: sessions.sessionDate,
+      sessionDurationMinutes: sessions.durationMinutes,
+    })
+    .from(sessionTables)
+    .innerJoin(sessions, eq(sessionTables.sessionId, sessions.id))
+    .leftJoin(venues, eq(sessionTables.venueId, venues.id))
+    .where(eq(sessionTables.userId, userId))
+    .orderBy(desc(sessions.sessionDate), desc(sessionTables.startedAt))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    ...row,
+    tableProfit: (row.cashOut ?? 0) - row.buyIn,
+  }));
 }
 
 export async function getSessionStats(userId: number, type?: "online" | "live", gameFormat?: GameFormat) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  const conditions = [eq(sessions.userId, userId)];
-  if (type) {
-    conditions.push(eq(sessions.type, type));
-  }
-  if (gameFormat) {
-    conditions.push(eq(sessions.gameFormat, gameFormat));
-  }
-  
-  const allSessions = await db.select().from(sessions).where(and(...conditions));
-  
+
+  const allSessions = await db.select().from(sessions).where(eq(sessions.userId, userId));
+
   if (allSessions.length === 0) {
     return {
       totalSessions: 0,
+      totalTables: 0,
       totalBuyIn: 0,
       totalCashOut: 0,
       totalProfit: 0,
@@ -267,10 +378,101 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       avgHourlyRate: 0,
     };
   }
-  
+
+  const sessionIds = allSessions.map((s) => s.id);
+  const allTables = await db
+    .select({
+      sessionId: sessionTables.sessionId,
+      type: sessionTables.type,
+      gameFormat: sessionTables.gameFormat,
+    })
+    .from(sessionTables)
+    .where(
+      and(
+        eq(sessionTables.userId, userId),
+        sql`${sessionTables.sessionId} IS NOT NULL`,
+        sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`
+      )
+    );
+
+  const tablesBySession = new Map<number, Array<{ type: "online" | "live"; gameFormat: GameFormat }>>();
+  for (const t of allTables) {
+    if (!t.sessionId) continue;
+    const sid = Number(t.sessionId);
+    if (!tablesBySession.has(sid)) tablesBySession.set(sid, []);
+    tablesBySession.get(sid)!.push({ type: t.type as "online" | "live", gameFormat: t.gameFormat as GameFormat });
+  }
+
+  const hasTableFilter = Boolean(type || gameFormat);
+  const includedSessions: Array<{ session: Session; share: number; matchedTables: number; totalTables: number }> = [];
+
+  for (const session of allSessions) {
+    const tables = tablesBySession.get(session.id) ?? [];
+    const totalTables = tables.length;
+
+    if (!hasTableFilter) {
+      includedSessions.push({
+        session,
+        share: 1,
+        matchedTables: totalTables,
+        totalTables,
+      });
+      continue;
+    }
+
+    if (totalTables === 0) {
+      let matchedByLegacyFields = true;
+      if (type && session.type !== type) matchedByLegacyFields = false;
+      if (gameFormat && session.gameFormat !== gameFormat) matchedByLegacyFields = false;
+      if (matchedByLegacyFields) {
+        includedSessions.push({
+          session,
+          share: 1,
+          matchedTables: 1,
+          totalTables: 1,
+        });
+      }
+      continue;
+    }
+
+    const matchedTables = tables.filter((t) => {
+      if (type && t.type !== type) return false;
+      if (gameFormat && t.gameFormat !== gameFormat) return false;
+      return true;
+    }).length;
+
+    if (matchedTables <= 0) continue;
+    includedSessions.push({
+      session,
+      share: matchedTables / totalTables,
+      matchedTables,
+      totalTables,
+    });
+  }
+
+  if (includedSessions.length === 0) {
+    return {
+      totalSessions: 0,
+      totalTables: 0,
+      totalBuyIn: 0,
+      totalCashOut: 0,
+      totalProfit: 0,
+      totalDuration: 0,
+      winningSessions: 0,
+      losingSessions: 0,
+      breakEvenSessions: 0,
+      bestSession: null,
+      worstSession: null,
+      avgProfit: 0,
+      winRate: 0,
+      avgHourlyRate: 0,
+    };
+  }
+
   let totalBuyIn = 0;
   let totalCashOut = 0;
   let totalDuration = 0;
+  let totalTables = 0;
   let winningSessions = 0;
   let losingSessions = 0;
   let breakEvenSessions = 0;
@@ -278,32 +480,38 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   let worstProfit = Infinity;
   let bestSession: Session | null = null;
   let worstSession: Session | null = null;
-  
-  for (const session of allSessions) {
-    const profit = session.cashOut - session.buyIn;
-    totalBuyIn += session.buyIn;
-    totalCashOut += session.cashOut;
-    totalDuration += session.durationMinutes;
-    
+
+  for (const row of includedSessions) {
+    const buyIn = Math.round(row.session.buyIn * row.share);
+    const cashOut = Math.round(row.session.cashOut * row.share);
+    const duration = Math.max(1, Math.round(row.session.durationMinutes * row.share));
+    const profit = cashOut - buyIn;
+
+    totalBuyIn += buyIn;
+    totalCashOut += cashOut;
+    totalDuration += duration;
+    totalTables += row.matchedTables;
+
     if (profit > 0) winningSessions++;
     else if (profit < 0) losingSessions++;
     else breakEvenSessions++;
-    
+
     if (profit > bestProfit) {
       bestProfit = profit;
-      bestSession = session;
+      bestSession = row.session;
     }
     if (profit < worstProfit) {
       worstProfit = profit;
-      worstSession = session;
+      worstSession = row.session;
     }
   }
-  
+
   const totalProfit = totalCashOut - totalBuyIn;
   const totalHours = totalDuration / 60;
-  
+
   return {
-    totalSessions: allSessions.length,
+    totalSessions: includedSessions.length,
+    totalTables,
     totalBuyIn,
     totalCashOut,
     totalProfit,
@@ -313,8 +521,8 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     breakEvenSessions,
     bestSession,
     worstSession,
-    avgProfit: Math.round(totalProfit / allSessions.length),
-    winRate: Math.round((winningSessions / allSessions.length) * 100),
+    avgProfit: Math.round(totalProfit / includedSessions.length),
+    winRate: Math.round((winningSessions / includedSessions.length) * 100),
     avgHourlyRate: totalHours > 0 ? Math.round(totalProfit / totalHours) : 0,
   };
 }
@@ -420,17 +628,79 @@ export async function getStatsByGameFormat(userId: number) {
 export async function getBankrollHistory(userId: number, type?: "online" | "live") {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  const conditions = [eq(sessions.userId, userId)];
-  if (type) {
-    conditions.push(eq(sessions.type, type));
-  }
-  
-  const allSessions = await db.select().from(sessions)
-    .where(and(...conditions))
+
+  const allSessions = await db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.userId, userId))
     .orderBy(sessions.sessionDate);
-  
-  return allSessions;
+
+  if (allSessions.length === 0) return [];
+
+  const sessionIds = allSessions.map((s) => s.id);
+  const tableRows = await db
+    .select({
+      sessionId: sessionTables.sessionId,
+      type: sessionTables.type,
+    })
+    .from(sessionTables)
+    .where(
+      and(
+        eq(sessionTables.userId, userId),
+        sql`${sessionTables.sessionId} IS NOT NULL`,
+        sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`
+      )
+    );
+
+  const countsBySession = new Map<number, { online: number; live: number }>();
+  for (const row of tableRows) {
+    if (!row.sessionId) continue;
+    const sid = Number(row.sessionId);
+    if (!countsBySession.has(sid)) countsBySession.set(sid, { online: 0, live: 0 });
+    if (row.type === "online") countsBySession.get(sid)!.online += 1;
+    else countsBySession.get(sid)!.live += 1;
+  }
+
+  const normalized: Array<{
+    id: number;
+    sessionDate: Date;
+    type: "online" | "live";
+    buyIn: number;
+    cashOut: number;
+  }> = [];
+
+  for (const session of allSessions) {
+    const counts = countsBySession.get(session.id);
+    const onlineCount = counts?.online ?? (session.type === "online" ? 1 : 0);
+    const liveCount = counts?.live ?? (session.type === "live" ? 1 : 0);
+    const totalCount = onlineCount + liveCount;
+
+    if (totalCount <= 0) continue;
+
+    const totalProfit = session.cashOut - session.buyIn;
+    const onlineShare = onlineCount / totalCount;
+    const onlineProfit = Math.round(totalProfit * onlineShare);
+    const liveProfit = totalProfit - onlineProfit;
+
+    const pushRow = (entryType: "online" | "live", profit: number, suffix: number) => {
+      normalized.push({
+        id: session.id * 10 + suffix,
+        sessionDate: session.sessionDate,
+        type: entryType,
+        buyIn: 0,
+        cashOut: profit,
+      });
+    };
+
+    if (!type || type === "online") {
+      if (onlineCount > 0) pushRow("online", onlineProfit, 1);
+    }
+    if (!type || type === "live") {
+      if (liveCount > 0) pushRow("live", liveProfit, 2);
+    }
+  }
+
+  return normalized.sort((a, b) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
 }
 
 // ============== VENUE QUERIES ==============
@@ -547,56 +817,126 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
 export async function getStatsByVenue(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
   const allSessions = await db.select().from(sessions)
     .where(eq(sessions.userId, userId));
-  
+
   const allVenues = await db.select().from(venues)
     .where(eq(venues.userId, userId));
-  
+
   const venueMap = new Map(allVenues.map(v => [v.id, v]));
-  
+
+  const sessionIds = allSessions.map((s) => s.id);
+  const tables = sessionIds.length > 0
+    ? await db
+        .select({
+          sessionId: sessionTables.sessionId,
+          venueId: sessionTables.venueId,
+        })
+        .from(sessionTables)
+        .where(
+          and(
+            eq(sessionTables.userId, userId),
+            sql`${sessionTables.sessionId} IS NOT NULL`,
+            sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`
+          )
+        )
+    : [];
+
+  const venueCountsBySession = new Map<number, Map<number, number>>();
+  const totalTablesBySession = new Map<number, number>();
+  for (const t of tables) {
+    if (!t.sessionId || !t.venueId) continue;
+    const sid = Number(t.sessionId);
+    const vid = Number(t.venueId);
+    if (!venueCountsBySession.has(sid)) venueCountsBySession.set(sid, new Map<number, number>());
+    const byVenue = venueCountsBySession.get(sid)!;
+    byVenue.set(vid, (byVenue.get(vid) ?? 0) + 1);
+    totalTablesBySession.set(sid, (totalTablesBySession.get(sid) ?? 0) + 1);
+  }
+
   const venueStats: Record<number, {
     venueId: number;
     venueName: string;
     venueType: "online" | "live";
     logoUrl: string | null;
     sessions: number;
+    tables: number;
     totalProfit: number;
     winningSessions: number;
     winRate: number;
     totalDuration: number;
     avgHourlyRate: number;
   }> = {};
-  
+
   for (const session of allSessions) {
-    if (!session.venueId) continue;
-    
-    const venue = venueMap.get(session.venueId);
-    if (!venue) continue;
-    
-    if (!venueStats[session.venueId]) {
-      venueStats[session.venueId] = {
-        venueId: venue.id,
-        venueName: venue.name,
-        venueType: venue.type,
-        logoUrl: venue.logoUrl,
-        sessions: 0,
-        totalProfit: 0,
-        winningSessions: 0,
-        winRate: 0,
-        totalDuration: 0,
-        avgHourlyRate: 0,
-      };
+    const venueCounts = venueCountsBySession.get(session.id);
+    if (!venueCounts || venueCounts.size === 0) {
+      if (!session.venueId) continue;
+      const venue = venueMap.get(session.venueId);
+      if (!venue) continue;
+
+      if (!venueStats[session.venueId]) {
+        venueStats[session.venueId] = {
+          venueId: venue.id,
+          venueName: venue.name,
+          venueType: venue.type,
+          logoUrl: venue.logoUrl,
+          sessions: 0,
+          tables: 0,
+          totalProfit: 0,
+          winningSessions: 0,
+          winRate: 0,
+          totalDuration: 0,
+          avgHourlyRate: 0,
+        };
+      }
+
+      const profit = session.cashOut - session.buyIn;
+      venueStats[session.venueId].sessions++;
+      venueStats[session.venueId].tables += 1;
+      venueStats[session.venueId].totalProfit += profit;
+      venueStats[session.venueId].totalDuration += session.durationMinutes;
+      if (profit > 0) venueStats[session.venueId].winningSessions++;
+      continue;
     }
-    
-    const profit = session.cashOut - session.buyIn;
-    venueStats[session.venueId].sessions++;
-    venueStats[session.venueId].totalProfit += profit;
-    venueStats[session.venueId].totalDuration += session.durationMinutes;
-    if (profit > 0) venueStats[session.venueId].winningSessions++;
+
+    const totalTables = totalTablesBySession.get(session.id) ?? 0;
+    if (totalTables <= 0) continue;
+
+    const totalProfit = session.cashOut - session.buyIn;
+    for (const [venueId, count] of venueCounts.entries()) {
+      const venue = venueMap.get(venueId);
+      if (!venue) continue;
+
+      if (!venueStats[venueId]) {
+        venueStats[venueId] = {
+          venueId: venue.id,
+          venueName: venue.name,
+          venueType: venue.type,
+          logoUrl: venue.logoUrl,
+          sessions: 0,
+          tables: 0,
+          totalProfit: 0,
+          winningSessions: 0,
+          winRate: 0,
+          totalDuration: 0,
+          avgHourlyRate: 0,
+        };
+      }
+
+      const share = count / totalTables;
+      const venueProfit = Math.round(totalProfit * share);
+      const venueDuration = Math.max(1, Math.round(session.durationMinutes * share));
+
+      venueStats[venueId].sessions += 1;
+      venueStats[venueId].tables += count;
+      venueStats[venueId].totalProfit += venueProfit;
+      venueStats[venueId].totalDuration += venueDuration;
+      if (venueProfit > 0) venueStats[venueId].winningSessions++;
+    }
   }
-  
+
   // Calculate rates
   for (const stats of Object.values(venueStats)) {
     if (stats.sessions > 0) {
@@ -1254,22 +1594,23 @@ export async function getUserPreferences(userId: number) {
   const db = await getDb();
   if (!db) return null;
 
-  // Fetch last 200 sessions to build preference profile
-  const recentSessions = await db
+  // Use individual played tables as source of truth for preferences.
+  const recentTables = await db
     .select({
-      type: sessions.type,
-      gameFormat: sessions.gameFormat,
-      buyIn: sessions.buyIn,
-      venueId: sessions.venueId,
-      gameType: sessions.gameType,
-      currency: sessions.currency,
+      sessionId: sessionTables.sessionId,
+      type: sessionTables.type,
+      gameFormat: sessionTables.gameFormat,
+      buyIn: sessionTables.buyIn,
+      venueId: sessionTables.venueId,
+      gameType: sessionTables.gameType,
+      currency: sessionTables.currency,
     })
-    .from(sessions)
-    .where(eq(sessions.userId, userId))
-    .orderBy(desc(sessions.sessionDate))
+    .from(sessionTables)
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`))
+    .orderBy(desc(sessionTables.startedAt))
     .limit(200);
 
-  if (recentSessions.length === 0) return null;
+  if (recentTables.length === 0) return null;
 
   // Count frequencies
   const typeCount: Record<string, number> = {};
@@ -1279,7 +1620,7 @@ export async function getUserPreferences(userId: number) {
   const gameTypeCount: Record<string, number> = {};
   const currencyCount: Record<string, number> = {};
 
-  for (const s of recentSessions) {
+  for (const s of recentTables) {
     // Session type (online/live)
     typeCount[s.type] = (typeCount[s.type] || 0) + 1;
     // Game format
@@ -1315,7 +1656,7 @@ export async function getUserPreferences(userId: number) {
     gameType: string | null;
     currency: string | null;
   }> = [];
-  for (const s of recentSessions) {
+  for (const s of recentTables) {
     const key = `${s.type}|${s.gameFormat}|${s.venueId}|${s.buyIn}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -1331,8 +1672,14 @@ export async function getUserPreferences(userId: number) {
     }
   }
 
+  const uniqueSessionIds = new Set<number>();
+  for (const t of recentTables) {
+    if (t.sessionId) uniqueSessionIds.add(Number(t.sessionId));
+  }
+
   return {
-    totalSessions: recentSessions.length,
+    totalSessions: uniqueSessionIds.size,
+    totalTables: recentTables.length,
     preferredType: preferredType[0] || "online",
     preferredGameFormats,
     preferredVenueIds,
@@ -1434,7 +1781,7 @@ export async function finalizeActiveSession(
   userId: number,
   activeSessionId: number,
   notes?: string,
-  exchangeRates?: { USD: number; CAD: number; JPY: number }
+  exchangeRates?: { USD: number; CAD: number; JPY: number; CNY: number }
 ): Promise<Session | null> {
   const db = await getDb();
   if (!db) return null;
@@ -1453,12 +1800,29 @@ export async function finalizeActiveSession(
   const startedAt = active.startedAt;
   const durationMinutes = Math.max(1, Math.round((now.getTime() - startedAt.getTime()) / 60000));
 
+  // Close open tables automatically on finalize so metrics are fully calculated.
+  for (const t of tables) {
+    if (t.cashOut === null || t.cashOut === undefined || t.endedAt === null) {
+      await db
+        .update(sessionTables)
+        .set({
+          cashOut: t.cashOut ?? t.buyIn,
+          endedAt: t.endedAt ?? now,
+          updatedAt: now,
+        })
+        .where(eq(sessionTables.id, t.id));
+    }
+  }
+
+  const normalizedTables = await getActiveSessionTables(activeSessionId, userId);
+
   // Convert all table values to BRL centavos for the aggregate session record
-  const rates = exchangeRates ?? { USD: 575, CAD: 420, JPY: 3 }; // fallback rates (per 100 units)
+  const rates = exchangeRates ?? { USD: 575, CAD: 420, JPY: 3, CNY: 80 }; // fallback rates (per 100 units)
   function toCentsBrl(amount: number, currency: string): number {
     if (currency === "USD") return Math.round(amount * rates.USD / 100);
     if (currency === "CAD") return Math.round(amount * rates.CAD / 100);
     if (currency === "JPY") return Math.round(amount * rates.JPY / 100);
+    if (currency === "CNY") return Math.round(amount * rates.CNY / 100);
     return amount;
   }
 
@@ -1470,7 +1834,7 @@ export async function finalizeActiveSession(
   let dominantVenueId: number | undefined;
   const venueCounts: Record<number, number> = {};
 
-  for (const t of tables) {
+  for (const t of normalizedTables) {
     totalBuyIn += toCentsBrl(t.buyIn, t.currency);
     totalCashOut += toCentsBrl(t.cashOut ?? 0, t.currency);
     typeCount[t.type] = (typeCount[t.type] || 0) + 1;

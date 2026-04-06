@@ -41,6 +41,7 @@ import {
   ChevronRight,
   Settings2,
   CheckCircle2,
+  ListChecks,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useMemo } from "react";
@@ -56,6 +57,13 @@ function formatCurrencyCompact(centavos: number): string {
   return formatCurrency(centavos);
 }
 function formatPercent(v: number) { return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`; }
+function formatByCurrency(centavos: number, currency: string) {
+  const amount = centavos / 100;
+  if (currency === "USD") return `$${amount.toFixed(2)}`;
+  if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
+  if (currency === "JPY") return `¥${Math.round(amount)}`;
+  return `R$${amount.toFixed(2)}`;
+}
 
 const VENUE_COLORS = [
   "#06b6d4","#8b5cf6","#10b981","#f59e0b","#ef4444",
@@ -89,8 +97,9 @@ function VenueRow({
   const [expanded, setExpanded] = useState(false);
   const color = VENUE_COLORS[colorIdx % VENUE_COLORS.length];
   const stats = venue.stats;
-  const roi = stats && stats.sessions > 0
-    ? ((stats.totalProfit / (stats.sessions * 100)) * 100).toFixed(1)
+  const tableCount = stats?.tables ?? stats?.sessions ?? 0;
+  const roi = stats && tableCount > 0
+    ? ((stats.totalProfit / (tableCount * 100)) * 100).toFixed(1)
     : null;
 
   return (
@@ -124,15 +133,15 @@ function VenueRow({
           </div>
         </div>
         <div className="text-right shrink-0">
-          {stats && stats.sessions > 0 ? (
+          {stats && tableCount > 0 ? (
             <>
               <p className={`text-sm font-bold ${stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {stats.totalProfit >= 0 ? "+" : ""}{formatCurrencyCompact(stats.totalProfit)}
               </p>
-              <p className="text-xs text-muted-foreground">{stats.sessions} sessões</p>
+              <p className="text-xs text-muted-foreground">{tableCount} mesas</p>
             </>
           ) : (
-            <span className="text-xs text-muted-foreground">Sem sessões</span>
+            <span className="text-xs text-muted-foreground">Sem mesas</span>
           )}
         </div>
         <div className="shrink-0 ml-1">
@@ -142,11 +151,11 @@ function VenueRow({
 
       {expanded && (
         <div className="pb-3 px-2 space-y-3">
-          {stats && stats.sessions > 0 ? (
+          {stats && tableCount > 0 ? (
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-muted/20 rounded-lg p-2 text-center">
-                <p className="text-[10px] text-muted-foreground mb-0.5">Sessões</p>
-                <p className="text-sm font-bold">{stats.sessions}</p>
+                <p className="text-[10px] text-muted-foreground mb-0.5">Mesas</p>
+                <p className="text-sm font-bold">{tableCount}</p>
               </div>
               <div className="bg-muted/20 rounded-lg p-2 text-center">
                 <p className="text-[10px] text-muted-foreground mb-0.5">ROI</p>
@@ -182,6 +191,7 @@ export default function Dashboard() {
 
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
+  const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
 
@@ -252,14 +262,15 @@ export default function Dashboard() {
   const perfData = useMemo(() => {
     if (!venueStats) return [];
     return venueStats
-      .filter((v: any) => v.sessions > 0)
+      .filter((v: any) => (v.tables ?? v.sessions) > 0)
       .slice(0, 8)
       .map((v: any) => ({
         name: v.venueName.length > 10 ? v.venueName.substring(0, 10) + "…" : v.venueName,
         fullName: v.venueName,
-        roi: v.sessions > 0 ? parseFloat(((v.totalProfit / (v.sessions * 100)) * 100).toFixed(1)) : 0,
+        roi: (v.tables ?? v.sessions) > 0 ? parseFloat(((v.totalProfit / ((v.tables ?? v.sessions) * 100)) * 100).toFixed(1)) : 0,
         winrate: v.winRate,
         sessions: v.sessions,
+        tables: v.tables ?? v.sessions,
         profit: v.totalProfit / 100,
         color: v.totalProfit >= 0 ? "#10b981" : "#ef4444",
       }));
@@ -270,6 +281,7 @@ export default function Dashboard() {
   const consolidatedBase = consolidatedTotal - consolidatedProfit;
   const consolidatedPct = consolidatedBase > 0 ? (consolidatedProfit / consolidatedBase) * 100 : 0;
   const hasAnyBalance = consolidatedTotal > 0;
+  const totalPlayedTables = consolidated?.total.tables ?? 0;
 
   // Plataformas online (apenas para stats, sem saldo individual)
   const onlineVenues = useMemo(() => {
@@ -495,8 +507,8 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-4 text-xs border-t border-border/30 pt-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Sessões:</span>
-                  <span className="font-semibold">{consolidated?.total.sessions || 0}</span>
+                  <span className="text-muted-foreground">Mesas jogadas:</span>
+                  <span className="font-semibold">{totalPlayedTables}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-muted-foreground">Win Rate:</span>
@@ -605,7 +617,7 @@ export default function Dashboard() {
                     {(["roi", "winrate", "sessions", "profit"] as const).map((m) => (
                       <Button key={m} size="sm" variant={perfMetric === m ? "default" : "ghost"}
                         className="h-6 px-2 text-[10px]" onClick={() => setPerfMetric(m)}>
-                        {m === "roi" ? "ROI" : m === "winrate" ? "Win%" : m === "sessions" ? "Sess." : "R$"}
+                        {m === "roi" ? "ROI" : m === "winrate" ? "Win%" : m === "sessions" ? "Mesas" : "R$"}
                       </Button>
                     ))}
                   </div>
@@ -683,12 +695,12 @@ export default function Dashboard() {
                                 <p>Resultado: <span className={d.profit >= 0 ? "text-emerald-400" : "text-red-400"}>{d.profit >= 0 ? "+" : ""}{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.profit)}</span></p>
                                 <p>ROI: <span className={d.roi >= 0 ? "text-emerald-400" : "text-red-400"}>{d.roi}%</span></p>
                                 <p>Win Rate: <span className="text-primary">{d.winrate}%</span></p>
-                                <p>Sessões: <span className="font-semibold">{d.sessions}</span></p>
+                                <p>Mesas: <span className="font-semibold">{d.tables ?? d.sessions}</span></p>
                               </div>
                             );
                           }}
                         />
-                        <Bar dataKey={perfMetric === "roi" ? "roi" : perfMetric === "winrate" ? "winrate" : perfMetric === "sessions" ? "sessions" : "profit"} radius={[0, 4, 4, 0]}>
+                        <Bar dataKey={perfMetric === "roi" ? "roi" : perfMetric === "winrate" ? "winrate" : perfMetric === "sessions" ? "tables" : "profit"} radius={[0, 4, 4, 0]}>
                           {perfData.map((entry: any, index: number) => (
                             <Cell key={`cell-${index}`}
                               fill={perfMetric === "sessions" ? VENUE_COLORS[index % VENUE_COLORS.length]
@@ -805,7 +817,7 @@ export default function Dashboard() {
                   {(consolidated?.online.profit || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   <span>{(consolidated?.online.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.online.profit || 0)}</span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{consolidated?.online.sessions || 0} sessões</p>
+                <p className="text-xs text-muted-foreground mt-1">{consolidated?.online.tables || 0} mesas</p>
               </CardContent>
             </Card>
 
@@ -829,7 +841,7 @@ export default function Dashboard() {
                   {(consolidated?.live.profit || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   <span>{(consolidated?.live.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.live.profit || 0)}</span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{consolidated?.live.sessions || 0} sessões</p>
+                <p className="text-xs text-muted-foreground mt-1">{consolidated?.live.tables || 0} mesas</p>
               </CardContent>
             </Card>
           </div>
@@ -863,6 +875,51 @@ export default function Dashboard() {
                   <Link href="/venues">
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs"><Plus className="h-3.5 w-3.5" /> Adicionar Plataforma</Button>
                   </Link>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/60 border-border/40">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <ListChecks className="h-4 w-4" /> Mesas Jogadas Recentemente
+                </CardTitle>
+                <Link href="/sessions">
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">Ver sessões</Button>
+                </Link>
+              </div>
+              <p className="text-xs text-muted-foreground">Cada mesa é salva separadamente dentro da sessão.</p>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-2 max-h-[320px] overflow-y-auto">
+              {recentTables && recentTables.length > 0 ? (
+                recentTables.map((t: any) => (
+                  <div key={t.id} className="flex items-center gap-3 rounded-lg border border-border/40 p-2.5">
+                    <div className="h-8 w-8 rounded-md bg-muted/60 flex items-center justify-center overflow-hidden">
+                      {t.venueLogoUrl ? (
+                        <img src={t.venueLogoUrl} alt={t.venueName ?? "Mesa"} className="h-7 w-7 object-contain" />
+                      ) : (
+                        <span className="text-xs font-bold">{t.type === "online" ? "ON" : "LV"}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{t.venueName || "Mesa sem plataforma"}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {new Date(t.sessionDate).toLocaleDateString("pt-BR")} · {t.gameFormat} · Sessão #{t.sessionId}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-xs font-semibold ${t.tableProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {t.tableProfit >= 0 ? "+" : ""}{formatByCurrency(t.tableProfit, t.currency)}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">BI {formatByCurrency(t.buyIn, t.currency)}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  Nenhuma mesa finalizada ainda.
                 </div>
               )}
             </CardContent>
