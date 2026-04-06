@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import {
   Plus, Timer, Trophy, TrendingUp, TrendingDown, Trash2,
   Edit2, CheckCircle, XCircle, Wifi, MapPin, Sparkles,
-  ChevronDown, ChevronUp, Clock, DollarSign, BarChart2
+  ChevronDown, ChevronUp, Clock, DollarSign, BarChart2, Building2
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -932,11 +932,13 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
 function SessionCard({ session }: { session: any }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const utils = trpc.useUtils();
   const { data: tables } = trpc.sessions.getTables.useQuery(
     { sessionId: session.id },
     { enabled: expanded }
   );
+  const { data: venues } = trpc.venues.list.useQuery({}, { enabled: expanded });
 
   // Session-level edit state (notes only)
   const [editNotes, setEditNotes] = useState(session.notes ?? "");
@@ -950,6 +952,15 @@ function SessionCard({ session }: { session: any }) {
     onError: (err) => toast.error("Erro ao atualizar", { description: err.message }),
   });
 
+  const deleteMutation = trpc.sessions.delete.useMutation({
+    onSuccess: () => {
+      utils.sessions.list.invalidate();
+      toast.success("Sessão excluída!");
+      setShowDeleteConfirm(false);
+    },
+    onError: (err) => toast.error("Erro ao excluir sessão", { description: err.message }),
+  });
+
   const sessionBuyIn = session.totalTableBuyIn ?? session.buyIn;
   const sessionCashOut = session.totalTableCashOut ?? session.cashOut;
   const profit = session.totalTableProfit ?? (sessionCashOut - sessionBuyIn);
@@ -959,6 +970,8 @@ function SessionCard({ session }: { session: any }) {
   const date = new Date(session.sessionDate);
   const venueName = session.venueName;
   const venueLogoUrl = session.venueLogoUrl;
+  const isMultiVenue = (session.uniqueVenueCount ?? 0) > 1;
+  const venueBadgeText = isMultiVenue ? `${session.uniqueVenueCount} plataformas` : venueName;
 
   function handleSaveEdit() {
     updateMutation.mutate({
@@ -975,7 +988,9 @@ function SessionCard({ session }: { session: any }) {
         onClick={() => setExpanded(!expanded)}
       >
         <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-lg shrink-0 ${profit >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
-          {venueLogoUrl ? (
+          {isMultiVenue ? (
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+          ) : venueLogoUrl ? (
             <img src={venueLogoUrl} alt={venueName ?? ""} className="h-8 w-8 rounded object-contain" />
           ) : (
             fmt?.emoji ?? "🃏"
@@ -985,13 +1000,18 @@ function SessionCard({ session }: { session: any }) {
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm truncate">{fmt?.label ?? session.gameFormat}</span>
             <Badge variant="outline" className="text-xs shrink-0">{session.type === "online" ? "Online" : "Live"}</Badge>
-            {venueName && <span className="text-xs text-muted-foreground truncate hidden sm:inline">{venueName}</span>}
+            {venueBadgeText && <span className="text-xs text-muted-foreground truncate hidden sm:inline">{venueBadgeText}</span>}
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
             <span>{date.toLocaleDateString("pt-BR")}</span>
             <span>{Math.floor(session.durationMinutes / 60)}h{session.durationMinutes % 60}m</span>
             <span>{tableCount} mesa{tableCount === 1 ? "" : "s"}</span>
-            {venueName && <span className="sm:hidden flex items-center gap-0.5"><MapPin className="h-3 w-3" />{venueName}</span>}
+            {venueBadgeText && (
+              <span className="sm:hidden flex items-center gap-0.5">
+                {isMultiVenue ? <Building2 className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
+                {venueBadgeText}
+              </span>
+            )}
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -999,6 +1019,33 @@ function SessionCard({ session }: { session: any }) {
             {profit >= 0 ? "+" : ""}R${(profit / 100).toFixed(2)}
           </p>
           <p className="text-xs text-muted-foreground">{profitPct}% ROI</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+            title="Editar sessão"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDeleteConfirm(true);
+            }}
+            disabled={deleteMutation.isPending}
+            title="Excluir sessão"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
         {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
       </div>
@@ -1045,11 +1092,25 @@ function SessionCard({ session }: { session: any }) {
 
           {tables && tables.length > 0 && (
             <div className="space-y-1">
+              {(() => {
+                const venueNames = Array.from(new Set(
+                  tables
+                    .map((t) => venues?.find(v => v.id === t.venueId)?.name)
+                    .filter((name): name is string => Boolean(name))
+                ));
+                if (venueNames.length === 0) return null;
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Plataformas: <span className="text-foreground">{venueNames.join(", ")}</span>
+                  </p>
+                );
+              })()}
               <p className="text-xs text-muted-foreground font-medium">Mesas ({tables.length})</p>
               {tables.map((t) => {
                 const tfmt = GAME_FORMATS.find(f => f.value === t.gameFormat);
                 const tp = (t.cashOut ?? 0) - t.buyIn;
                 const tDuration = calcTableDuration(t.startedAt, t.endedAt);
+                const tableVenue = venues?.find(v => v.id === t.venueId);
                 return (
                   <div key={t.id} className="text-xs py-1.5 px-2 rounded bg-muted/30 space-y-0.5">
                     <div className="flex items-center justify-between">
@@ -1057,6 +1118,9 @@ function SessionCard({ session }: { session: any }) {
                       <span className={tp >= 0 ? "text-green-500" : "text-red-500"}>
                         {tp >= 0 ? "+" : ""}{formatCurrency(Math.abs(tp), t.currency)}
                       </span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      {tableVenue?.name ?? "Plataforma não informada"}
                     </div>
                     {tDuration > 0 && (
                       <div className="flex items-center gap-1 text-muted-foreground">
@@ -1074,15 +1138,24 @@ function SessionCard({ session }: { session: any }) {
             <p className="text-xs text-muted-foreground italic">"{session.notes}"</p>
           )}
 
-          {/* Botão de edição */}
-          <div className="flex justify-end pt-1">
+          {/* Ações da sessão */}
+          <div className="flex justify-end gap-2 pt-1">
             <Button
               size="sm"
               variant="outline"
               className="gap-1.5 h-7 text-xs"
               onClick={(e) => { e.stopPropagation(); setEditing(true); }}
             >
-              <Edit2 className="h-3 w-3" /> Editar notas da sessão
+              <Edit2 className="h-3 w-3" /> Editar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-7 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+              onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+              disabled={deleteMutation.isPending}
+            >
+              <Trash2 className="h-3 w-3" /> Excluir
             </Button>
           </div>
         </div>
@@ -1112,6 +1185,26 @@ function SessionCard({ session }: { session: any }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir sessão?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Esta ação remove a sessão e as mesas vinculadas do histórico.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive hover:bg-destructive/90"
+            onClick={() => deleteMutation.mutate({ id: session.id })}
+          >
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
   );
 }

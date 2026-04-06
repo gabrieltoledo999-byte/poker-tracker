@@ -62,6 +62,7 @@ function formatByCurrency(centavos: number, currency: string) {
   if (currency === "USD") return `$${amount.toFixed(2)}`;
   if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
   if (currency === "JPY") return `¥${Math.round(amount)}`;
+  if (currency === "CNY") return `CN¥${amount.toFixed(2)}`;
   return `R$${amount.toFixed(2)}`;
 }
 
@@ -98,8 +99,8 @@ function VenueRow({
   const color = VENUE_COLORS[colorIdx % VENUE_COLORS.length];
   const stats = venue.stats;
   const tableCount = stats?.tables ?? stats?.sessions ?? 0;
-  const roi = stats && tableCount > 0
-    ? ((stats.totalProfit / (tableCount * 100)) * 100).toFixed(1)
+  const roi = stats && (stats.totalBuyIn ?? 0) > 0
+    ? ((stats.totalProfit / stats.totalBuyIn) * 100).toFixed(1)
     : null;
 
   return (
@@ -194,6 +195,7 @@ export default function Dashboard() {
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
+  const { data: fxRates } = trpc.currency.getRates.useQuery(undefined, { refetchInterval: 60000 });
 
   const updateBankrollMutation = trpc.bankroll.updateSettings.useMutation({
     onSuccess: () => {
@@ -267,7 +269,7 @@ export default function Dashboard() {
       .map((v: any) => ({
         name: v.venueName.length > 10 ? v.venueName.substring(0, 10) + "…" : v.venueName,
         fullName: v.venueName,
-        roi: (v.tables ?? v.sessions) > 0 ? parseFloat(((v.totalProfit / ((v.tables ?? v.sessions) * 100)) * 100).toFixed(1)) : 0,
+        roi: (v.totalBuyIn ?? 0) > 0 ? parseFloat(((v.totalProfit / v.totalBuyIn) * 100).toFixed(1)) : 0,
         winrate: v.winRate,
         sessions: v.sessions,
         tables: v.tables ?? v.sessions,
@@ -297,6 +299,15 @@ export default function Dashboard() {
 
   const isLoading = loadingStats || loadingHistory || loadingConsolidated;
 
+  const rateItems = useMemo(() => {
+    if (!fxRates) return [];
+    return [
+      { code: "USD", label: "Dólar", rate: fxRates.USD?.rate ?? 0 },
+      { code: "JPY", label: "Iene", rate: fxRates.JPY?.rate ?? 0 },
+      { code: "CNY", label: "Yuan", rate: fxRates.CNY?.rate ?? 0 },
+    ].filter((r) => r.rate > 0);
+  }, [fxRates]);
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -322,6 +333,24 @@ export default function Dashboard() {
           <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nova Sessão</Button>
         </Link>
       </div>
+
+      {rateItems.length > 0 && (
+        <Card className="bg-card/70 border-border/40 overflow-hidden">
+          <CardContent className="p-0">
+            <div className="fx-ticker">
+              <div className="fx-track">
+                {[...rateItems, ...rateItems].map((item, i) => (
+                  <div key={`${item.code}-${i}`} className="fx-item">
+                    <span className="fx-code">{item.code}</span>
+                    <span className="fx-label">{item.label}</span>
+                    <span className="fx-value">R$ {item.rate.toFixed(4)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal: Definir/Editar Bankroll Online */}
       <Dialog open={showOnlineModal} onOpenChange={setShowOnlineModal}>

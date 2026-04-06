@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, lte, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { getAllRates } from "./currency";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -818,42 +819,33 @@ export async function getStatsByVenue(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const allSessions = await db.select().from(sessions)
-    .where(eq(sessions.userId, userId));
-
   const allVenues = await db.select().from(venues)
     .where(eq(venues.userId, userId));
 
   const venueMap = new Map(allVenues.map(v => [v.id, v]));
 
-  const sessionIds = allSessions.map((s) => s.id);
-  const tables = sessionIds.length > 0
-    ? await db
-        .select({
-          sessionId: sessionTables.sessionId,
-          venueId: sessionTables.venueId,
-        })
-        .from(sessionTables)
-        .where(
-          and(
-            eq(sessionTables.userId, userId),
-            sql`${sessionTables.sessionId} IS NOT NULL`,
-            sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`
-          )
-        )
-    : [];
+  const tables = await db
+    .select({
+      id: sessionTables.id,
+      sessionId: sessionTables.sessionId,
+      venueId: sessionTables.venueId,
+      currency: sessionTables.currency,
+      buyIn: sessionTables.buyIn,
+      cashOut: sessionTables.cashOut,
+      startedAt: sessionTables.startedAt,
+      endedAt: sessionTables.endedAt,
+    })
+    .from(sessionTables)
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`, sql`${sessionTables.venueId} IS NOT NULL`));
 
-  const venueCountsBySession = new Map<number, Map<number, number>>();
-  const totalTablesBySession = new Map<number, number>();
-  for (const t of tables) {
-    if (!t.sessionId || !t.venueId) continue;
-    const sid = Number(t.sessionId);
-    const vid = Number(t.venueId);
-    if (!venueCountsBySession.has(sid)) venueCountsBySession.set(sid, new Map<number, number>());
-    const byVenue = venueCountsBySession.get(sid)!;
-    byVenue.set(vid, (byVenue.get(vid) ?? 0) + 1);
-    totalTablesBySession.set(sid, (totalTablesBySession.get(sid) ?? 0) + 1);
-  }
+  const rates = await getAllRates().catch(() => null);
+  const toBrl = (amount: number, currency: string): number => {
+    if (currency === "USD") return Math.round(amount * (rates?.USD?.rate ?? 5.75));
+    if (currency === "CAD") return Math.round(amount * (rates?.CAD?.rate ?? 4.20));
+    if (currency === "JPY") return Math.round(amount * (rates?.JPY?.rate ?? 0.033));
+    if (currency === "CNY") return Math.round(amount * (rates?.CNY?.rate ?? 0.80));
+    return amount;
+  };
 
   const venueStats: Record<number, {
     venueId: number;
@@ -862,85 +854,63 @@ export async function getStatsByVenue(userId: number) {
     logoUrl: string | null;
     sessions: number;
     tables: number;
+    totalBuyIn: number;
+    totalCashOut: number;
     totalProfit: number;
-    winningSessions: number;
+    winningTables: number;
     winRate: number;
     totalDuration: number;
     avgHourlyRate: number;
   }> = {};
 
-  for (const session of allSessions) {
-    const venueCounts = venueCountsBySession.get(session.id);
-    if (!venueCounts || venueCounts.size === 0) {
-      if (!session.venueId) continue;
-      const venue = venueMap.get(session.venueId);
-      if (!venue) continue;
+  const sessionsByVenue = new Map<number, Set<number>>();
+  for (const t of tables) {
+    if (!t.venueId) continue;
+    const venueId = Number(t.venueId);
+    const venue = venueMap.get(venueId);
+    if (!venue) continue;
 
-      if (!venueStats[session.venueId]) {
-        venueStats[session.venueId] = {
-          venueId: venue.id,
-          venueName: venue.name,
-          venueType: venue.type,
-          logoUrl: venue.logoUrl,
-          sessions: 0,
-          tables: 0,
-          totalProfit: 0,
-          winningSessions: 0,
-          winRate: 0,
-          totalDuration: 0,
-          avgHourlyRate: 0,
-        };
-      }
-
-      const profit = session.cashOut - session.buyIn;
-      venueStats[session.venueId].sessions++;
-      venueStats[session.venueId].tables += 1;
-      venueStats[session.venueId].totalProfit += profit;
-      venueStats[session.venueId].totalDuration += session.durationMinutes;
-      if (profit > 0) venueStats[session.venueId].winningSessions++;
-      continue;
+    if (!venueStats[venueId]) {
+      venueStats[venueId] = {
+        venueId: venue.id,
+        venueName: venue.name,
+        venueType: venue.type,
+        logoUrl: venue.logoUrl,
+        sessions: 0,
+        tables: 0,
+        totalBuyIn: 0,
+        totalCashOut: 0,
+        totalProfit: 0,
+        winningTables: 0,
+        winRate: 0,
+        totalDuration: 0,
+        avgHourlyRate: 0,
+      };
     }
 
-    const totalTables = totalTablesBySession.get(session.id) ?? 0;
-    if (totalTables <= 0) continue;
+    const buyInBrl = toBrl(t.buyIn ?? 0, t.currency);
+    const cashOutBrl = toBrl(t.cashOut ?? 0, t.currency);
+    const tableProfit = cashOutBrl - buyInBrl;
+    const startedMs = new Date(t.startedAt).getTime();
+    const endedMs = t.endedAt ? new Date(t.endedAt).getTime() : startedMs;
+    const durationMin = Math.max(1, Math.round((endedMs - startedMs) / 60000));
 
-    const totalProfit = session.cashOut - session.buyIn;
-    for (const [venueId, count] of venueCounts.entries()) {
-      const venue = venueMap.get(venueId);
-      if (!venue) continue;
+    venueStats[venueId].tables += 1;
+    venueStats[venueId].totalBuyIn += buyInBrl;
+    venueStats[venueId].totalCashOut += cashOutBrl;
+    venueStats[venueId].totalProfit += tableProfit;
+    venueStats[venueId].totalDuration += durationMin;
+    if (tableProfit > 0) venueStats[venueId].winningTables += 1;
 
-      if (!venueStats[venueId]) {
-        venueStats[venueId] = {
-          venueId: venue.id,
-          venueName: venue.name,
-          venueType: venue.type,
-          logoUrl: venue.logoUrl,
-          sessions: 0,
-          tables: 0,
-          totalProfit: 0,
-          winningSessions: 0,
-          winRate: 0,
-          totalDuration: 0,
-          avgHourlyRate: 0,
-        };
-      }
-
-      const share = count / totalTables;
-      const venueProfit = Math.round(totalProfit * share);
-      const venueDuration = Math.max(1, Math.round(session.durationMinutes * share));
-
-      venueStats[venueId].sessions += 1;
-      venueStats[venueId].tables += count;
-      venueStats[venueId].totalProfit += venueProfit;
-      venueStats[venueId].totalDuration += venueDuration;
-      if (venueProfit > 0) venueStats[venueId].winningSessions++;
-    }
+    if (!sessionsByVenue.has(venueId)) sessionsByVenue.set(venueId, new Set<number>());
+    if (t.sessionId) sessionsByVenue.get(venueId)!.add(Number(t.sessionId));
   }
 
   // Calculate rates
-  for (const stats of Object.values(venueStats)) {
-    if (stats.sessions > 0) {
-      stats.winRate = Math.round((stats.winningSessions / stats.sessions) * 100);
+  for (const [venueId, stats] of Object.entries(venueStats).map(([k, v]) => [Number(k), v] as const)) {
+    stats.sessions = sessionsByVenue.get(venueId)?.size ?? 0;
+    if (stats.tables > 0) {
+      stats.winRate = Math.round((stats.winningTables / stats.tables) * 100);
       const totalHours = stats.totalDuration / 60;
       stats.avgHourlyRate = totalHours > 0 ? Math.round(stats.totalProfit / totalHours) : 0;
     }
