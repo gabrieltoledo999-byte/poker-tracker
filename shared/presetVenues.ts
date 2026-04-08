@@ -5,7 +5,7 @@ export interface PresetVenue {
   type: "online" | "live";
   logoUrl: string;
   logoFit?: "contain" | "cover";
-  defaultCurrency?: "BRL" | "USD" | "CAD" | "JPY";
+  defaultCurrency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY";
   website?: string;
 }
 

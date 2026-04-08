@@ -145,6 +145,7 @@ export default function Ranking() {
   const [sortBy, setSortBy] = useState<"roi" | "winRate" | "bestSession" | "worstSession">("roi");
   const [showInGlobalRanking, setShowInGlobalRanking] = useState(false);
   const [showInFriendsRanking, setShowInFriendsRanking] = useState(false);
+  const [activeTab, setActiveTab] = useState<"global" | "friends">("global");
 
   const { data: globalData, isLoading: loadingGlobal } = trpc.ranking.leaderboard.useQuery(
     { friendsOnly: false }
@@ -168,8 +169,12 @@ export default function Ranking() {
 
   useMemo(() => {
     if (!onboardingProfile) return;
-    setShowInGlobalRanking(Boolean(onboardingProfile.showInGlobalRanking));
-    setShowInFriendsRanking(Boolean(onboardingProfile.showInFriendsRanking));
+    const globalOn = Boolean(onboardingProfile.showInGlobalRanking);
+    const friendsOn = Boolean(onboardingProfile.showInFriendsRanking);
+    setShowInGlobalRanking(globalOn);
+    setShowInFriendsRanking(friendsOn);
+    if (!globalOn && friendsOn) setActiveTab("friends");
+    else setActiveTab("global");
   }, [onboardingProfile]);
 
   const handleSaveConsent = () => {
@@ -233,7 +238,7 @@ export default function Ranking() {
       </Card>
       </div>
 
-      <Tabs defaultValue="global">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "global" | "friends")}>
         <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
           <TabsTrigger value="global" className="gap-2">
             <Globe className="h-4 w-4" /> Global

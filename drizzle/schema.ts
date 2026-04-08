@@ -64,8 +64,8 @@ export const sessions = mysqlTable("sessions", {
   buyIn: int("buyIn").notNull(), // in BRL centavos (R$ 100.00 = 10000)
   cashOut: int("cashOut").notNull(), // in BRL centavos
   
-  // Original currency info (for sessions entered in USD)
-  currency: mysqlEnum("currency", ["BRL", "USD"]).default("BRL").notNull(),
+  // Original currency info for sessions entered outside BRL
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL").notNull(),
   originalBuyIn: int("originalBuyIn"), // original value in original currency centavos
   originalCashOut: int("originalCashOut"), // original value in original currency centavos
   exchangeRate: int("exchangeRate"), // rate * 10000 for precision (e.g., 5.50 = 55000)
@@ -152,8 +152,8 @@ export const venues = mysqlTable("venues", {
   // Is this a preset venue (not deletable by user)
   isPreset: int("isPreset").default(0).notNull(), // 0 = false, 1 = true
   
-  // Currency for this venue's balance (BRL, USD, CAD, JPY)
-  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY"]).default("BRL").notNull(),
+  // Currency for this venue's balance (BRL, USD, CAD, JPY, CNY)
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL").notNull(),
   
   // Current balance in the venue (in original currency cents/units)
   // For online venues: money deposited on the platform
@@ -215,7 +215,7 @@ export const fundTransactions = mysqlTable("fund_transactions", {
   amount: int("amount").notNull(),
   
   // Currency info
-  currency: mysqlEnum("currency", ["BRL", "USD"]).default("BRL").notNull(),
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL").notNull(),
   originalAmount: int("originalAmount"), // original value if USD
   exchangeRate: int("exchangeRate"), // rate * 10000 for precision
   
@@ -382,7 +382,7 @@ export const venueBalanceHistory = mysqlTable("venue_balance_history", {
   delta: int("delta").notNull(),
 
   // Currency at time of change
-  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY"]).default("BRL").notNull(),
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL").notNull(),
 
   // Optional: linked session id (for changeType = "session")
   sessionId: int("sessionId"),
@@ -434,7 +434,7 @@ export const sessionTables = mysqlTable("session_tables", {
   ]).notNull().default("tournament"),
 
   // Financial data in original currency (centavos/units)
-  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY"]).default("BRL").notNull(),
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL").notNull(),
   buyIn: int("buyIn").notNull().default(0), // in original currency centavos
   cashOut: int("cashOut"), // null = still in progress
 

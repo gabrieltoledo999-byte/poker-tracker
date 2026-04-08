@@ -173,7 +173,7 @@ interface EditTableDialogProps {
     endedAt?: string | Date | null;
   };
   venues: { id: number; name: string; logoUrl?: string | null }[];
-  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY"; buyIn?: number; cashOut?: number | null; stakes?: string; notes?: string }) => void;
+  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; stakes?: string; notes?: string }) => void;
   onClose: () => void;
   isPending: boolean;
 }
@@ -182,7 +182,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
   const fmt = GAME_FORMATS.find(f => f.value === table.gameFormat);
   const [type, setType] = useState<"online" | "live">(table.type as "online" | "live");
   const [gameFormat, setGameFormat] = useState<"tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game">(table.gameFormat as any);
-  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY">(table.currency as any);
+  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY">(table.currency as any);
   const [venueId, setVenueId] = useState(table.venueId?.toString() ?? "");
   const [buyIn, setBuyIn] = useState((table.buyIn / 100).toFixed(2));
   const [cashOut, setCashOut] = useState(table.cashOut != null ? (table.cashOut / 100).toFixed(2) : "");
@@ -246,6 +246,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
                   <SelectItem value="USD">USD ($)</SelectItem>
                   <SelectItem value="CAD">CAD (CA$)</SelectItem>
                   <SelectItem value="JPY">JPY (¥)</SelectItem>
+                  <SelectItem value="CNY">CNY (CN¥)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -332,7 +333,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
 
   const [type, setType] = useState<"online" | "live">(defaultType);
   const [gameFormat, setGameFormat] = useState<GameFormat>(defaultFormat);
-  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY">(type === "online" ? "USD" : "BRL");
+  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY">(type === "online" ? "USD" : "BRL");
   const [venueId, setVenueId] = useState("");
   const [buyIn, setBuyIn] = useState(defaultBuyIn);
   const [gameType, setGameType] = useState("");
@@ -422,7 +423,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
     if (valueCurrency === "JPY") {
       return `¥${Math.round(valueCents / 100)}`;
     }
-    const symbol = valueCurrency === "USD" ? "$" : valueCurrency === "CAD" ? "CA$" : "R$";
+    const symbol = valueCurrency === "USD" ? "$" : valueCurrency === "CAD" ? "CA$" : valueCurrency === "CNY" ? "CN¥" : "R$";
     const decimals = valueCents % 100 === 0 ? 0 : 2;
     return `${symbol}${(valueCents / 100).toFixed(decimals)}`;
   };
@@ -430,7 +431,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const getVenueDefaultCurrency = (venueIdValue: string, currentType: "online" | "live") => {
     const selectedVenue = sortedVenues.find((venue: any) => String(venue.id) === venueIdValue);
     if (!selectedVenue) return currentType === "online" ? "USD" : "BRL";
-    return (selectedVenue.currency as "BRL" | "USD" | "CAD" | "JPY") || (currentType === "online" ? "USD" : "BRL");
+    return (selectedVenue.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY") || (currentType === "online" ? "USD" : "BRL");
   };
 
   const handleVenueChange = (nextVenueId: string) => {
@@ -584,11 +585,12 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
               <SelectItem value="USD">🇺🇸 USD</SelectItem>
               <SelectItem value="CAD">🇨🇦 CAD</SelectItem>
               <SelectItem value="JPY">🇯🇵 JPY</SelectItem>
+              <SelectItem value="CNY">🇨🇳 CNY</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-1">
-          <Label>Buy-in ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : "R$"})</Label>
+          <Label>Buy-in ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
           <Input
             type="number"
             step="0.01"
@@ -664,7 +666,7 @@ function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <Label>Cash-out ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : "R$"})</Label>
+        <Label>Cash-out ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
         <Input
           type="number"
           step="0.01"
@@ -724,7 +726,7 @@ function RebuyDialog({ tableId, currency, currentBuyIn, suggestedRebuy, onClose 
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <Label>Valor do Rebuy ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : "R$"})</Label>
+        <Label>Valor do Rebuy ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
         <Input
           type="number"
           step="0.01"
@@ -790,7 +792,7 @@ function AddOnDialog({ tableId, currency, currentBuyIn, onClose }: AddOnDialogPr
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <Label>Valor do Add-on ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : "R$"})</Label>
+        <Label>Valor do Add-on ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
         <Input
           type="number"
           step="0.01"

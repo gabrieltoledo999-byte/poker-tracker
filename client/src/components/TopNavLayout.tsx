@@ -50,8 +50,8 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const [feedLastSeenMs, setFeedLastSeenMs] = useState(0);
   const { theme, toggleTheme } = useTheme();
 
-  const { data: latestFeedPosts } = trpc.feed.list.useQuery(
-    { limit: 1, offset: 0 },
+  const { data: latestFeedPosts = [] } = trpc.feed.list.useQuery(
+    { limit: 30, offset: 0 },
     {
       enabled: !!user,
       refetchInterval: 30000,
@@ -73,17 +73,18 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     setFeedLastSeenMs(Number.isFinite(parsedValue) ? parsedValue : 0);
   }, [user?.id]);
 
-  const latestPost = latestFeedPosts?.[0];
-  const latestPostMs = latestPost?.createdAt ? new Date(latestPost.createdAt).getTime() : 0;
-  const latestPostAuthorId = latestPost?.author?.id;
+  const pendingFeedCount = latestFeedPosts.filter((post) => {
+    const createdAtMs = post.createdAt ? new Date(post.createdAt).getTime() : 0;
+    return createdAtMs > 0 && createdAtMs > feedLastSeenMs && post.author?.id !== user?.id;
+  }).length;
   const hasPendingFeedPost =
     !!user?.id &&
     location !== "/feed" &&
-    latestPostMs > 0 &&
-    latestPostAuthorId !== user.id &&
-    latestPostMs > feedLastSeenMs;
+    pendingFeedCount > 0;
   const hasPendingFriendRequest =
     !!user?.id && location !== "/invites" && incomingFriendRequests.length > 0;
+  const feedBadgeLabel = pendingFeedCount > 99 ? "99+" : String(pendingFeedCount);
+  const friendRequestBadgeLabel = incomingFriendRequests.length > 99 ? "99+" : String(incomingFriendRequests.length);
 
   useEffect(() => {
     if (!user?.id || location !== "/feed") return;
@@ -138,13 +139,29 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
               >
                 <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                 <span className="text-base">{item.label}</span>
-                {item.path === "/feed" && hasPendingFeedPost && (
-                  <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" aria-label="Novo post no feed" />
+                {((item.path === "/feed" && hasPendingFeedPost) ||
+                  (item.path === "/invites" && hasPendingFriendRequest) ||
+                  isActive) && (
+                  <span className="ml-auto flex items-center gap-2">
+                    {item.path === "/feed" && hasPendingFeedPost && (
+                      <span
+                        className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
+                        aria-label={`${feedBadgeLabel} posts novos no feed`}
+                      >
+                        {feedBadgeLabel}
+                      </span>
+                    )}
+                    {item.path === "/invites" && hasPendingFriendRequest && (
+                      <span
+                        className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
+                        aria-label={`${friendRequestBadgeLabel} pedidos de amizade`}
+                      >
+                        {friendRequestBadgeLabel}
+                      </span>
+                    )}
+                    {isActive && <ChevronRight className="h-4 w-4 text-primary/60" />}
+                  </span>
                 )}
-                {item.path === "/invites" && hasPendingFriendRequest && (
-                  <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" aria-label="Novo pedido de amizade" />
-                )}
-                {isActive && <ChevronRight className="h-4 w-4 ml-auto text-primary/60" />}
               </button>
             );
           })}
@@ -237,10 +254,20 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                     <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                     <span className="text-base">{item.label}</span>
                     {item.path === "/feed" && hasPendingFeedPost && (
-                      <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Novo post no feed" />
+                      <span
+                        className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                        aria-label={`${feedBadgeLabel} posts novos no feed`}
+                      >
+                        {feedBadgeLabel}
+                      </span>
                     )}
                     {item.path === "/invites" && hasPendingFriendRequest && (
-                      <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Novo pedido de amizade" />
+                      <span
+                        className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                        aria-label={`${friendRequestBadgeLabel} pedidos de amizade`}
+                      >
+                        {friendRequestBadgeLabel}
+                      </span>
                     )}
                   </button>
                 );

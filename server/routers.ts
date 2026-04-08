@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest } from "./db";
+import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest } from "./db";
 import { z } from "zod";
 import {
   createSession,
@@ -76,7 +76,7 @@ const gameFormatEnum = z.enum([
 ]);
 
 // Currency enum
-const currencyEnum = z.enum(["BRL", "USD"]);
+const currencyEnum = z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]);
 
 const onboardingProfileInput = z.object({
   preferredPlayType: z.enum(["online", "live"]),
@@ -202,14 +202,18 @@ export const appRouter = router({
         let originalBuyIn: number | null = null;
         let originalCashOut: number | null = null;
 
-        // Convert USD to BRL if needed
-        if (input.currency === "USD") {
-          const rate = await getUsdToBrlRate();
-          exchangeRate = Math.round(rate * 10000); // Store as integer (5.50 = 55000)
+        // Convert non-BRL values to BRL when persisting finalized sessions
+        if (input.currency !== "BRL") {
+          const rates = await getAllRates();
+          const rate = rates[input.currency as "USD" | "CAD" | "JPY" | "CNY"]?.rate;
+          if (!rate) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Cotação indisponível para ${input.currency}.` });
+          }
+          exchangeRate = Math.round(rate * 10000);
           originalBuyIn = input.buyIn;
           originalCashOut = input.cashOut;
-          buyInBrl = convertUsdToBrl(input.buyIn, rate);
-          cashOutBrl = convertUsdToBrl(input.cashOut, rate);
+          buyInBrl = await convertToBrl(input.buyIn, input.currency);
+          cashOutBrl = await convertToBrl(input.cashOut, input.currency);
         }
 
         return await createSession({
@@ -254,18 +258,22 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
         
-        // If currency is being changed to USD and values provided, convert
-        if (data.currency === "USD" && (data.buyIn || data.cashOut)) {
-          const rate = await getUsdToBrlRate();
+        // If currency is being changed and values are provided, convert to BRL storage
+        if (data.currency && data.currency !== "BRL" && (data.buyIn || data.cashOut !== undefined)) {
+          const rates = await getAllRates();
+          const rate = rates[data.currency as "USD" | "CAD" | "JPY" | "CNY"]?.rate;
+          if (!rate) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Cotação indisponível para ${data.currency}.` });
+          }
           const exchangeRate = Math.round(rate * 10000);
           
           if (data.buyIn) {
             (data as any).originalBuyIn = data.buyIn;
-            data.buyIn = convertUsdToBrl(data.buyIn, rate);
+            data.buyIn = await convertToBrl(data.buyIn, data.currency);
           }
           if (data.cashOut !== undefined) {
             (data as any).originalCashOut = data.cashOut;
-            data.cashOut = convertUsdToBrl(data.cashOut, rate);
+            data.cashOut = await convertToBrl(data.cashOut, data.currency);
           }
           (data as any).exchangeRate = exchangeRate;
         }
@@ -366,7 +374,7 @@ export const appRouter = router({
         venueId: z.number().int().optional(),
         type: z.enum(["online", "live"]).default("online"),
         gameFormat: gameFormatEnum.default("tournament"),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY"]).default("BRL"),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL"),
         buyIn: z.number().int().min(0),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
@@ -395,7 +403,7 @@ export const appRouter = router({
         venueId: z.number().int().optional(),
         type: z.enum(["online", "live"]).optional(),
         gameFormat: gameFormatEnum.optional(),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY"]).optional(),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).optional(),
         buyIn: z.number().int().min(0).optional(),
         cashOut: z.number().int().min(0).optional().nullable(),
         gameType: z.string().optional(),
@@ -524,7 +532,7 @@ export const appRouter = router({
         website: z.string().optional(),
         address: z.string().optional(),
         notes: z.string().optional(),
-        currency: z.enum(["BRL", "USD", "JPY"]).optional(),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).optional(),
         balance: z.number().int().min(0).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -536,7 +544,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number().int(),
         balance: z.number().int().min(0),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY"]).default("BRL"),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL"),
         note: z.string().max(256).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -1122,6 +1130,11 @@ export const appRouter = router({
       .input(z.object({ id: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
         return await deleteComment(input.id, ctx.user.id);
+      }),
+    toggleReaction: protectedProcedure
+      .input(z.object({ postId: z.number().int(), emoji: z.string().max(8) }))
+      .mutation(async ({ ctx, input }) => {
+        return await togglePostReaction(input.postId, ctx.user.id, input.emoji);
       }),
   }),
 

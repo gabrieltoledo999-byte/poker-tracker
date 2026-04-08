@@ -1231,7 +1231,7 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
         logoUrl: preset.logoUrl,
         website: preset.website || null,
         isPreset: 1,
-        currency: (preset.defaultCurrency as "BRL" | "USD" | "CAD" | "JPY") || "BRL",
+        currency: (preset.defaultCurrency as "BRL" | "USD" | "CAD" | "JPY" | "CNY") || "BRL",
       });
     }
   }
@@ -2428,7 +2428,7 @@ export async function recordVenueBalanceChange(data: {
   venueId: number;
   balanceBefore: number;
   balanceAfter: number;
-  currency: "BRL" | "USD" | "CAD" | "JPY";
+  currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY";
   changeType: "manual" | "session" | "initial";
   sessionId?: number;
   note?: string;
@@ -2483,7 +2483,7 @@ export async function updateVenueBalance(
   venueId: number,
   userId: number,
   newBalance: number,
-  currency: "BRL" | "USD" | "CAD" | "JPY",
+  currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY",
   changeType: "manual" | "session" | "initial",
   opts?: { sessionId?: number; note?: string; changedAt?: Date }
 ): Promise<Venue | null> {

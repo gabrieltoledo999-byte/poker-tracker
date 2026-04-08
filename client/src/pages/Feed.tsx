@@ -115,8 +115,11 @@ function CommentSection({ postId, currentUserId }: { postId: number; currentUser
   );
 }
 
+const REACTIONS = ["🔥", "👏", "😂", "😮", "😢", "🎯"] as const;
+
 function PostCard({ post, currentUserId }: { post: any; currentUserId: number }) {
   const [showComments, setShowComments] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const utils = trpc.useUtils();
 
   const toggleLike = trpc.feed.toggleLike.useMutation({
@@ -134,6 +137,47 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
             : p
         )
       );
+      return { prev };
+    },
+    onError: (_err, _v, ctx) => {
+      if (ctx?.prev) utils.feed.list.setData(undefined, ctx.prev);
+    },
+    onSettled: () => utils.feed.list.invalidate(),
+  });
+
+  const toggleReaction = trpc.feed.toggleReaction.useMutation({
+    onMutate: async ({ emoji }) => {
+      await utils.feed.list.cancel();
+      const prev = utils.feed.list.getData();
+      utils.feed.list.setData(undefined, (old) =>
+        old?.map((p: any) => {
+          if (p.id !== post.id) return p;
+          const prevEmoji = p.myReaction as string | null;
+          let summary: { emoji: string; count: number }[] = [...(p.reactionSummary ?? [])];
+          // remove previous if diff
+          if (prevEmoji && prevEmoji !== emoji) {
+            summary = summary
+              .map((r: any) => r.emoji === prevEmoji ? { ...r, count: r.count - 1 } : r)
+              .filter((r: any) => r.count > 0);
+          }
+          // toggle current
+          if (prevEmoji === emoji) {
+            summary = summary
+              .map((r: any) => r.emoji === emoji ? { ...r, count: r.count - 1 } : r)
+              .filter((r: any) => r.count > 0);
+            return { ...p, myReaction: null, reactionSummary: summary };
+          } else {
+            const existing = summary.find((r: any) => r.emoji === emoji);
+            if (existing) {
+              summary = summary.map((r: any) => r.emoji === emoji ? { ...r, count: r.count + 1 } : r);
+            } else {
+              summary = [...summary, { emoji, count: 1 }];
+            }
+            return { ...p, myReaction: emoji, reactionSummary: summary };
+          }
+        })
+      );
+      setShowEmojiPicker(false);
       return { prev };
     },
     onError: (_err, _v, ctx) => {
@@ -205,28 +249,79 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <button
-            className={`flex items-center gap-1.5 transition-colors hover:text-rose-500 ${
-              post.likedByMe ? "text-rose-500" : ""
-            }`}
-            onClick={() => toggleLike.mutate({ postId: post.id })}
-          >
-            <Heart className={`h-4 w-4 ${post.likedByMe ? "fill-rose-500" : ""}`} />
-            <span>{post.likeCount}</span>
-          </button>
-          <button
-            className="flex items-center gap-1.5 transition-colors hover:text-primary"
-            onClick={() => setShowComments((v) => !v)}
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span>{post.commentCount}</span>
-            {showComments ? (
-              <ChevronUp className="h-3 w-3" />
-            ) : (
-              <ChevronDown className="h-3 w-3" />
-            )}
-          </button>
+        <div className="space-y-2">
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <button
+              className={`flex items-center gap-1.5 transition-colors hover:text-rose-500 ${
+                post.likedByMe ? "text-rose-500" : ""
+              }`}
+              onClick={() => toggleLike.mutate({ postId: post.id })}
+            >
+              <Heart className={`h-4 w-4 ${post.likedByMe ? "fill-rose-500" : ""}`} />
+              <span>{post.likeCount}</span>
+            </button>
+            <button
+              className={`flex items-center gap-1.5 transition-colors hover:text-yellow-500 ${showEmojiPicker ? "text-yellow-500" : ""}`}
+              onClick={() => setShowEmojiPicker((v) => !v)}
+              title="Reagir"
+            >
+              <span className="text-base leading-none">{post.myReaction ?? "🙂"}</span>
+              {(post.reactionSummary?.length ?? 0) > 0 && !post.myReaction && (
+                <span className="text-xs">{(post.reactionSummary as any[]).reduce((s: number, r: any) => s + r.count, 0)}</span>
+              )}
+            </button>
+            <button
+              className="flex items-center gap-1.5 transition-colors hover:text-primary"
+              onClick={() => setShowComments((v) => !v)}
+            >
+              <MessageCircle className="h-4 w-4" />
+              <span>{post.commentCount}</span>
+              {showComments ? (
+                <ChevronUp className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+            </button>
+          </div>
+
+          {/* Emoji Picker */}
+          {showEmojiPicker && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => toggleReaction.mutate({ postId: post.id, emoji })}
+                  className={`text-xl leading-none px-2 py-1 rounded-full transition-all hover:scale-125 ${
+                    post.myReaction === emoji
+                      ? "bg-yellow-100 dark:bg-yellow-900/40 ring-1 ring-yellow-400"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Reaction Summary */}
+          {(post.reactionSummary?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(post.reactionSummary as { emoji: string; count: number }[]).map(({ emoji, count }) => (
+                <button
+                  key={emoji}
+                  onClick={() => toggleReaction.mutate({ postId: post.id, emoji })}
+                  className={`flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                    post.myReaction === emoji
+                      ? "bg-yellow-100 border-yellow-400 dark:bg-yellow-900/40 dark:border-yellow-600"
+                      : "bg-muted border-transparent hover:border-border"
+                  }`}
+                >
+                  <span className="text-sm">{emoji}</span>
+                  <span className="font-medium">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Comments */}
