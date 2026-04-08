@@ -1864,6 +1864,8 @@ export async function getLeaderboard(currentUserId: number, friendsOnly: boolean
       const stats = await getSessionStats(user.id);
       const totalBuyIn = stats.totalBuyIn ?? 0;
       const totalProfit = stats.totalProfit ?? 0;
+      const bestSessionProfit = stats.bestSession ? (stats.bestSession.cashOut - stats.bestSession.buyIn) : 0;
+      const worstSessionProfit = stats.worstSession ? (stats.worstSession.cashOut - stats.worstSession.buyIn) : 0;
       const roi = totalBuyIn > 0 ? (totalProfit / totalBuyIn) * 100 : 0;
       return {
         userId: user.id,
@@ -1871,8 +1873,8 @@ export async function getLeaderboard(currentUserId: number, friendsOnly: boolean
         avatarUrl: user.avatarUrl,
         roi,
         winRate: stats.winRate ?? 0,
-        bestSession: stats.bestSession ?? 0,
-        worstSession: stats.worstSession ?? 0,
+        bestSession: bestSessionProfit,
+        worstSession: worstSessionProfit,
         totalSessions: stats.totalSessions ?? 0,
       };
     })
