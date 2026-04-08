@@ -108,7 +108,9 @@ function LeaderboardTable({
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="font-semibold truncate">{player.name ?? "Jogador"}</p>
-            <p className="text-xs text-muted-foreground">{player.totalSessions} sessões</p>
+            <p className="text-xs text-muted-foreground">
+              {player.totalSessions} sessões • {player.totalTables ?? 0} mesas
+            </p>
           </div>
 
           {/* Stats */}

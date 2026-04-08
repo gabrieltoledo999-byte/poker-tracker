@@ -1876,6 +1876,7 @@ export async function getLeaderboard(currentUserId: number, friendsOnly: boolean
         bestSession: bestSessionProfit,
         worstSession: worstSessionProfit,
         totalSessions: stats.totalSessions ?? 0,
+        totalTables: stats.totalTables ?? 0,
       };
     })
   );
