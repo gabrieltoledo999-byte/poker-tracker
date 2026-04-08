@@ -15,10 +15,10 @@ function getStorageConfig(): StorageConfig {
     );
   }
 
-  // Allow "disabled" or "placeholder" as valid (disabled) values
-  if (apiKey === "placeholder" || apiKey === "disabled") {
+  // Allow "disabled" as a valid (disabled) value - will be handled in storagePut
+  if (apiKey === "placeholder") {
     throw new Error(
-      "Storage proxy desabilitado: uploads de arquivo não estão disponíveis. Configure BUILT_IN_FORGE_API_KEY com uma chave válida."
+      "Storage proxy key inválida: configure BUILT_IN_FORGE_API_KEY no ambiente de produção"
     );
   }
 
@@ -80,6 +80,14 @@ export async function storagePut(
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
   const { baseUrl, apiKey } = getStorageConfig();
+  
+  // Handle disabled storage
+  if (apiKey === "disabled") {
+    throw new Error(
+      "Upload de imagens não está disponível. O serviço de storage está desabilitado."
+    );
+  }
+  
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
