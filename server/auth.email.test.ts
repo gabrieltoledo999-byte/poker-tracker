@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 // Mock the db module
 vi.mock("./db", () => ({
   getDb: vi.fn(),
+  getUserByNickname: vi.fn(),
 }));
 
 // Mock the sdk module
@@ -13,7 +14,7 @@ vi.mock("./_core/sdk", () => ({
   },
 }));
 
-import { getDb } from "./db";
+import { getDb, getUserByNickname } from "./db";
 import { registerUser, loginUser, hashPassword, verifyPassword } from "./auth";
 
 describe("auth helpers", () => {
@@ -48,10 +49,28 @@ describe("auth helpers", () => {
         values: vi.fn().mockResolvedValue(undefined),
       };
       (getDb as any).mockResolvedValue(mockDb);
+      (getUserByNickname as any).mockResolvedValue(undefined);
 
       await expect(
         registerUser({ name: "Test", email: "test@test.com", password: "123456" })
       ).rejects.toThrow("EMAIL_ALREADY_EXISTS");
+    });
+
+    it("should throw NICKNAME_ALREADY_EXISTS if nickname is taken", async () => {
+      const mockDb = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockResolvedValue([]),
+        insert: vi.fn().mockReturnThis(),
+        values: vi.fn().mockResolvedValue(undefined),
+      };
+      (getDb as any).mockResolvedValue(mockDb);
+      (getUserByNickname as any).mockResolvedValue({ id: 77, name: "Test" });
+
+      await expect(
+        registerUser({ name: "Test", email: "new@test.com", password: "123456" })
+      ).rejects.toThrow("NICKNAME_ALREADY_EXISTS");
     });
 
     it("should create a new user when email is not taken", async () => {
@@ -85,6 +104,7 @@ describe("auth helpers", () => {
         values: vi.fn().mockResolvedValue(undefined),
       };
       (getDb as any).mockResolvedValue(mockDb);
+      (getUserByNickname as any).mockResolvedValue(undefined);
 
       const user = await registerUser({ name: "Test User", email: "new@test.com", password: "123456" });
       expect(user).toBeDefined();

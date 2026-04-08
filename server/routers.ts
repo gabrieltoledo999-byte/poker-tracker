@@ -1,8 +1,9 @@
 import { COOKIE_NAME } from "@shared/const";
+import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { getLeaderboard, getFriendIds, addFriendship, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment } from "./db";
+import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest } from "./db";
 import { z } from "zod";
 import {
   createSession,
@@ -28,6 +29,9 @@ import {
   getUserInvites,
   getInviteRanking,
   getUserById,
+  updateUserPreferredPlayType,
+  updateUserOnboardingProfile,
+  getUserOnboardingProfile,
   updateUserAvatar,
   getUserInviteCode,
   getUserByInviteCode,
@@ -74,6 +78,18 @@ const gameFormatEnum = z.enum([
 // Currency enum
 const currencyEnum = z.enum(["BRL", "USD"]);
 
+const onboardingProfileInput = z.object({
+  preferredPlayType: z.enum(["online", "live"]),
+  preferredPlatforms: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  preferredFormats: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  preferredBuyIns: z.array(z.number().int().positive()).max(12).optional(),
+  preferredBuyInsOnline: z.array(z.number().int().positive()).max(12).optional(),
+  preferredBuyInsLive: z.array(z.number().int().positive()).max(12).optional(),
+  playsMultiPlatform: z.boolean().optional(),
+  showInGlobalRanking: z.boolean().optional(),
+  showInFriendsRanking: z.boolean().optional(),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -99,9 +115,12 @@ export const appRouter = router({
         } catch (err: any) {
           console.error("[auth.register] failed:", err);
           if (err.message === "EMAIL_ALREADY_EXISTS") {
-            throw new Error("Este e-mail já está cadastrado.");
+            throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." });
           }
-          throw new Error("Erro ao criar conta. Tente novamente.");
+          if (err.message === "NICKNAME_ALREADY_EXISTS") {
+            throw new TRPCError({ code: "CONFLICT", message: "Este nickname já está em uso." });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar conta. Tente novamente." });
         }
       }),
     login: publicProcedure
@@ -120,7 +139,13 @@ export const appRouter = router({
           if (err.message === "NEEDS_PASSWORD_SETUP") {
             return { success: false, needsPasswordSetup: true, user: null, token: null };
           }
-          throw new Error("E-mail ou senha incorretos.");
+          if (err.message === "INVALID_CREDENTIALS") {
+            throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos." });
+          }
+          if (err.message === "DB_UNAVAILABLE") {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Serviço temporariamente indisponível." });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao fazer login. Tente novamente." });
         }
       }),
     // Fluxo de primeiro acesso: define senha para conta antiga sem senha
@@ -137,9 +162,16 @@ export const appRouter = router({
           return { success: true, user };
         } catch (err: any) {
           console.error("[auth.setupPassword] failed:", err);
-          if (err.message === "USER_NOT_FOUND") throw new Error("E-mail não encontrado.");
-          if (err.message === "PASSWORD_ALREADY_SET") throw new Error("Esta conta já possui senha. Use o login normal.");
-          throw new Error("Erro ao configurar senha. Tente novamente.");
+          if (err.message === "USER_NOT_FOUND") {
+            throw new TRPCError({ code: "NOT_FOUND", message: "E-mail não encontrado." });
+          }
+          if (err.message === "PASSWORD_ALREADY_SET") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Esta conta já possui senha. Use o login normal." });
+          }
+          if (err.message === "DB_UNAVAILABLE") {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Serviço temporariamente indisponível." });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao configurar senha. Tente novamente." });
         }
       }),
   }),
@@ -290,6 +322,26 @@ export const appRouter = router({
         return await getUserPreferences(ctx.user.id);
       }),
 
+    // Save onboarding answer used to bootstrap smart defaults before enough history exists
+    saveInitialPlayStyle: protectedProcedure
+      .input(z.object({ preferredPlayType: z.enum(["online", "live"]) }))
+      .mutation(async ({ ctx, input }) => {
+        await updateUserPreferredPlayType(ctx.user.id, input.preferredPlayType);
+        return await getUserPreferences(ctx.user.id);
+      }),
+
+    getOnboardingProfile: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getUserOnboardingProfile(ctx.user.id);
+      }),
+
+    saveOnboardingProfile: protectedProcedure
+      .input(onboardingProfileInput)
+      .mutation(async ({ ctx, input }) => {
+        await updateUserOnboardingProfile(ctx.user.id, input);
+        return await getUserPreferences(ctx.user.id);
+      }),
+
     // ── Active Session (timer-based) ──────────────────────────────────────
     // Start a new active session (timer begins now)
     startActive: protectedProcedure
@@ -321,11 +373,19 @@ export const appRouter = router({
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await addSessionTable({
+        const table = await addSessionTable({
           ...input,
+          cashOut: 0,
           userId: ctx.user.id,
           startedAt: new Date(),
         });
+
+        // Learn default currency per platform/local from the user's latest saved table.
+        if (input.venueId && input.currency) {
+          await updateVenue(input.venueId, ctx.user.id, { currency: input.currency as any });
+        }
+
+        return table;
       }),
 
     // Update a table (e.g. set cashOut when leaving)
@@ -345,7 +405,13 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        return await updateSessionTable(id, ctx.user.id, data as any);
+        const updated = await updateSessionTable(id, ctx.user.id, data as any);
+
+        if (data.venueId && data.currency) {
+          await updateVenue(data.venueId, ctx.user.id, { currency: data.currency as any });
+        }
+
+        return updated;
       }),
 
     // Remove a table from the active session
@@ -367,6 +433,7 @@ export const appRouter = router({
           USD: Math.round((rates?.USD?.rate ?? 5.75) * 100),
           CAD: Math.round((rates?.CAD?.rate ?? 4.20) * 100),
           JPY: Math.round((rates?.JPY?.rate ?? 0.033) * 100),
+          CNY: Math.round((rates?.CNY?.rate ?? 0.80) * 100),
         };
         return await finalizeActiveSession(
           ctx.user.id,
@@ -532,6 +599,7 @@ export const appRouter = router({
     // Get statistics by venue
     statsByVenue: protectedProcedure
       .query(async ({ ctx }) => {
+        await initializePresetVenues(ctx.user.id, PRESET_VENUES);
         return await getStatsByVenue(ctx.user.id);
       }),
   }),
@@ -737,6 +805,7 @@ export const appRouter = router({
     // Get consolidated bankroll including venue balances (TradeMap-style)
     getConsolidated: protectedProcedure
       .query(async ({ ctx }) => {
+        await initializePresetVenues(ctx.user.id, PRESET_VENUES);
         const settings = await getBankrollSettings(ctx.user.id);
         const initialLive = settings?.initialLive ?? 0;
         const initialOnline = settings?.initialOnline ?? 0;
@@ -950,6 +1019,47 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         return await getLeaderboard(ctx.user.id, input?.friendsOnly ?? false);
       }),
+    friends: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getFriends(ctx.user.id);
+      }),
+    searchUsers: protectedProcedure
+      .input(z.object({ query: z.string().trim().min(2).max(64) }))
+      .query(async ({ ctx, input }) => {
+        return await searchUsersToAdd(ctx.user.id, input.query);
+      }),
+    incomingRequests: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getIncomingFriendRequests(ctx.user.id);
+      }),
+    outgoingRequests: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getOutgoingFriendRequests(ctx.user.id);
+      }),
+    sendRequest: protectedProcedure
+      .input(z.object({ friendId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.friendId === ctx.user.id) {
+          throw new Error("Você não pode adicionar a si mesmo.");
+        }
+        return await sendFriendRequest(ctx.user.id, input.friendId);
+      }),
+    sendRequestByNickname: protectedProcedure
+      .input(z.object({ nickname: z.string().trim().min(2).max(100) }))
+      .mutation(async ({ ctx, input }) => {
+        return await sendFriendRequestByNickname(ctx.user.id, input.nickname);
+      }),
+    respondRequest: protectedProcedure
+      .input(z.object({ requestId: z.number().int().positive(), action: z.enum(["accept", "reject"]) }))
+      .mutation(async ({ ctx, input }) => {
+        return await respondToFriendRequest(ctx.user.id, input.requestId, input.action);
+      }),
+    cancelRequest: protectedProcedure
+      .input(z.object({ requestId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const success = await cancelFriendRequest(ctx.user.id, input.requestId);
+        return { success };
+      }),
   }),
 
   // Community feed router
@@ -969,14 +1079,24 @@ export const appRouter = router({
       }),
     create: protectedProcedure
       .input(z.object({
-        content: z.string().min(1).max(1000),
+        content: z.string().max(1000).default(""),
         imageUrl: z.string().url().optional(),
         imageKey: z.string().optional(),
         sessionId: z.number().int().optional(),
         visibility: z.enum(["public", "friends"]).default("public"),
+      }).superRefine((value, ctx) => {
+        const hasContent = value.content.trim().length > 0;
+        const hasImage = Boolean(value.imageUrl);
+        if (!hasContent && !hasImage) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Informe um texto ou envie uma imagem para publicar.",
+            path: ["content"],
+          });
+        }
       }))
       .mutation(async ({ ctx, input }) => {
-        return await createPost({ ...input, userId: ctx.user.id });
+        return await createPost({ ...input, content: input.content.trim(), userId: ctx.user.id });
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number().int() }))
@@ -1054,12 +1174,19 @@ export const appRouter = router({
     postImage: protectedProcedure
       .input(z.object({ base64: z.string(), mimeType: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const { storagePut } = await import("./storage");
-        const buffer = Buffer.from(input.base64, "base64");
-        const ext = input.mimeType.split("/")[1] || "jpg";
-        const key = `posts/${ctx.user.id}-${Date.now()}.${ext}`;
-        const { url } = await storagePut(key, buffer, input.mimeType);
-        return { url, key };
+        try {
+          const { storagePut } = await import("./storage");
+          const buffer = Buffer.from(input.base64, "base64");
+          const ext = input.mimeType.split("/")[1] || "jpg";
+          const key = `posts/${ctx.user.id}-${Date.now()}.${ext}`;
+          const { url } = await storagePut(key, buffer, input.mimeType);
+          return { url, key };
+        } catch (error: any) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error?.message || "Falha ao enviar imagem do post.",
+          });
+        }
       }),
     clubLogo: protectedProcedure
       .input(z.object({ base64: z.string(), mimeType: z.string() }))

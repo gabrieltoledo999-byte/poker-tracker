@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="H2 Club">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#140a2e"/>
+  <circle cx="138" cy="256" r="86" fill="none" stroke="url(#g)" stroke-width="22"/>
+  <path d="M210 256h38l30-54h34v120h-34v-52h-38v52h-34V202h34z" fill="#fff"/>
+  <path d="M344 212c0-22 18-40 40-40h39c22 0 40 18 40 40 0 16-8 29-22 37l-53 30c-4 2-6 5-6 9v4h80v30h-118v-33c0-17 9-31 24-39l52-29c6-3 9-8 9-13 0-6-5-11-11-11h-32c-6 0-11 5-11 11v6h-31v-12z" fill="#fff"/>
+  <text x="256" y="430" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" letter-spacing="10" fill="#d8b4fe">CLUB</text>
+</svg>

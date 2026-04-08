@@ -5,7 +5,7 @@ import { parse as parseCookieHeader } from "cookie";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
-import { getUserByEmail, getUserByOpenId, linkUserToGoogle, upsertUser } from "../db";
+import { getUserByEmail, getUserByNickname, getUserByOpenId, linkUserToGoogle, upsertUser } from "../db";
 
 const GOOGLE_STATE_COOKIE = "oauth_state_google";
 const OAUTH_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -133,7 +133,7 @@ export function registerOAuthRoutes(app: Express) {
       const googleSub = String(userInfo.data?.sub || "");
       const email = String(userInfo.data?.email || "").trim().toLowerCase();
       const emailVerified = Boolean(userInfo.data?.email_verified);
-      const name = String(userInfo.data?.name || "").trim() || "Usuario";
+      const name = String(userInfo.data?.name || "").trim().replace(/\s+/g, " ") || "Usuario";
       const picture = String(userInfo.data?.picture || "").trim() || null;
 
       if (!googleSub || !email || !emailVerified) {
@@ -149,7 +149,7 @@ export function registerOAuthRoutes(app: Express) {
       if (existingGoogleUser) {
         await upsertUser({
           openId: existingGoogleUser.openId,
-          name,
+          name: existingGoogleUser.name ?? name,
           email,
           avatarUrl: picture,
           loginMethod: "google",
@@ -160,15 +160,27 @@ export function registerOAuthRoutes(app: Express) {
         const existingEmailUser = await getUserByEmail(email);
 
         if (existingEmailUser) {
+          if (!existingEmailUser.name) {
+            const duplicateNickname = await getUserByNickname(name);
+            if (duplicateNickname && duplicateNickname.id !== existingEmailUser.id) {
+              redirectWithError(res, "Esse nickname ja esta em uso. Entre com e-mail e escolha outro nickname.");
+              return;
+            }
+          }
           const linked = await linkUserToGoogle({
             userId: existingEmailUser.id,
             googleSub,
-            name,
+            name: existingEmailUser.name ?? name,
             email,
             avatarUrl: picture,
           });
           sessionOpenId = linked.openId;
         } else {
+          const duplicateNickname = await getUserByNickname(name);
+          if (duplicateNickname) {
+            redirectWithError(res, "Esse nickname ja esta em uso. Escolha outro ao criar sua conta.");
+            return;
+          }
           await upsertUser({
             openId: googleOpenId,
             name,

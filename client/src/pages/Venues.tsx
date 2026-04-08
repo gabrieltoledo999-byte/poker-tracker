@@ -1,11 +1,11 @@
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -53,9 +53,7 @@ import {
   Pencil,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
   Info,
-  DollarSign,
   Check,
 } from "lucide-react";
 
@@ -413,6 +411,9 @@ function VenueCard({
   const isPreset = venue.isPreset === 1;
   const hasStats = stats && stats.sessions > 0;
   const currency = (venue.currency || "BRL") as Currency;
+  const itmCount = stats?.winningTables ?? 0;
+  const playedCount = stats?.tables ?? 0;
+  const itmRate = playedCount > 0 ? ((itmCount / playedCount) * 100).toFixed(1) : "0.0";
 
   const rate = currency === "USD" ? rates?.USD?.rate :
                currency === "CAD" ? rates?.CAD?.rate :
@@ -526,8 +527,9 @@ function VenueCard({
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Win Rate</p>
-              <p className="font-medium">{stats.winRate}%</p>
+              <p className="text-xs text-muted-foreground">ITM Rate</p>
+              <p className="font-medium">{itmRate}%</p>
+              <p className="text-[11px] text-muted-foreground">{itmCount}/{playedCount}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">R$/h</p>
@@ -542,61 +544,13 @@ function VenueCard({
   );
 }
 
-// ─── Exchange Rates Banner ────────────────────────────────────────────────────
-
-function ExchangeRatesBanner({ rates, onRefresh, isRefreshing }: { rates: any; onRefresh: () => void; isRefreshing: boolean }) {
-  if (!rates) return null;
-
-  const fetchedAt = rates.USD?.fetchedAt ? new Date(rates.USD.fetchedAt) : null;
-  const isFromApi = rates.USD?.source === "api";
-
-  return (
-    <div className="flex flex-wrap items-center gap-3 bg-muted/30 border border-border/30 rounded-xl px-4 py-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <DollarSign className="h-3.5 w-3.5" />
-        <span className="font-medium">Cotações do dia</span>
-        {fetchedAt && (
-          <span className="opacity-60">· {fetchedAt.toLocaleDateString("pt-BR")}</span>
-        )}
-        {!isFromApi && (
-          <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">estimada</Badge>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-3 flex-1">
-        <div className="flex items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground text-xs">USD</span>
-          <span className="font-semibold">{formatBrl(Math.round((rates.USD?.rate || 0) * 100))}</span>
-        </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground text-xs">CAD</span>
-          <span className="font-semibold">{formatBrl(Math.round((rates.CAD?.rate || 0) * 100))}</span>
-        </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground text-xs">JPY</span>
-          <span className="font-semibold">{formatBrl(Math.round((rates.JPY?.rate || 0) * 100))} <span className="text-xs text-muted-foreground">/100¥</span></span>
-        </div>
-      </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 px-2 text-xs gap-1 text-muted-foreground"
-        onClick={onRefresh}
-        disabled={isRefreshing}
-        title="Atualizar cotações agora"
-      >
-        <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-        Atualizar
-      </Button>
-    </div>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Venues() {
+  const { primaryType, playTypeOrder, sortVenues } = useBehaviorProfile();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingVenue, setEditingVenue] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"online" | "live">("online");
+  const [activeTab, setActiveTab] = useState<"online" | "live">(primaryType);
 
   const utils = trpc.useUtils();
 
@@ -628,13 +582,21 @@ export default function Venues() {
     onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 
-  const refreshRatesMutation = trpc.currency.refresh.useMutation({
-    onSuccess: () => { toast.success("Cotações atualizadas!"); utils.currency.getRates.invalidate(); },
-    onError: () => toast.error("Não foi possível atualizar as cotações agora."),
-  });
+  useEffect(() => {
+    setActiveTab(primaryType);
+  }, [primaryType]);
 
   const getVenueStats = (venueId: number) => venueStats?.find((s: any) => s.venueId === venueId);
-  const filteredVenues = (venues?.filter((v: any) => v.type === activeTab) || []).sort((a: any, b: any) => (b.balance ?? 0) - (a.balance ?? 0));
+  const filteredVenues = useMemo(() => {
+    const typed = (venues?.filter((v: any) => v.type === activeTab) || []);
+    const personalized = sortVenues(typed, (venue) => venue.id);
+    return [...personalized].sort((a: any, b: any) => {
+      const ai = personalized.findIndex((venue: any) => venue.id === a.id);
+      const bi = personalized.findIndex((venue: any) => venue.id === b.id);
+      if (ai !== bi) return ai - bi;
+      return (b.balance ?? 0) - (a.balance ?? 0);
+    });
+  }, [activeTab, sortVenues, venues]);
 
   if (isLoading) {
     return (
@@ -651,12 +613,12 @@ export default function Venues() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold">Salas & Sites</h1>
-          <p className="text-muted-foreground text-sm">Gerencie onde você joga e acompanhe seu saldo em cada plataforma</p>
+          <p className="text-muted-foreground text-sm">Gerencie onde você joga e acompanhe seu saldo em ordem de uso real</p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
@@ -669,34 +631,15 @@ export default function Venues() {
         </Dialog>
       </div>
 
-      {/* Exchange rates banner */}
-      <ExchangeRatesBanner
-        rates={rates}
-        onRefresh={() => refreshRatesMutation.mutate()}
-        isRefreshing={refreshRatesMutation.isPending}
-      />
-
-      {/* How balance works info box */}
-      <div className="flex gap-3 bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-sm">
-        <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-1 text-muted-foreground">
-          <p><strong className="text-foreground">Como funciona o saldo inteligente:</strong></p>
-          <p>O saldo de cada plataforma é atualizado automaticamente quando você registra uma sessão. Você também pode ajustar manualmente a qualquer momento — por exemplo, para corrigir um erro ou registrar um depósito/saque. Cada alteração fica salva no histórico com data, valor e nota.</p>
-          <p>Valores em USD, CAD ou JPY são convertidos automaticamente para BRL usando a cotação do dia, e o total consolidado na tela inicial reflete sempre o valor real em reais.</p>
-        </div>
-      </div>
-
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "online" | "live")}>
         <TabsList>
-          <TabsTrigger value="online" className="flex items-center gap-2">
-            <Monitor className="h-4 w-4" />
-            Online ({venues?.filter((v: any) => v.type === "online").length || 0})
-          </TabsTrigger>
-          <TabsTrigger value="live" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Live ({venues?.filter((v: any) => v.type === "live").length || 0})
-          </TabsTrigger>
+          {playTypeOrder.map((type) => (
+            <TabsTrigger key={type} value={type} className="flex items-center gap-2">
+              {type === "online" ? <Monitor className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+              {type === "online" ? "Online" : "Live"} ({venues?.filter((v: any) => v.type === type).length || 0})
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="online" className="mt-4">

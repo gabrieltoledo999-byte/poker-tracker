@@ -1,9 +1,10 @@
 import bcrypt from "bcryptjs";
-import { getDb } from "./db";
+import { getDb, getUserByNickname } from "./db";
 import { users } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { sdk } from "./_core/sdk";
 import type { User } from "../drizzle/schema";
+import { authCompatUserSelect } from "./userCompat";
 
 const SALT_ROUNDS = 10;
 
@@ -20,14 +21,25 @@ export async function registerUser(params: {
   email: string;
   password: string;
 }): Promise<User> {
-  const { name, email, password } = params;
+  const name = params.name.trim().replace(/\s+/g, " ");
+  const email = params.email.trim().toLowerCase();
+  const { password } = params;
   const db = await getDb();
   if (!db) throw new Error("DB_UNAVAILABLE");
 
   // Check if email already exists
-  const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const existing = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
   if (existing.length > 0) {
     throw new Error("EMAIL_ALREADY_EXISTS");
+  }
+
+  const existingNickname = await getUserByNickname(name);
+  if (existingNickname) {
+    throw new Error("NICKNAME_ALREADY_EXISTS");
   }
 
   const passwordHash = await hashPassword(password);
@@ -44,8 +56,12 @@ export async function registerUser(params: {
     lastSignedIn: new Date(),
   });
 
-  const user = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return user[0];
+  const user = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
+  return user[0] as User;
 }
 
 export async function loginUser(params: {
@@ -56,7 +72,11 @@ export async function loginUser(params: {
   const db = await getDb();
   if (!db) throw new Error("DB_UNAVAILABLE");
 
-  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const result = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
   if (result.length === 0) {
     throw new Error("INVALID_CREDENTIALS");
   }
@@ -94,7 +114,11 @@ export async function setupPasswordForExistingUser(params: {
   const db = await getDb();
   if (!db) throw new Error("DB_UNAVAILABLE");
 
-  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const result = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
   if (result.length === 0) {
     throw new Error("USER_NOT_FOUND");
   }
@@ -113,8 +137,12 @@ export async function setupPasswordForExistingUser(params: {
     .where(eq(users.id, user.id));
 
   // Buscar usuário atualizado
-  const updated = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
-  const updatedUser = updated[0];
+  const updated = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+  const updatedUser = updated[0] as User;
 
   const token = await sdk.createSessionToken(updatedUser.openId, { name: updatedUser.name || "" });
   return { user: updatedUser, token };

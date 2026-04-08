@@ -79,6 +79,14 @@
   --sidebar-accent-foreground: oklch(0.15 0.02 270);
   --sidebar-border: oklch(0.85 0.02 270);
   --sidebar-ring: oklch(0.52 0.22 290);
+  --fx-ticker-bg: linear-gradient(90deg, oklch(0.985 0.006 270 / 0.96), oklch(0.95 0.018 290 / 0.94));
+  --fx-ticker-border: oklch(0.82 0.025 270 / 0.9);
+  --fx-item-bg: oklch(1 0 0 / 0.88);
+  --fx-item-border: oklch(0.8 0.03 270 / 0.95);
+  --fx-code: oklch(0.28 0.08 280);
+  --fx-label: oklch(0.45 0.02 270);
+  --fx-value: oklch(0.45 0.16 165);
+  --fx-flag-bg: oklch(0.92 0.02 270 / 0.9);
 }
 
 .dark {
@@ -117,6 +125,14 @@
   --sidebar-accent-foreground: oklch(0.93 0.01 200);
   --sidebar-border: oklch(0.25 0.04 270);
   --sidebar-ring: oklch(0.62 0.22 290);
+  --fx-ticker-bg: linear-gradient(90deg, oklch(0.12 0.018 240 / 0.94), oklch(0.16 0.03 270 / 0.92));
+  --fx-ticker-border: oklch(0.28 0.03 240 / 0.6);
+  --fx-item-bg: oklch(0.22 0.025 240 / 0.78);
+  --fx-item-border: oklch(0.4 0.05 240 / 0.55);
+  --fx-code: oklch(0.96 0.01 200);
+  --fx-label: oklch(0.76 0.02 240 / 0.88);
+  --fx-value: oklch(0.84 0.18 150);
+  --fx-flag-bg: oklch(0.28 0.025 250 / 0.92);
 }
 
 @layer base {
@@ -210,8 +226,8 @@
   position: relative;
   width: 100%;
   overflow: hidden;
-  background: oklch(0.12 0.015 240 / 0.85);
-  border-bottom: 1px solid oklch(0.28 0.03 240 / 0.5);
+  background: var(--fx-ticker-bg);
+  border-bottom: 1px solid var(--fx-ticker-border);
   mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
 }
@@ -229,27 +245,38 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid oklch(0.4 0.05 240 / 0.55);
-  background: oklch(0.22 0.025 240 / 0.7);
+  border: 1px solid var(--fx-item-border);
+  background: var(--fx-item-bg);
   border-radius: 9999px;
   padding: 0.35rem 0.85rem;
   white-space: nowrap;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--fx-item-border) 18%, transparent);
+}
+
+.fx-flag {
+  display: block;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 9999px;
+  background: var(--fx-flag-bg);
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--fx-item-border) 65%, transparent);
 }
 
 .fx-code {
   font-size: 0.73rem;
   font-weight: 800;
-  color: #ffffff;
+  color: var(--fx-code);
   letter-spacing: 0.04em;
 }
 
 .fx-label {
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--fx-label);
 }
 
 .fx-value {
   font-size: 0.78rem;
   font-weight: 700;
-  color: oklch(0.84 0.18 150);
+  color: var(--fx-value);
 }

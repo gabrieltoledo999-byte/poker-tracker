@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="WPT icon">
+  <rect width="512" height="512" rx="24" fill="#efefef"/>
+  <rect x="118" y="90" width="170" height="290" rx="28" fill="none" stroke="#1467d8" stroke-width="30" transform="rotate(-12 203 235)"/>
+  <rect x="224" y="90" width="170" height="290" rx="28" fill="none" stroke="#ff0f64" stroke-width="30" transform="rotate(12 309 235)"/>
+  <path d="M256 184c26 42 64 73 89 108 29 40 17 103-26 133-38 27-92 21-124-13-30-31-35-79-13-116 16-27 41-48 74-68z" fill="#111" transform="scale(.55) translate(210 190)"/>
+</svg>

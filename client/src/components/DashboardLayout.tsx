@@ -102,7 +102,7 @@ const menuItems = [
   { icon: ListChecks, label: "Sessões", path: "/sessions" },
   { icon: Wallet, label: "Caixa", path: "/funds" },
   { icon: MapPin, label: "Salas", path: "/venues" },
-  { icon: Users, label: "Convites", path: "/invites" },
+  { icon: Users, label: "Amizades", path: "/invites" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
@@ -358,7 +358,9 @@ function DashboardLayoutContent({
             <ColorPickerButton isCollapsed={false} compact />
           </div>
         </div>
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4 lg:p-5">
+          <div className="mx-auto w-full max-w-[1380px]">{children}</div>
+        </main>
       </SidebarInset>
     </>
   );

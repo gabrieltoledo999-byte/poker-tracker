@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,16 +46,18 @@ function formatDate(date: Date | string): string {
 }
 
 export default function Funds() {
+  const { primaryType, playTypeOrder } = useBehaviorProfile();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [transactionType, setTransactionType] = useState<"deposit" | "withdrawal">("deposit");
-  const [bankrollType, setBankrollType] = useState<"online" | "live">("online");
+  const [bankrollType, setBankrollType] = useState<"online" | "live">(primaryType);
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"BRL" | "USD">("BRL");
   const [description, setDescription] = useState("");
   const [transactionDate, setTransactionDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [filterType, setFilterType] = useState<"all" | "online" | "live">("all");
+  const [filterType, setFilterType] = useState<"all" | "online" | "live">(primaryType);
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -101,14 +104,42 @@ export default function Funds() {
     },
   });
 
+  useEffect(() => {
+    if (defaultsApplied) return;
+    setBankrollType(primaryType);
+    setFilterType(primaryType);
+    setDefaultsApplied(true);
+  }, [defaultsApplied, primaryType]);
+
   const resetForm = () => {
     setTransactionType("deposit");
-    setBankrollType("online");
+    setBankrollType(primaryType);
     setAmount("");
     setCurrency("BRL");
     setDescription("");
     setTransactionDate(new Date().toISOString().split("T")[0]);
   };
+
+  const summaryCards = useMemo(() => {
+    const primaryCards = playTypeOrder.map((type) => ({
+      key: type,
+      title: type === "online" ? "Bankroll Online" : "Bankroll Live",
+      icon: type === "online" ? Laptop : Building2,
+      accent: type === "online" ? "border-l-chart-4" : "border-l-primary",
+      data: bankroll?.[type],
+    }));
+
+    return [
+      ...primaryCards,
+      {
+        key: "total" as const,
+        title: "Bankroll Total",
+        icon: DollarSign,
+        accent: "border-l-chart-2",
+        data: bankroll?.total,
+      },
+    ];
+  }, [bankroll, playTypeOrder]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,32 +234,24 @@ export default function Funds() {
               <div className="space-y-2">
                 <Label>Bankroll</Label>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant={bankrollType === "online" ? "default" : "outline"}
-                    className={
-                      bankrollType === "online"
-                        ? "bg-chart-4 hover:bg-chart-4/90 text-white"
-                        : ""
-                    }
-                    onClick={() => setBankrollType("online")}
-                  >
-                    <Laptop className="h-4 w-4 mr-2" />
-                    Online
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={bankrollType === "live" ? "default" : "outline"}
-                    className={
-                      bankrollType === "live"
-                        ? "bg-primary hover:bg-primary/90"
-                        : ""
-                    }
-                    onClick={() => setBankrollType("live")}
-                  >
-                    <Building2 className="h-4 w-4 mr-2" />
-                    Live
-                  </Button>
+                  {playTypeOrder.map((type) => (
+                    <Button
+                      key={type}
+                      type="button"
+                      variant={bankrollType === type ? "default" : "outline"}
+                      className={
+                        bankrollType === type
+                          ? type === "online"
+                            ? "bg-chart-4 hover:bg-chart-4/90 text-white"
+                            : "bg-primary hover:bg-primary/90"
+                          : ""
+                      }
+                      onClick={() => setBankrollType(type)}
+                    >
+                      {type === "online" ? <Laptop className="h-4 w-4 mr-2" /> : <Building2 className="h-4 w-4 mr-2" />}
+                      {type === "online" ? "Online" : "Live"}
+                    </Button>
+                  ))}
                 </div>
               </div>
 
@@ -304,100 +327,74 @@ export default function Funds() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Online */}
-        <Card className="border-l-4 border-l-chart-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Laptop className="h-4 w-4" />
-              Bankroll Online
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(bankroll?.online.current || 0)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 space-y-1">
-              <div className="flex justify-between">
-                <span>Inicial:</span>
-                <span>{formatCurrency(bankroll?.online.initial || 0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Lucro sessões:</span>
-                <span className={bankroll?.online.profit && bankroll.online.profit >= 0 ? "text-chart-1" : "text-destructive"}>
-                  {formatCurrency(bankroll?.online.profit || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Depósitos/Saques:</span>
-                <span className={bankroll?.online.fundNet && bankroll.online.fundNet >= 0 ? "text-chart-1" : "text-destructive"}>
-                  {formatCurrency(bankroll?.online.fundNet || 0)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {summaryCards.map((card) => {
+          const Icon = card.icon;
+          if (card.key === "total") {
+            return (
+              <Card key={card.key} className={`border-l-4 ${card.accent}`}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    {card.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {formatCurrency(bankroll?.total.current || 0)}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Total depósitos:</span>
+                      <span className="text-chart-1">
+                        +{formatCurrency(totals?.total.deposits || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Total saques:</span>
+                      <span className="text-destructive">
+                        -{formatCurrency(totals?.total.withdrawals || 0)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
 
-        {/* Live */}
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
-              Bankroll Live
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(bankroll?.live.current || 0)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 space-y-1">
-              <div className="flex justify-between">
-                <span>Inicial:</span>
-                <span>{formatCurrency(bankroll?.live.initial || 0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Lucro sessões:</span>
-                <span className={bankroll?.live.profit && bankroll.live.profit >= 0 ? "text-chart-1" : "text-destructive"}>
-                  {formatCurrency(bankroll?.live.profit || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Depósitos/Saques:</span>
-                <span className={bankroll?.live.fundNet && bankroll.live.fundNet >= 0 ? "text-chart-1" : "text-destructive"}>
-                  {formatCurrency(bankroll?.live.fundNet || 0)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Total */}
-        <Card className="border-l-4 border-l-chart-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              Bankroll Total
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(bankroll?.total.current || 0)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 space-y-1">
-              <div className="flex justify-between">
-                <span>Total depósitos:</span>
-                <span className="text-chart-1">
-                  +{formatCurrency(totals?.total.deposits || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total saques:</span>
-                <span className="text-destructive">
-                  -{formatCurrency(totals?.total.withdrawals || 0)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          return (
+            <Card key={card.key} className={`border-l-4 ${card.accent}`}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  {card.title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {formatCurrency(card.data?.current || 0)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Inicial:</span>
+                    <span>{formatCurrency(card.data?.initial || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Lucro sessões:</span>
+                    <span className={card.data?.profit && card.data.profit >= 0 ? "text-chart-1" : "text-destructive"}>
+                      {formatCurrency(card.data?.profit || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Depósitos/Saques:</span>
+                    <span className={card.data?.fundNet && card.data.fundNet >= 0 ? "text-chart-1" : "text-destructive"}>
+                      {formatCurrency(card.data?.fundNet || 0)}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Transactions List */}
@@ -417,8 +414,9 @@ export default function Funds() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="live">Live</SelectItem>
+                {playTypeOrder.map((type) => (
+                  <SelectItem key={type} value={type}>{type === "online" ? "Online" : "Live"}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

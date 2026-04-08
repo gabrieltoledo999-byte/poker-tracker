@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Monte Carlo icon">
+  <defs>
+    <linearGradient id="mcbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7b1111"/>
+      <stop offset="100%" stop-color="#2b0b17"/>
+    </linearGradient>
+    <linearGradient id="mcgold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4cb80"/>
+      <stop offset="100%" stop-color="#d59a4e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="0" fill="url(#mcbg)"/>
+  <g fill="none" stroke="url(#mcgold)" stroke-width="22" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M140 358 L202 150 L256 232 L310 150 L372 358"/>
+    <path d="M196 358 L256 198 L316 358"/>
+    <path d="M232 326 L281 275"/>
+  </g>
+</svg>

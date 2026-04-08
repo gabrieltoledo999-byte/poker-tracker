@@ -1,8 +1,10 @@
-import { and, desc, eq, gte, isNull, lte, sql, sum } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAllRates } from "./currency";
+import { authCompatUserSelect } from "./userCompat";
+import { shouldReplaceAvatar } from "./avatarPersistence";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -30,6 +32,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
+    const existingUser = await db
+      .select({ id: users.id, avatarUrl: users.avatarUrl })
+      .from(users)
+      .where(eq(users.openId, user.openId))
+      .limit(1);
+
+    const currentAvatarUrl = existingUser[0]?.avatarUrl ?? null;
     const values: InsertUser = {
       openId: user.openId,
     };
@@ -41,6 +50,21 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     const assignNullable = (field: TextField) => {
       const value = user[field];
       if (value === undefined) return;
+
+      if (
+        field === "avatarUrl" &&
+        !shouldReplaceAvatar({
+          currentAvatarUrl,
+          incomingAvatarUrl: value,
+          source: "provider-sync",
+        })
+      ) {
+        if (!existingUser.length) {
+          values[field] = value ?? null;
+        }
+        return;
+      }
+
       const normalized = value ?? null;
       values[field] = normalized;
       updateSet[field] = normalized;
@@ -84,7 +108,11 @@ export async function getUserByOpenId(openId: string) {
     return undefined;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
 
   return result.length > 0 ? result[0] : undefined;
 }
@@ -97,7 +125,30 @@ export async function getUserByEmail(email: string) {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const result = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+  const result = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.email, normalizedEmail))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByNickname(nickname: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get user by nickname: database not available");
+    return undefined;
+  }
+
+  const normalizedNickname = nickname.trim().replace(/\s+/g, " ").toLowerCase();
+  if (!normalizedNickname) return undefined;
+
+  const result = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(sql`lower(trim(${users.name})) = ${normalizedNickname}`)
+    .limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -113,19 +164,37 @@ export async function linkUserToGoogle(params: {
 
   const openId = `google_${params.googleSub}`;
 
+  const [existingUser] = await db
+    .select({ avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, params.userId))
+    .limit(1);
+
+  const nextAvatarUrl = shouldReplaceAvatar({
+    currentAvatarUrl: existingUser?.avatarUrl ?? null,
+    incomingAvatarUrl: params.avatarUrl ?? null,
+    source: "provider-sync",
+  })
+    ? params.avatarUrl ?? null
+    : existingUser?.avatarUrl ?? null;
+
   await db.update(users)
     .set({
       openId,
       name: params.name ?? null,
       email: params.email ? params.email.trim().toLowerCase() : null,
-      avatarUrl: params.avatarUrl ?? null,
+      avatarUrl: nextAvatarUrl,
       loginMethod: "google",
       lastSignedIn: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(users.id, params.userId));
 
-  const [updated] = await db.select().from(users).where(eq(users.id, params.userId)).limit(1);
+  const [updated] = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.id, params.userId))
+    .limit(1);
   return updated;
 }
 
@@ -560,11 +629,21 @@ export async function getUserSessions(
       sessionId: sessionTables.sessionId,
       buyIn: sessionTables.buyIn,
       cashOut: sessionTables.cashOut,
+      currency: sessionTables.currency,
       venueId: sessionTables.venueId,
       gameFormat: sessionTables.gameFormat,
     })
     .from(sessionTables)
     .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`));
+
+  const rates = await getAllRates().catch(() => null);
+  const toBrl = (amount: number, currency?: string | null): number => {
+    if (currency === "USD") return Math.round(amount * (rates?.USD?.rate ?? 5.75));
+    if (currency === "CAD") return Math.round(amount * (rates?.CAD?.rate ?? 4.20));
+    if (currency === "JPY") return Math.round(amount * (rates?.JPY?.rate ?? 0.033));
+    if (currency === "CNY") return Math.round(amount * (rates?.CNY?.rate ?? 0.80));
+    return amount;
+  };
 
   const bySession = new Map<number, {
     tableCount: number;
@@ -592,8 +671,8 @@ export async function getUserSessions(
     }
 
     const agg = bySession.get(key)!;
-    const buyIn = row.buyIn ?? 0;
-    const cashOut = row.cashOut ?? 0;
+    const buyIn = toBrl(row.buyIn ?? 0, row.currency);
+    const cashOut = toBrl(row.cashOut ?? 0, row.currency);
     const profit = cashOut - buyIn;
 
     agg.tableCount += 1;
@@ -700,6 +779,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       sessionId: sessionTables.sessionId,
       type: sessionTables.type,
       gameFormat: sessionTables.gameFormat,
+      cashOut: sessionTables.cashOut,
     })
     .from(sessionTables)
     .where(
@@ -710,16 +790,16 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       )
     );
 
-  const tablesBySession = new Map<number, Array<{ type: "online" | "live"; gameFormat: GameFormat }>>();
+  const tablesBySession = new Map<number, Array<{ type: "online" | "live"; gameFormat: GameFormat; cashOut: number | null }>>();
   for (const t of allTables) {
     if (!t.sessionId) continue;
     const sid = Number(t.sessionId);
     if (!tablesBySession.has(sid)) tablesBySession.set(sid, []);
-    tablesBySession.get(sid)!.push({ type: t.type as "online" | "live", gameFormat: t.gameFormat as GameFormat });
+    tablesBySession.get(sid)!.push({ type: t.type as "online" | "live", gameFormat: t.gameFormat as GameFormat, cashOut: t.cashOut ?? 0 });
   }
 
   const hasTableFilter = Boolean(type || gameFormat);
-  const includedSessions: Array<{ session: Session; share: number; matchedTables: number; totalTables: number }> = [];
+  const includedSessions: Array<{ session: Session; share: number; matchedTables: number; matchedItmTables: number; totalTables: number }> = [];
 
   for (const session of allSessions) {
     const tables = tablesBySession.get(session.id) ?? [];
@@ -730,6 +810,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
         session,
         share: 1,
         matchedTables: totalTables,
+        matchedItmTables: tables.filter((t) => (t.cashOut ?? 0) > 0).length,
         totalTables,
       });
       continue;
@@ -744,23 +825,28 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
           session,
           share: 1,
           matchedTables: 1,
+          matchedItmTables: session.cashOut > 0 ? 1 : 0,
           totalTables: 1,
         });
       }
       continue;
     }
 
-    const matchedTables = tables.filter((t) => {
+    const matched = tables.filter((t) => {
       if (type && t.type !== type) return false;
       if (gameFormat && t.gameFormat !== gameFormat) return false;
       return true;
-    }).length;
+    });
+
+    const matchedTables = matched.length;
+    const matchedItmTables = matched.filter((t) => (t.cashOut ?? 0) > 0).length;
 
     if (matchedTables <= 0) continue;
     includedSessions.push({
       session,
       share: matchedTables / totalTables,
       matchedTables,
+      matchedItmTables,
       totalTables,
     });
   }
@@ -776,6 +862,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       winningSessions: 0,
       losingSessions: 0,
       breakEvenSessions: 0,
+      itmCount: 0,
       bestSession: null,
       worstSession: null,
       avgProfit: 0,
@@ -788,6 +875,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   let totalCashOut = 0;
   let totalDuration = 0;
   let totalTables = 0;
+  let itmCount = 0;
   let winningSessions = 0;
   let losingSessions = 0;
   let breakEvenSessions = 0;
@@ -806,8 +894,9 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     totalCashOut += cashOut;
     totalDuration += duration;
     totalTables += row.matchedTables;
+    itmCount += row.matchedItmTables;
 
-    if (profit > 0) winningSessions++;
+    if (row.matchedItmTables > 0) winningSessions++;
     else if (profit < 0) losingSessions++;
     else breakEvenSessions++;
 
@@ -834,10 +923,11 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     winningSessions,
     losingSessions,
     breakEvenSessions,
+    itmCount,
     bestSession,
     worstSession,
     avgProfit: Math.round(totalProfit / includedSessions.length),
-    winRate: Math.round((winningSessions / includedSessions.length) * 100),
+    winRate: totalTables > 0 ? Math.round((itmCount / totalTables) * 100) : 0,
     avgHourlyRate: totalHours > 0 ? Math.round(totalProfit / totalHours) : 0,
   };
 }
@@ -920,7 +1010,7 @@ export async function getStatsByGameFormat(userId: number) {
     formatStats[format].totalProfit += profit;
     formatStats[format].totalBuyIn += session.buyIn;
     formatStats[format].totalDuration += session.durationMinutes;
-    if (profit > 0) formatStats[format].winningSessions++;
+    if (session.cashOut > 0) formatStats[format].winningSessions++;
   }
   
   // Calculate averages
@@ -1086,6 +1176,36 @@ export async function getVenueById(id: number, userId: number): Promise<Venue | 
 export async function initializePresetVenues(userId: number, presets: Array<{ name: string; type: "online" | "live"; logoUrl: string; defaultCurrency?: string; website?: string }>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Legacy cleanup: merge old ClubGG preset into GGPoker.
+  const [legacyClubGg] = await db.select().from(venues)
+    .where(and(eq(venues.userId, userId), eq(venues.isPreset, 1), eq(venues.name, "ClubGG"), eq(venues.type, "online")))
+    .limit(1);
+  const [ggPokerPreset] = await db.select().from(venues)
+    .where(and(eq(venues.userId, userId), eq(venues.isPreset, 1), eq(venues.name, "GGPoker"), eq(venues.type, "online")))
+    .limit(1);
+  if (legacyClubGg) {
+    if (!ggPokerPreset) {
+      await db.update(venues)
+        .set({
+          name: "GGPoker",
+          logoUrl: "/logos/ggpoker.png",
+          website: "https://www.ggpoker.com",
+          updatedAt: new Date(),
+        })
+        .where(eq(venues.id, legacyClubGg.id));
+    } else {
+      await db.update(sessions)
+        .set({ venueId: ggPokerPreset.id })
+        .where(and(eq(sessions.userId, userId), eq(sessions.venueId, legacyClubGg.id)));
+
+      await db.update(sessionTables)
+        .set({ venueId: ggPokerPreset.id })
+        .where(and(eq(sessionTables.userId, userId), eq(sessionTables.venueId, legacyClubGg.id)));
+
+      await db.delete(venues).where(eq(venues.id, legacyClubGg.id));
+    }
+  }
   
   // Get existing preset venues
   const existingPresets = await db.select().from(venues)
@@ -1221,7 +1341,7 @@ export async function getStatsByVenue(userId: number) {
     venueStats[venueId].totalCashOut += cashOutBrl;
     venueStats[venueId].totalProfit += tableProfit;
     venueStats[venueId].totalDuration += durationMin;
-    if (tableProfit > 0) venueStats[venueId].winningTables += 1;
+    if (cashOutBrl > 0) venueStats[venueId].winningTables += 1;
 
     if (!sessionsByVenue.has(venueId)) sessionsByVenue.set(venueId, new Set<number>());
     if (t.sessionId) sessionsByVenue.get(venueId)!.add(Number(t.sessionId));
@@ -1353,8 +1473,195 @@ export async function getUserById(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const [user] = await db.select().from(users).where(eq(users.id, id));
+  const [user] = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
   return user || null;
+}
+
+const SUPPORTED_GAME_FORMATS = new Set([
+  "cash_game",
+  "tournament",
+  "turbo",
+  "hyper_turbo",
+  "sit_and_go",
+  "spin_and_go",
+  "bounty",
+  "satellite",
+  "freeroll",
+  "home_game",
+]);
+
+function parseJsonArray(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((v) => String(v).trim())
+      .filter((v) => v.length > 0)
+      .slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeStringArray(values?: string[] | null): string[] {
+  if (!values) return [];
+  const uniq = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value ?? "").trim();
+    if (!normalized) continue;
+    uniq.add(normalized);
+    if (uniq.size >= 20) break;
+  }
+  return Array.from(uniq);
+}
+
+function normalizeBuyInsToCents(values?: number[] | null): number[] {
+  if (!values) return [];
+  const uniq = new Set<number>();
+  for (const value of values) {
+    const cents = Math.round(Number(value));
+    if (!Number.isFinite(cents) || cents <= 0) continue;
+    uniq.add(cents);
+    if (uniq.size >= 12) break;
+  }
+  return Array.from(uniq).sort((a, b) => a - b);
+}
+
+export type UserOnboardingProfileInput = {
+  preferredPlayType: "online" | "live";
+  preferredPlatforms?: string[];
+  preferredFormats?: string[];
+  preferredBuyIns?: number[];
+  preferredBuyInsOnline?: number[];
+  preferredBuyInsLive?: number[];
+  playsMultiPlatform?: boolean;
+  showInGlobalRanking?: boolean;
+  showInFriendsRanking?: boolean;
+};
+
+export async function updateUserOnboardingProfile(
+  userId: number,
+  input: UserOnboardingProfileInput
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [current] = await db
+    .select({
+      showInGlobalRanking: users.showInGlobalRanking,
+      showInFriendsRanking: users.showInFriendsRanking,
+      rankingConsentAnsweredAt: users.rankingConsentAnsweredAt,
+      playsMultiPlatform: users.playsMultiPlatform,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const preferredPlatforms = normalizeStringArray(input.preferredPlatforms);
+  const preferredFormats = normalizeStringArray(input.preferredFormats);
+  const preferredBuyIns = normalizeBuyInsToCents(input.preferredBuyIns);
+  const preferredBuyInsOnline = normalizeBuyInsToCents(input.preferredBuyInsOnline);
+  const preferredBuyInsLive = normalizeBuyInsToCents(input.preferredBuyInsLive);
+  const showInGlobalRanking = input.showInGlobalRanking
+    ?? (current?.showInGlobalRanking === 1);
+  const showInFriendsRanking = input.showInFriendsRanking
+    ?? (current?.showInFriendsRanking === 1);
+  const rankingConsentTouched = input.showInGlobalRanking !== undefined || input.showInFriendsRanking !== undefined;
+
+  const fallbackOnline = input.preferredPlayType === "online" ? preferredBuyIns : [];
+  const fallbackLive = input.preferredPlayType === "live" ? preferredBuyIns : [];
+
+  await db
+    .update(users)
+    .set({
+      preferredPlayType: input.preferredPlayType,
+      preferredPlatforms: JSON.stringify(preferredPlatforms),
+      preferredFormats: JSON.stringify(preferredFormats),
+      preferredBuyIns: JSON.stringify(preferredBuyIns),
+      preferredBuyInsOnline: JSON.stringify(preferredBuyInsOnline.length > 0 ? preferredBuyInsOnline : fallbackOnline),
+      preferredBuyInsLive: JSON.stringify(preferredBuyInsLive.length > 0 ? preferredBuyInsLive : fallbackLive),
+      playsMultiPlatform: input.playsMultiPlatform === undefined
+        ? (current?.playsMultiPlatform ?? 0)
+        : (input.playsMultiPlatform ? 1 : 0),
+      showInGlobalRanking: showInGlobalRanking ? 1 : 0,
+      showInFriendsRanking: showInFriendsRanking ? 1 : 0,
+      rankingConsentAnsweredAt: rankingConsentTouched
+        ? new Date()
+        : (current?.rankingConsentAnsweredAt ?? null),
+      playStyleAnsweredAt: new Date(),
+      onboardingCompletedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+
+  const [user] = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return user ?? null;
+}
+
+export async function getUserOnboardingProfile(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [user] = await db
+    .select({
+      preferredPlayType: users.preferredPlayType,
+      preferredPlatforms: users.preferredPlatforms,
+      preferredFormats: users.preferredFormats,
+      preferredBuyIns: users.preferredBuyIns,
+      preferredBuyInsOnline: users.preferredBuyInsOnline,
+      preferredBuyInsLive: users.preferredBuyInsLive,
+      playsMultiPlatform: users.playsMultiPlatform,
+      showInGlobalRanking: users.showInGlobalRanking,
+      showInFriendsRanking: users.showInFriendsRanking,
+      rankingConsentAnsweredAt: users.rankingConsentAnsweredAt,
+      playStyleAnsweredAt: users.playStyleAnsweredAt,
+      onboardingCompletedAt: users.onboardingCompletedAt,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!user) return null;
+
+  return {
+    preferredPlayType: (user.preferredPlayType as "online" | "live" | null) ?? null,
+    preferredPlatforms: parseJsonArray(user.preferredPlatforms),
+    preferredFormats: parseJsonArray(user.preferredFormats),
+    preferredBuyIns: parseJsonArray(user.preferredBuyIns)
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0),
+    preferredBuyInsOnline: parseJsonArray(user.preferredBuyInsOnline)
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0),
+    preferredBuyInsLive: parseJsonArray(user.preferredBuyInsLive)
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0),
+    playsMultiPlatform: user.playsMultiPlatform === 1,
+    showInGlobalRanking: user.showInGlobalRanking === 1,
+    showInFriendsRanking: user.showInFriendsRanking === 1,
+    rankingConsentAnsweredAt: user.rankingConsentAnsweredAt,
+    playStyleAnsweredAt: user.playStyleAnsweredAt,
+    onboardingCompletedAt: user.onboardingCompletedAt,
+  };
+}
+
+export async function updateUserPreferredPlayType(
+  userId: number,
+  preferredPlayType: "online" | "live"
+) {
+  return updateUserOnboardingProfile(userId, {
+    preferredPlayType,
+  });
 }
 
 export async function updateUserAvatar(userId: number, avatarUrl: string): Promise<void> {
@@ -1370,7 +1677,11 @@ export async function getUserInviteCode(userId: number): Promise<string> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const [user] = await db
+    .select({ inviteCode: users.inviteCode })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
   
   if (user?.inviteCode) {
     return user.inviteCode;
@@ -1389,7 +1700,11 @@ export async function getUserByInviteCode(code: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const [user] = await db.select().from(users).where(eq(users.inviteCode, code));
+  const [user] = await db
+    .select(authCompatUserSelect)
+    .from(users)
+    .where(eq(users.inviteCode, code))
+    .limit(1);
   return user || null;
 }
 
@@ -1508,7 +1823,7 @@ export async function getFundTransactionsTotals(userId: number) {
 // ============================================================
 // RANKING helpers
 // ============================================================
-import { posts, postLikes, postComments, friendships, Post, PostComment } from "../drizzle/schema";
+import { posts, postLikes, postComments, postReactions, friendships, friendRequests, Post, PostComment } from "../drizzle/schema";
 import { count } from "drizzle-orm";
 
 export async function getLeaderboard(currentUserId: number, friendsOnly: boolean = false) {
@@ -1526,8 +1841,23 @@ export async function getLeaderboard(currentUserId: number, friendsOnly: boolean
     if (userIds.length === 0) return [];
   }
 
-  const allUsers = await db.select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl }).from(users);
-  const targetUsers = friendsOnly ? allUsers.filter((u) => userIds.includes(u.id)) : allUsers;
+  const allUsers = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+      showInGlobalRanking: users.showInGlobalRanking,
+      showInFriendsRanking: users.showInFriendsRanking,
+      rankingConsentAnsweredAt: users.rankingConsentAnsweredAt,
+    })
+    .from(users);
+
+  const targetUsers = allUsers.filter((user) => {
+    if (friendsOnly) {
+      return userIds.includes(user.id) && user.showInFriendsRanking === 1 && user.rankingConsentAnsweredAt !== null;
+    }
+    return user.showInGlobalRanking === 1 && user.rankingConsentAnsweredAt !== null;
+  });
 
   const results = await Promise.all(
     targetUsers.map(async (user) => {
@@ -1539,10 +1869,10 @@ export async function getLeaderboard(currentUserId: number, friendsOnly: boolean
         userId: user.id,
         name: user.name ?? "Jogador",
         avatarUrl: user.avatarUrl,
-        totalProfit,
         roi,
         winRate: stats.winRate ?? 0,
         bestSession: stats.bestSession ?? 0,
+        worstSession: stats.worstSession ?? 0,
         totalSessions: stats.totalSessions ?? 0,
       };
     })
@@ -1568,6 +1898,248 @@ export async function addFriendship(userId: number, friendId: number): Promise<v
   await db.insert(friendships).ignore().values({ userId: friendId, friendId: userId });
 }
 
+async function hasFriendship(userId: number, friendId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const existing = await db
+    .select({ id: friendships.id })
+    .from(friendships)
+    .where(
+      or(
+        and(eq(friendships.userId, userId), eq(friendships.friendId, friendId)),
+        and(eq(friendships.userId, friendId), eq(friendships.friendId, userId))
+      )
+    )
+    .limit(1);
+
+  return existing.length > 0;
+}
+
+export async function sendFriendRequest(requesterId: number, receiverId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (requesterId === receiverId) {
+    throw new Error("Você não pode enviar pedido para si mesmo.");
+  }
+
+  const alreadyFriends = await hasFriendship(requesterId, receiverId);
+  if (alreadyFriends) {
+    throw new Error("Vocês já são amigos.");
+  }
+
+  const reversePending = await db
+    .select()
+    .from(friendRequests)
+    .where(
+      and(
+        eq(friendRequests.requesterId, receiverId),
+        eq(friendRequests.receiverId, requesterId),
+        eq(friendRequests.status, "pending")
+      )
+    )
+    .limit(1);
+
+  if (reversePending.length > 0) {
+    throw new Error("Este usuário já te enviou um pedido. Abra Pedidos recebidos para aceitar.");
+  }
+
+  const existingPending = await db
+    .select()
+    .from(friendRequests)
+    .where(
+      and(
+        eq(friendRequests.requesterId, requesterId),
+        eq(friendRequests.receiverId, receiverId),
+        eq(friendRequests.status, "pending")
+      )
+    )
+    .limit(1);
+
+  if (existingPending.length > 0) {
+    return { status: "pending", requestId: existingPending[0].id } as const;
+  }
+
+  const [inserted] = await db.insert(friendRequests).values({
+    requesterId,
+    receiverId,
+    status: "pending",
+  });
+
+  return { status: "pending", requestId: (inserted as any).insertId as number } as const;
+}
+
+export async function sendFriendRequestByNickname(requesterId: number, nickname: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const normalizedNickname = nickname.trim().replace(/\s+/g, " ").toLowerCase();
+  if (!normalizedNickname) {
+    throw new Error("Nickname inválido.");
+  }
+
+  const target = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(trim(${users.name})) = ${normalizedNickname}`)
+    .limit(1);
+
+  if (target.length === 0) {
+    throw new Error("Nickname não encontrado.");
+  }
+
+  return await sendFriendRequest(requesterId, target[0].id);
+}
+
+export async function getIncomingFriendRequests(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select({
+      id: friendRequests.id,
+      createdAt: friendRequests.createdAt,
+      requester: {
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+      },
+    })
+    .from(friendRequests)
+    .innerJoin(users, eq(friendRequests.requesterId, users.id))
+    .where(and(eq(friendRequests.receiverId, userId), eq(friendRequests.status, "pending")))
+    .orderBy(desc(friendRequests.createdAt));
+}
+
+export async function getOutgoingFriendRequests(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select({
+      id: friendRequests.id,
+      receiverId: friendRequests.receiverId,
+      createdAt: friendRequests.createdAt,
+      receiver: {
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+      },
+    })
+    .from(friendRequests)
+    .innerJoin(users, eq(friendRequests.receiverId, users.id))
+    .where(and(eq(friendRequests.requesterId, userId), eq(friendRequests.status, "pending")))
+    .orderBy(desc(friendRequests.createdAt));
+}
+
+export async function respondToFriendRequest(userId: number, requestId: number, action: "accept" | "reject") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const request = await db
+    .select()
+    .from(friendRequests)
+    .where(and(eq(friendRequests.id, requestId), eq(friendRequests.receiverId, userId), eq(friendRequests.status, "pending")))
+    .limit(1);
+
+  if (request.length === 0) {
+    throw new Error("Pedido não encontrado ou já respondido.");
+  }
+
+  const nextStatus = action === "accept" ? "accepted" : "rejected";
+  await db
+    .update(friendRequests)
+    .set({ status: nextStatus, respondedAt: new Date() })
+    .where(eq(friendRequests.id, requestId));
+
+  if (action === "accept") {
+    await addFriendship(request[0].requesterId, request[0].receiverId);
+  }
+
+  return { success: true, status: nextStatus } as const;
+}
+
+export async function cancelFriendRequest(userId: number, requestId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .update(friendRequests)
+    .set({ status: "canceled", respondedAt: new Date() })
+    .where(and(eq(friendRequests.id, requestId), eq(friendRequests.requesterId, userId), eq(friendRequests.status, "pending")));
+
+  return ((result as any)[0]?.affectedRows ?? 0) > 0;
+}
+
+export async function getFriends(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const friendIds = await getFriendIds(userId);
+  if (friendIds.length === 0) return [];
+
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(users)
+    .where(inArray(users.id, friendIds));
+}
+
+export async function searchUsersToAdd(userId: number, query: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const friendIds = await getFriendIds(userId);
+  const pending = await db
+    .select({ requesterId: friendRequests.requesterId, receiverId: friendRequests.receiverId })
+    .from(friendRequests)
+    .where(
+      and(
+        eq(friendRequests.status, "pending"),
+        or(eq(friendRequests.requesterId, userId), eq(friendRequests.receiverId, userId))
+      )
+    );
+
+  const excludedIds = new Set([userId, ...friendIds]);
+  for (const request of pending) {
+    excludedIds.add(request.requesterId);
+    excludedIds.add(request.receiverId);
+  }
+
+  const matches = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      inviteCode: users.inviteCode,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(users)
+    .where(
+      and(
+        ne(users.id, userId),
+        or(
+          like(users.name, `%${normalizedQuery}%`),
+          like(users.email, `%${normalizedQuery}%`),
+          like(users.inviteCode, `%${normalizedQuery.toUpperCase()}%`)
+        )
+      )
+    )
+    .limit(12);
+
+  return matches.filter((user) => !excludedIds.has(user.id));
+}
+
 // ============================================================
 // POSTS helpers
 // ============================================================
@@ -1582,8 +2154,8 @@ export async function createPost(data: {
 }): Promise<Post> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(posts).values(data);
-  const post = await db.select().from(posts).where(eq(posts.id, (result as any).insertId)).limit(1);
+  const [inserted] = await db.insert(posts).values(data).$returningId();
+  const post = await db.select().from(posts).where(eq(posts.id, inserted.id)).limit(1);
   return post[0];
 }
 
@@ -1607,6 +2179,46 @@ export async function getPublicFeed(currentUserId: number, limit: number = 30, o
     .limit(limit)
     .offset(offset);
 
+  const postIds = allPosts.map((item) => item.post.id);
+
+  let reactionRows: Array<{ postId: number; emoji: string; userId: number }> = [];
+  if (postIds.length > 0) {
+    try {
+      reactionRows = await db
+        .select({ postId: postReactions.postId, emoji: postReactions.emoji, userId: postReactions.userId })
+        .from(postReactions)
+        .where(inArray(postReactions.postId, postIds));
+    } catch (err: any) {
+      // During rollout, table may not exist yet. Keep feed working without reactions.
+      if (err?.errno !== 1146 && err?.code !== "ER_NO_SUCH_TABLE") {
+        throw err;
+      }
+    }
+  }
+
+  const reactionSummaryByPost = new Map<number, Array<{ emoji: string; count: number }>>();
+  const myReactionByPost = new Map<number, string | null>();
+
+  const reactionAccumulator = new Map<number, Map<string, number>>();
+  for (const row of reactionRows) {
+    if (!reactionAccumulator.has(row.postId)) {
+      reactionAccumulator.set(row.postId, new Map<string, number>());
+    }
+    const byEmoji = reactionAccumulator.get(row.postId)!;
+    byEmoji.set(row.emoji, (byEmoji.get(row.emoji) ?? 0) + 1);
+
+    if (row.userId === currentUserId) {
+      myReactionByPost.set(row.postId, row.emoji);
+    }
+  }
+
+  Array.from(reactionAccumulator.entries()).forEach(([postId, byEmoji]) => {
+    const summary = Array.from(byEmoji.entries())
+      .map(([emoji, count]) => ({ emoji, count: Number(count) }))
+      .sort((a, b) => b.count - a.count);
+    reactionSummaryByPost.set(postId, summary);
+  });
+
   const enriched = await Promise.all(
     allPosts.map(async (p) => {
       const [likeRow] = await db
@@ -1628,6 +2240,8 @@ export async function getPublicFeed(currentUserId: number, limit: number = 30, o
         likeCount: likeRow?.cnt ?? 0,
         commentCount: commentRow?.cnt ?? 0,
         likedByMe: myLike.length > 0,
+        reactionSummary: reactionSummaryByPost.get(p.post.id) ?? [],
+        myReaction: myReactionByPost.get(p.post.id) ?? null,
       };
     })
   );
@@ -1657,6 +2271,40 @@ export async function toggleLike(postId: number, userId: number): Promise<{ like
     await db.insert(postLikes).values({ postId, userId });
     return { liked: true };
   }
+}
+
+const ALLOWED_POST_REACTIONS = ["🔥", "👏", "😂", "😮", "😢", "🎯"] as const;
+type AllowedPostReaction = (typeof ALLOWED_POST_REACTIONS)[number];
+
+export async function togglePostReaction(postId: number, userId: number, emoji: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (!ALLOWED_POST_REACTIONS.includes(emoji as AllowedPostReaction)) {
+    throw new Error("Reação inválida.");
+  }
+
+  const existing = await db
+    .select({ id: postReactions.id, emoji: postReactions.emoji })
+    .from(postReactions)
+    .where(and(eq(postReactions.postId, postId), eq(postReactions.userId, userId)))
+    .limit(1);
+
+  if (existing.length > 0) {
+    if (existing[0].emoji === emoji) {
+      await db.delete(postReactions)
+        .where(and(eq(postReactions.postId, postId), eq(postReactions.userId, userId)));
+      return { reaction: null as string | null };
+    }
+
+    await db.update(postReactions)
+      .set({ emoji, updatedAt: new Date() })
+      .where(eq(postReactions.id, existing[0].id));
+    return { reaction: emoji };
+  }
+
+  await db.insert(postReactions).values({ postId, userId, emoji });
+  return { reaction: emoji };
 }
 
 export async function getPostComments(postId: number) {
@@ -1885,10 +2533,80 @@ export async function getUserPreferences(userId: number) {
   const db = await getDb();
   if (!db) return null;
 
+  const buildRanking = <T extends string | number>(
+    counts: Record<string, number>,
+    mapValue: (key: string) => T,
+    tieBreaker?: (a: T, b: T) => number,
+  ) => {
+    const entries = Object.entries(counts).filter(([, count]) => count > 0);
+    const total = entries.reduce((sum, [, count]) => sum + count, 0);
+
+    return entries
+      .sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        if (!tieBreaker) return 0;
+        return tieBreaker(mapValue(a[0]), mapValue(b[0]));
+      })
+      .map(([key, count]) => ({
+        value: mapValue(key),
+        count,
+        share: total > 0 ? Number((count / total).toFixed(4)) : 0,
+      }));
+  };
+
+  const buildSeededRanking = <T extends string | number>(values: T[]) => {
+    if (values.length === 0) return [] as Array<{ value: T; count: number; share: number }>;
+    const total = values.length;
+    return values.map((value, index) => ({
+      value,
+      count: total - index,
+      share: Number((1 / total).toFixed(4)),
+    }));
+  };
+
+  const [userProfile] = await db
+    .select({
+      preferredPlayType: users.preferredPlayType,
+      preferredPlatforms: users.preferredPlatforms,
+      preferredFormats: users.preferredFormats,
+      preferredBuyIns: users.preferredBuyIns,
+      preferredBuyInsOnline: users.preferredBuyInsOnline,
+      preferredBuyInsLive: users.preferredBuyInsLive,
+      playsMultiPlatform: users.playsMultiPlatform,
+      onboardingCompletedAt: users.onboardingCompletedAt,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const onboardingType = (userProfile?.preferredPlayType as "online" | "live" | null | undefined) ?? null;
+  const onboardingPlatforms = parseJsonArray(userProfile?.preferredPlatforms);
+  const onboardingFormats = parseJsonArray(userProfile?.preferredFormats);
+  const onboardingBuyIns = parseJsonArray(userProfile?.preferredBuyIns)
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const onboardingBuyInsOnline = parseJsonArray(userProfile?.preferredBuyInsOnline)
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const onboardingBuyInsLive = parseJsonArray(userProfile?.preferredBuyInsLive)
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+
+  const allUserVenues = await db
+    .select({ id: venues.id, name: venues.name })
+    .from(venues)
+    .where(eq(venues.userId, userId));
+
+  const lowerVenueNameToId = new Map(allUserVenues.map((v) => [v.name.trim().toLowerCase(), v.id]));
+  const onboardingVenueIds = onboardingPlatforms
+    .map((name) => lowerVenueNameToId.get(name.trim().toLowerCase()))
+    .filter((id): id is number => typeof id === "number");
+
   // Use individual played tables as source of truth for preferences.
   const recentTables = await db
     .select({
       sessionId: sessionTables.sessionId,
+      startedAt: sessionTables.startedAt,
       type: sessionTables.type,
       gameFormat: sessionTables.gameFormat,
       buyIn: sessionTables.buyIn,
@@ -1901,13 +2619,76 @@ export async function getUserPreferences(userId: number) {
     .orderBy(desc(sessionTables.startedAt))
     .limit(200);
 
-  if (recentTables.length === 0) return null;
+  // ABI baselines from the last up to 100 tables per type.
+  const onlineAbiTables = recentTables.filter((t) => t.type === "online").slice(0, 100);
+  const liveAbiTables = recentTables.filter((t) => t.type === "live").slice(0, 100);
+  const abiOnlineAvgBuyIn = onlineAbiTables.length > 0
+    ? Math.round(onlineAbiTables.reduce((sum, t) => sum + (t.buyIn ?? 0), 0) / onlineAbiTables.length)
+    : 0;
+  const abiLiveAvgBuyIn = liveAbiTables.length > 0
+    ? Math.round(liveAbiTables.reduce((sum, t) => sum + (t.buyIn ?? 0), 0) / liveAbiTables.length)
+    : 0;
+  const abiOnlineSampleSize = onlineAbiTables.length;
+  const abiLiveSampleSize = liveAbiTables.length;
+
+  if (recentTables.length === 0) {
+    const preferredType = onboardingType ?? "online";
+    const seededFormats = onboardingFormats.filter((f) => SUPPORTED_GAME_FORMATS.has(f));
+    const seededBuyInsBase = preferredType === "live"
+      ? (onboardingBuyInsLive.length > 0 ? onboardingBuyInsLive : onboardingBuyIns)
+      : (onboardingBuyInsOnline.length > 0 ? onboardingBuyInsOnline : onboardingBuyIns);
+    const seededBuyIns = seededBuyInsBase.slice(0, 5);
+    const typeRanking = buildSeededRanking([preferredType]);
+    const gameFormatRanking = buildSeededRanking(seededFormats);
+    const venueRanking = buildSeededRanking(onboardingVenueIds);
+    const buyInRankingOnline = buildSeededRanking(onboardingBuyInsOnline.length > 0 ? onboardingBuyInsOnline : seededBuyIns.filter((value) => value > 0));
+    const buyInRankingLive = buildSeededRanking(onboardingBuyInsLive);
+    const buyInRanking = preferredType === "live"
+      ? (buyInRankingLive.length > 0 ? buyInRankingLive : buildSeededRanking(seededBuyIns))
+      : (buyInRankingOnline.length > 0 ? buyInRankingOnline : buildSeededRanking(seededBuyIns));
+    return {
+      totalSessions: 0,
+      totalTables: 0,
+      preferredType,
+      preferredGameFormats: seededFormats,
+      preferredVenueIds: onboardingVenueIds,
+      preferredBuyIns: seededBuyIns,
+      preferredBuyInsOnline: buyInRankingOnline.map((entry) => entry.value).slice(0, 8),
+      preferredBuyInsLive: buyInRankingLive.map((entry) => entry.value).slice(0, 8),
+      preferredGameTypes: [],
+      preferredCurrency: preferredType === "online" ? "USD" : "BRL",
+      typeRanking,
+      gameFormatRanking,
+      venueRanking,
+      buyInRanking,
+      buyInRankingOnline,
+      buyInRankingLive,
+      gameTypeRanking: [],
+      currencyRanking: buildSeededRanking([preferredType === "online" ? "USD" : "BRL"]),
+      recentCombos: [],
+      isOnlinePlayer: preferredType === "online",
+      onboardingPreferredType: onboardingType,
+      onboardingPreferredPlatforms: onboardingPlatforms,
+      onboardingPreferredFormats: onboardingFormats,
+      onboardingPreferredBuyIns: onboardingBuyIns,
+      onboardingPreferredBuyInsOnline: onboardingBuyInsOnline,
+      onboardingPreferredBuyInsLive: onboardingBuyInsLive,
+      onboardingPlaysMultiPlatform: userProfile?.playsMultiPlatform === 1,
+      onboardingCompletedAt: userProfile?.onboardingCompletedAt ?? null,
+      abiOnlineAvgBuyIn,
+      abiLiveAvgBuyIn,
+      abiOnlineSampleSize,
+      abiLiveSampleSize,
+    };
+  }
 
   // Count frequencies
   const typeCount: Record<string, number> = {};
   const gameFormatCount: Record<string, number> = {};
   const venueCount: Record<number, number> = {};
   const buyInCount: Record<number, number> = {};
+  const buyInCountOnline: Record<number, number> = {};
+  const buyInCountLive: Record<number, number> = {};
   const gameTypeCount: Record<string, number> = {};
   const currencyCount: Record<string, number> = {};
 
@@ -1918,10 +2699,15 @@ export async function getUserPreferences(userId: number) {
     if (s.gameFormat) gameFormatCount[s.gameFormat] = (gameFormatCount[s.gameFormat] || 0) + 1;
     // Venue
     if (s.venueId) venueCount[s.venueId] = (venueCount[s.venueId] || 0) + 1;
-    // Buy-in (rounded to nearest common value)
+    // Buy-in (keep exact cents so recurrent stakes like $0.50 stay precise)
     if (s.buyIn > 0) {
-      const rounded = Math.round(s.buyIn / 500) * 500; // round to nearest R$5
-      buyInCount[rounded] = (buyInCount[rounded] || 0) + 1;
+      buyInCount[s.buyIn] = (buyInCount[s.buyIn] || 0) + 1;
+      if (s.type === "online") {
+        buyInCountOnline[s.buyIn] = (buyInCountOnline[s.buyIn] || 0) + 1;
+      }
+      if (s.type === "live") {
+        buyInCountLive[s.buyIn] = (buyInCountLive[s.buyIn] || 0) + 1;
+      }
     }
     // Game type (NL Hold'em, PLO, etc.)
     if (s.gameType) gameTypeCount[s.gameType] = (gameTypeCount[s.gameType] || 0) + 1;
@@ -1929,13 +2715,66 @@ export async function getUserPreferences(userId: number) {
     if (s.currency) currencyCount[s.currency] = (currencyCount[s.currency] || 0) + 1;
   }
 
+  // Bootstrap early intelligence with onboarding answer when history is still small.
+  if (onboardingType) {
+    typeCount[onboardingType] = (typeCount[onboardingType] || 0) + 3;
+  }
+  for (const format of onboardingFormats) {
+    if (SUPPORTED_GAME_FORMATS.has(format)) {
+      gameFormatCount[format] = (gameFormatCount[format] || 0) + 3;
+    }
+  }
+  for (const venueId of onboardingVenueIds) {
+    venueCount[venueId] = (venueCount[venueId] || 0) + 3;
+  }
+  const boostedBuyIns = [
+    ...onboardingBuyIns,
+    ...onboardingBuyInsOnline,
+    ...onboardingBuyInsLive,
+  ];
+  for (const buyIn of boostedBuyIns) {
+    buyInCount[buyIn] = (buyInCount[buyIn] || 0) + 2;
+  }
+  for (const buyIn of onboardingBuyInsOnline) {
+    buyInCountOnline[buyIn] = (buyInCountOnline[buyIn] || 0) + 2;
+  }
+  for (const buyIn of onboardingBuyInsLive) {
+    buyInCountLive[buyIn] = (buyInCountLive[buyIn] || 0) + 2;
+  }
+  if (onboardingType === "online") {
+    for (const buyIn of onboardingBuyIns) {
+      buyInCountOnline[buyIn] = (buyInCountOnline[buyIn] || 0) + 1;
+    }
+  }
+  if (onboardingType === "live") {
+    for (const buyIn of onboardingBuyIns) {
+      buyInCountLive[buyIn] = (buyInCountLive[buyIn] || 0) + 1;
+    }
+  }
+
   // Sort by frequency descending
-  const preferredType = Object.entries(typeCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
-  const preferredGameFormats = Object.entries(gameFormatCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
-  const preferredVenueIds = Object.entries(venueCount).sort((a, b) => b[1] - a[1]).map(([k]) => Number(k));
-  const preferredBuyIns = Object.entries(buyInCount).sort((a, b) => b[1] - a[1]).map(([k]) => Number(k));
-  const preferredGameTypes = Object.entries(gameTypeCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
-  const preferredCurrency = Object.entries(currencyCount).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const typeRanking = buildRanking(typeCount, (key) => key, (a, b) => String(a).localeCompare(String(b)));
+  const gameFormatRanking = buildRanking(gameFormatCount, (key) => key, (a, b) => String(a).localeCompare(String(b)));
+  const venueRanking = buildRanking(venueCount as Record<string, number>, (key) => Number(key), (a, b) => Number(a) - Number(b));
+  const buyInRanking = buildRanking(buyInCount as Record<string, number>, (key) => Number(key), (a, b) => Number(a) - Number(b));
+  const buyInRankingOnline = buildRanking(buyInCountOnline as Record<string, number>, (key) => Number(key), (a, b) => Number(a) - Number(b));
+  const buyInRankingLive = buildRanking(buyInCountLive as Record<string, number>, (key) => Number(key), (a, b) => Number(a) - Number(b));
+  const gameTypeRanking = buildRanking(gameTypeCount, (key) => key, (a, b) => String(a).localeCompare(String(b)));
+  const currencyRanking = buildRanking(currencyCount, (key) => key, (a, b) => String(a).localeCompare(String(b)));
+
+  const preferredType = typeRanking.map((entry) => entry.value);
+  const preferredGameFormats = gameFormatRanking.map((entry) => entry.value);
+  const preferredVenueIds = venueRanking.map((entry) => entry.value);
+  const preferredBuyInsAll = buyInRanking.map((entry) => entry.value);
+  const preferredBuyInsOnline = buyInRankingOnline.map((entry) => entry.value);
+  const preferredBuyInsLive = buyInRankingLive.map((entry) => entry.value);
+  const preferredGameTypes = gameTypeRanking.map((entry) => entry.value);
+  const preferredCurrency = currencyRanking.map((entry) => entry.value);
+
+  const primaryType = (preferredType[0] as "online" | "live" | undefined) ?? "online";
+  const preferredBuyIns = (primaryType === "live" ? preferredBuyInsLive : preferredBuyInsOnline).length > 0
+    ? (primaryType === "live" ? preferredBuyInsLive : preferredBuyInsOnline)
+    : preferredBuyInsAll;
 
   // Last 5 unique combinations used (for "quick repeat" suggestions)
   const seen = new Set<string>();
@@ -1971,14 +2810,36 @@ export async function getUserPreferences(userId: number) {
   return {
     totalSessions: uniqueSessionIds.size,
     totalTables: recentTables.length,
-    preferredType: preferredType[0] || "online",
+    preferredType: primaryType,
     preferredGameFormats,
     preferredVenueIds,
-    preferredBuyIns: preferredBuyIns.slice(0, 5),
+    preferredBuyIns: preferredBuyIns.slice(0, 8),
+    preferredBuyInsOnline: preferredBuyInsOnline.slice(0, 8),
+    preferredBuyInsLive: preferredBuyInsLive.slice(0, 8),
     preferredGameTypes,
     preferredCurrency: preferredCurrency[0] || "BRL",
+    typeRanking,
+    gameFormatRanking,
+    venueRanking,
+    buyInRanking,
+    buyInRankingOnline,
+    buyInRankingLive,
+    gameTypeRanking,
+    currencyRanking,
     recentCombos,
     isOnlinePlayer: (typeCount["online"] || 0) >= (typeCount["live"] || 0),
+    onboardingPreferredType: onboardingType,
+    onboardingPreferredPlatforms: onboardingPlatforms,
+    onboardingPreferredFormats: onboardingFormats,
+    onboardingPreferredBuyIns: onboardingBuyIns,
+    onboardingPreferredBuyInsOnline: onboardingBuyInsOnline,
+    onboardingPreferredBuyInsLive: onboardingBuyInsLive,
+    onboardingPlaysMultiPlatform: userProfile?.playsMultiPlatform === 1,
+    onboardingCompletedAt: userProfile?.onboardingCompletedAt ?? null,
+    abiOnlineAvgBuyIn,
+    abiLiveAvgBuyIn,
+    abiOnlineSampleSize,
+    abiLiveSampleSize,
   };
 }
 
@@ -2026,6 +2887,20 @@ export async function updateSessionTable(
 ): Promise<SessionTable | null> {
   const db = await getDb();
   if (!db) return null;
+
+  const [current] = await db
+    .select()
+    .from(sessionTables)
+    .where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)))
+    .limit(1);
+  if (!current) return null;
+
+  const isFinalizingTable = data.cashOut !== undefined || data.endedAt !== undefined;
+  const resultingVenueId = data.venueId !== undefined ? data.venueId : current.venueId;
+  if (isFinalizingTable && !resultingVenueId) {
+    throw new Error("Defina a plataforma/local da mesa antes de finalizar.");
+  }
+
   await db.update(sessionTables).set({ ...data, updatedAt: new Date() }).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
   const [row] = await db.select().from(sessionTables).where(eq(sessionTables.id, id)).limit(1);
   return row ?? null;
@@ -2085,6 +2960,11 @@ export async function finalizeActiveSession(
     // No tables — just delete the active session
     await db.delete(activeSessions).where(eq(activeSessions.id, activeSessionId));
     return null;
+  }
+
+  const tablesWithoutVenue = tables.filter((t) => !t.venueId);
+  if (tablesWithoutVenue.length > 0) {
+    throw new Error("Não é possível finalizar sessão com mesas sem plataforma/local definido.");
   }
 
   const now = new Date();

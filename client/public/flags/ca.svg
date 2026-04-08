@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Canada flag</title>
+  <rect width="64" height="64" rx="32" fill="#fff"/>
+  <clipPath id="ca-circle">
+    <rect width="64" height="64" rx="32"/>
+  </clipPath>
+  <g clip-path="url(#ca-circle)">
+    <rect width="14" height="64" fill="#d52b1e"/>
+    <rect x="50" width="14" height="64" fill="#d52b1e"/>
+    <path fill="#d52b1e" d="M32 14l3 8 7-2-4 7 7 4-8 2 2 8-7-4-7 4 2-8-8-2 7-4-4-7 7 2z"/>
+    <rect x="29.5" y="37" width="5" height="10" fill="#d52b1e"/>
+  </g>
+</svg>

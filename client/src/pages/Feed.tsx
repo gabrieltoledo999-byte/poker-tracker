@@ -19,6 +19,9 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Crown,
+  Flame,
+  Swords,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -184,9 +187,11 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
         </div>
 
         {/* Content */}
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words mb-3">
-          {post.content}
-        </p>
+        {post.content?.trim() && (
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words mb-3">
+            {post.content}
+          </p>
+        )}
 
         {/* Image */}
         {post.imageUrl && (
@@ -239,6 +244,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imageMime, setImageMime] = useState<string>("image/jpeg");
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
@@ -254,9 +260,12 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
     onError: () => toast.error("Erro ao publicar post"),
   });
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processImageFile = (file: File) => {
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Somente imagens são suportadas.");
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Imagem muito grande (máx. 5MB)");
       return;
@@ -272,31 +281,97 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
     reader.readAsDataURL(file);
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processImageFile(file);
+  };
+
+  const handlePasteImage = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items?.length) return;
+
+    for (const item of Array.from(items)) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          processImageFile(file);
+          return;
+        }
+      }
+    }
+  };
+
+  const handleDropImage = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingImage(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    processImageFile(file);
+  };
+
   const handleSubmit = async () => {
-    if (!content.trim()) return;
+    const trimmedContent = content.trim();
+    if (!trimmedContent && !imageBase64) return;
     let imageUrl: string | undefined;
     let imageKey: string | undefined;
     if (imageBase64) {
-      const uploaded = await uploadImage.mutateAsync({
-        base64: imageBase64,
-        mimeType: imageMime,
-      });
-      imageUrl = uploaded.url;
-      imageKey = uploaded.key;
+      try {
+        const uploaded = await uploadImage.mutateAsync({
+          base64: imageBase64,
+          mimeType: imageMime,
+        });
+        imageUrl = uploaded.url;
+        imageKey = uploaded.key;
+      } catch (error: any) {
+        const message =
+          typeof error?.message === "string" && error.message.trim().length > 0
+            ? error.message
+            : "Falha ao enviar imagem. Verifique a configuração de armazenamento.";
+        toast.error(message);
+        return;
+      }
     }
-    createPost.mutate({ content: content.trim(), visibility, imageUrl, imageKey });
+    createPost.mutate({ content: trimmedContent, visibility, imageUrl, imageKey });
   };
 
   return (
     <Card>
-      <CardContent className="p-4 space-y-3">
+      <CardContent
+        className={`p-4 space-y-3 transition-colors ${isDraggingImage ? "rounded-lg border border-dashed border-primary/60 bg-primary/5" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingImage(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingImage(false);
+        }}
+        onDrop={handleDropImage}
+      >
         <Textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
+          onPaste={handlePasteImage}
           placeholder="Compartilhe um resultado, uma mão interessante ou uma conquista..."
           className="min-h-[80px] resize-none"
           maxLength={1000}
         />
+
+        {isDraggingImage && (
+          <div className="rounded-md border border-dashed border-primary/40 bg-background/80 p-3 text-center text-xs text-muted-foreground">
+            Solte a imagem aqui para anexar ao post
+          </div>
+        )}
 
         {imagePreview && (
           <div className="relative inline-block">
@@ -361,7 +436,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={!content.trim() || createPost.isPending || uploadImage.isPending}
+            disabled={(!content.trim() && !imageBase64) || createPost.isPending || uploadImage.isPending}
             className="gap-1.5"
           >
             <Send className="h-4 w-4" />
@@ -376,6 +451,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
 export default function Feed() {
   const { user } = useAuth();
   const { data: posts, isLoading } = trpc.feed.list.useQuery();
+  const { data: globalHandPatternStats, isLoading: loadingGlobalHandStats } = trpc.feed.handPatternStats.useQuery({ limit: 10, minHands: 6 });
 
   if (!user) return null;
 
@@ -394,6 +470,61 @@ export default function Feed() {
 
       {/* New post */}
       <NewPostForm currentUserId={user.id} />
+
+      {/* Ranking global compartilhado KK/JJ */}
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold flex items-center gap-1.5">
+              <Crown className="h-4 w-4 text-amber-500" />
+              Ranking Global KK/JJ
+            </h2>
+            <Badge variant="secondary" className="text-[10px]">Compartilhado entre players</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">Mínimo de 6 mãos registradas para entrar no ranking.</p>
+
+          {loadingGlobalHandStats ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
+            <div className="space-y-2">
+              {globalHandPatternStats.map((player: any, idx: number) => (
+                <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarImage src={player.avatarUrl ?? undefined} />
+                      <AvatarFallback className="text-[10px] font-semibold">
+                        {(player.name ?? "JP").slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
+                    <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-end gap-1">
+                      <Flame className="h-3 w-3 text-amber-500" /> KK {player.kk?.winRate ?? 0}%
+                      <Swords className="h-3 w-3 text-orange-500 ml-1" /> JJ {player.jj?.winRate ?? 0}%
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-xs text-muted-foreground rounded-lg border border-dashed border-border/50">
+              Sem ranking elegível ainda. Registre mãos KK/JJ para aparecer aqui.
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Posts */}
       {isLoading ? (

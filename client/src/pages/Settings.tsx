@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy } from "lucide-react";
 import { useTheme, ACCENT_COLORS, type AccentColor } from "@/contexts/ThemeContext";
 
 // Helper to format currency
@@ -29,12 +31,131 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const POKER_GENERIC_AVATARS = [
-  "/avatars/poker-generic-1.svg",
-  "/avatars/poker-generic-2.svg",
-  "/avatars/poker-generic-3.svg",
-  "/avatars/poker-generic-4.svg",
+const ALTERNATIVE_AVATAR_GROUPS = [
+  {
+    id: "royal-dark",
+    title: "Royals Sombrios",
+    description: "Cartas clássicas com tema escuro e símbolo de espadas.",
+    items: [
+      { src: "/avatars/alt/ace-spade-dark.png", label: "Ás Sombrio" },
+      { src: "/avatars/alt/king-spade-dark.png", label: "Rei Sombrio" },
+      { src: "/avatars/alt/queen-spade-dark.png", label: "Dama Sombria" },
+      { src: "/avatars/alt/jack-spade-dark.png", label: "Valete Sombrio" },
+    ],
+  },
+  {
+    id: "predators",
+    title: "Predadores",
+    description: "Perfis fortes com assinatura animal e capuz.",
+    items: [
+      { src: "/avatars/alt/wolf-hood-dark.png", label: "Lobo" },
+      { src: "/avatars/alt/lion-hood-ember.png", label: "Leão" },
+      { src: "/avatars/alt/eagle-hood-green.png", label: "Águia" },
+    ],
+  },
+  {
+    id: "anonymous",
+    title: "Anônimos",
+    description: "Perfis discretos, frios e mais misteriosos.",
+    items: [
+      { src: "/avatars/alt/shadow-cap-green.png", label: "Sombra" },
+      { src: "/avatars/alt/faceless-hood-dark.png", label: "Sem Rosto" },
+      { src: "/avatars/alt/shade-hood-blue.png", label: "Óculos" },
+    ],
+  },
+  {
+    id: "royal-feminine",
+    title: "Royals Elegantes",
+    description: "Versões femininas em cores mais marcantes.",
+    items: [
+      { src: "/avatars/alt/ace-queen-pink.png", label: "Ás Rosa" },
+      { src: "/avatars/alt/king-queen-gold.png", label: "Rei Dourado" },
+      { src: "/avatars/alt/queen-queen-violet.png", label: "Dama Violeta" },
+      { src: "/avatars/alt/jack-queen-mint.png", label: "Valete Menta" },
+    ],
+  },
+] as const;
+
+const ALL_PRESET_AVATARS = ALTERNATIVE_AVATAR_GROUPS.flatMap((group) =>
+  group.items.map((item) => item.src)
+);
+
+const POKER_FORMAT_OPTIONS = [
+  { value: "tournament", label: "Torneio" },
+  { value: "cash_game", label: "Cash Game" },
+  { value: "sit_and_go", label: "Sit & Go" },
+  { value: "spin_and_go", label: "Spin & Go" },
+  { value: "turbo", label: "Turbo" },
+  { value: "hyper_turbo", label: "Hyper Turbo" },
+  { value: "bounty", label: "Bounty" },
+  { value: "satellite", label: "Satelite" },
+  { value: "heads_up", label: "Heads-up" },
 ];
+
+const ONLINE_TO_BRL_RATE = 5.75;
+
+const PROFILE_BUY_IN_RANGES = [
+  { key: "r1", minUsdCents: 50, maxUsdCents: 200, valueUsdCents: 100 },
+  { key: "r2", minUsdCents: 220, maxUsdCents: 550, valueUsdCents: 330 },
+  { key: "r3", minUsdCents: 750, maxUsdCents: 1100, valueUsdCents: 930 },
+  { key: "r4", minUsdCents: 1650, maxUsdCents: 2200, valueUsdCents: 1925 },
+  { key: "r5", minUsdCents: 3300, maxUsdCents: 5500, valueUsdCents: 4400 },
+  { key: "r6", minUsdCents: 8200, maxUsdCents: 10900, valueUsdCents: 9550 },
+  { key: "r7", minUsdCents: 16200, maxUsdCents: 21500, valueUsdCents: 18850 },
+  { key: "r8", minUsdCents: 32000, maxUsdCents: 53000, valueUsdCents: 42500 },
+  { key: "r9", minUsdCents: 105000, maxUsdCents: 210000, valueUsdCents: 157500 },
+  { key: "r10", minUsdCents: 210000, maxUsdCents: 520000, valueUsdCents: 365000 },
+] as const;
+
+function formatUsdCents(valueCents: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", maximumFractionDigits: valueCents < 100 ? 2 : 0 }).format(valueCents / 100);
+}
+
+function formatBrlCents(valueCents: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(valueCents / 100);
+}
+
+function getRangeValueByType(rangeKey: string, playType: "online" | "live"): number {
+  const range = PROFILE_BUY_IN_RANGES.find((r) => r.key === rangeKey);
+  if (!range) return 0;
+  if (playType === "online") return range.valueUsdCents;
+  return Math.round(range.valueUsdCents * ONLINE_TO_BRL_RATE);
+}
+
+function getRangeLabelByType(rangeKey: string, playType: "online" | "live"): string {
+  const range = PROFILE_BUY_IN_RANGES.find((r) => r.key === rangeKey);
+  if (!range) return "";
+  if (playType === "online") {
+    return `${formatUsdCents(range.minUsdCents)} - ${formatUsdCents(range.maxUsdCents)}`;
+  }
+  const brlMin = Math.round(range.minUsdCents * ONLINE_TO_BRL_RATE);
+  const brlMax = Math.round(range.maxUsdCents * ONLINE_TO_BRL_RATE);
+  return `${formatBrlCents(brlMin)} - ${formatBrlCents(brlMax)}`;
+}
+
+function getOnlineRangeApproxLabel(rangeKey: string): string {
+  const range = PROFILE_BUY_IN_RANGES.find((r) => r.key === rangeKey);
+  if (!range) return "";
+  const brlMin = Math.round(range.minUsdCents * ONLINE_TO_BRL_RATE);
+  const brlMax = Math.round(range.maxUsdCents * ONLINE_TO_BRL_RATE);
+  return `Aproximacao em BRL: ${formatBrlCents(brlMin)} - ${formatBrlCents(brlMax)}`;
+}
+
+function mapBuyInsToRangeKeys(values: number[], playType: "online" | "live"): string[] {
+  const keys = new Set<string>();
+  for (const value of values) {
+    let closest: { key: string; distance: number } | null = null;
+    for (const range of PROFILE_BUY_IN_RANGES) {
+      const candidate = getRangeValueByType(range.key, playType);
+      const distance = Math.abs(candidate - value);
+      if (!closest || distance < closest.distance) {
+        closest = { key: range.key, distance };
+      }
+    }
+    if (closest) keys.add(closest.key);
+  }
+  return Array.from(keys);
+}
 
 export default function Settings() {
   const { user } = useAuth();
@@ -46,9 +167,20 @@ export default function Settings() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPresetAvatar, setSelectedPresetAvatar] = useState<string | null>(null);
+  const [profilePlayType, setProfilePlayType] = useState<"online" | "live">("online");
+  const [profileFormats, setProfileFormats] = useState<string[]>([]);
+  const [profilePlatforms, setProfilePlatforms] = useState<string[]>([]);
+  const [profileBuyInRangesOnline, setProfileBuyInRangesOnline] = useState<string[]>([]);
+  const [profileBuyInRangesLive, setProfileBuyInRangesLive] = useState<string[]>([]);
+  const [profileMultiPlatform, setProfileMultiPlatform] = useState(false);
+  const [showInGlobalRanking, setShowInGlobalRanking] = useState(false);
+  const [showInFriendsRanking, setShowInFriendsRanking] = useState(false);
+  const [hasProfileChanges, setHasProfileChanges] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: settings, isLoading } = trpc.bankroll.getSettings.useQuery();
+  const { data: onboardingProfile } = trpc.sessions.getOnboardingProfile.useQuery();
+  const { data: venues } = trpc.venues.list.useQuery({});
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.bankroll.updateSettings.useMutation({
@@ -78,13 +210,29 @@ export default function Settings() {
   });
 
   const updateAvatarMutation = trpc.profile.updateAvatar.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await utils.auth.me.invalidate();
       toast.success("Foto de perfil atualizada!");
+      setAvatarUrl(variables.avatarUrl);
+      setAvatarPreview("");
+      setSelectedFile(null);
       setSelectedPresetAvatar(null);
     },
     onError: (error) => {
       toast.error("Erro ao atualizar foto: " + error.message);
+    },
+  });
+
+  const saveProfileMutation = trpc.sessions.saveOnboardingProfile.useMutation({
+    onSuccess: () => {
+      toast.success("Perfil de jogo atualizado!");
+      utils.sessions.getOnboardingProfile.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.auth.me.invalidate();
+      setHasProfileChanges(false);
+    },
+    onError: (error) => {
+      toast.error("Erro ao salvar perfil: " + error.message);
     },
   });
 
@@ -100,6 +248,21 @@ export default function Settings() {
       setAvatarUrl((user as any).avatarUrl);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!onboardingProfile) return;
+    if (onboardingProfile.preferredPlayType === "online" || onboardingProfile.preferredPlayType === "live") {
+      setProfilePlayType(onboardingProfile.preferredPlayType);
+    }
+    setProfileFormats(onboardingProfile.preferredFormats ?? []);
+    setProfilePlatforms(onboardingProfile.preferredPlatforms ?? []);
+    setProfileBuyInRangesOnline(mapBuyInsToRangeKeys(onboardingProfile.preferredBuyInsOnline ?? onboardingProfile.preferredBuyIns ?? [], "online"));
+    setProfileBuyInRangesLive(mapBuyInsToRangeKeys(onboardingProfile.preferredBuyInsLive ?? [], "live"));
+    setProfileMultiPlatform(Boolean(onboardingProfile.playsMultiPlatform));
+    setShowInGlobalRanking(Boolean(onboardingProfile.showInGlobalRanking));
+    setShowInFriendsRanking(Boolean(onboardingProfile.showInFriendsRanking));
+    setHasProfileChanges(false);
+  }, [onboardingProfile]);
 
   const handleOnlineChange = (value: string) => {
     setOnlineBankroll(value);
@@ -145,6 +308,7 @@ export default function Settings() {
     }
 
     setSelectedFile(file);
+    setSelectedPresetAvatar(null);
     
     // Create preview
     const base64 = await fileToBase64(file);
@@ -217,6 +381,83 @@ export default function Settings() {
     updateAvatarMutation.mutate({ avatarUrl: selectedPresetAvatar });
   };
 
+  const toggleProfileFormat = (format: string) => {
+    setProfileFormats((prev) => {
+      const next = prev.includes(format)
+        ? prev.filter((f) => f !== format)
+        : [...prev, format];
+      setHasProfileChanges(true);
+      return next;
+    });
+  };
+
+  const resetAbiQuestionnaire = () => {
+    setProfilePlayType("online");
+    setProfileFormats(["tournament"]);
+    setProfilePlatforms([]);
+    setProfileBuyInRangesOnline([]);
+    setProfileBuyInRangesLive([]);
+    setProfileMultiPlatform(false);
+    setHasProfileChanges(true);
+    toast("Questionario ABI resetado", {
+      description: "Agora voce pode preencher novamente e salvar.",
+    });
+  };
+
+  const toggleProfilePlatform = (platformName: string) => {
+    setProfilePlatforms((prev) => {
+      const next = prev.includes(platformName)
+        ? prev.filter((name) => name !== platformName)
+        : [...prev, platformName];
+      setHasProfileChanges(true);
+      return next;
+    });
+  };
+
+  const toggleProfileBuyIn = (rangeKey: string, playType: "online" | "live") => {
+    const setter = playType === "online" ? setProfileBuyInRangesOnline : setProfileBuyInRangesLive;
+    setter((prev) => {
+      const next = prev.includes(rangeKey)
+        ? prev.filter((value) => value !== rangeKey)
+        : [...prev, rangeKey];
+      setHasProfileChanges(true);
+      return next;
+    });
+  };
+
+  const handleSaveProfile = () => {
+    saveProfileMutation.mutate({
+      preferredPlayType: profilePlayType,
+      preferredFormats: profileFormats,
+      preferredPlatforms: profilePlatforms,
+      preferredBuyIns: (profilePlayType === "online" ? profileBuyInRangesOnline : profileBuyInRangesLive)
+        .map((rangeKey) => getRangeValueByType(rangeKey, profilePlayType))
+        .filter((value) => value > 0),
+      preferredBuyInsOnline: profileBuyInRangesOnline
+        .map((rangeKey) => getRangeValueByType(rangeKey, "online"))
+        .filter((value) => value > 0),
+      preferredBuyInsLive: profileBuyInRangesLive
+        .map((rangeKey) => getRangeValueByType(rangeKey, "live"))
+        .filter((value) => value > 0),
+      playsMultiPlatform: profileMultiPlatform,
+      showInGlobalRanking,
+      showInFriendsRanking,
+    });
+  };
+
+  const profilePlatformOptions = (venues ?? []).filter((venue) => venue.type === profilePlayType);
+
+  const sortedProfileFormatOptions = useMemo(() => {
+    return [...POKER_FORMAT_OPTIONS].sort((a, b) => {
+      const ai = profileFormats.indexOf(a.value);
+      const bi = profileFormats.indexOf(b.value);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [profileFormats]);
+
   const { theme, toggleTheme, accentColor, setAccentColor } = useTheme();
 
   if (isLoading) {
@@ -259,154 +500,335 @@ export default function Settings() {
         <CardContent className="space-y-6">
           <div className="flex flex-col md:flex-row items-start gap-6">
             {/* Avatar Preview */}
-            <div className="relative">
-              <Avatar className="h-24 w-24 border-2 border-primary/20">
-                <AvatarImage src={displayAvatar || undefined} />
+            <div className="relative shrink-0">
+              <Avatar className="h-28 w-28 border-2 border-primary/20 shadow-lg shadow-primary/10">
+                <AvatarImage src={displayAvatar || undefined} className="object-cover" />
                 <AvatarFallback className="text-2xl bg-primary/10">
                   {user?.name?.charAt(0).toUpperCase() || "?"}
                 </AvatarFallback>
               </Avatar>
-              <div className="absolute -bottom-1 -right-1 bg-primary rounded-full p-1.5">
+              <div className="absolute -bottom-1 -right-1 rounded-full bg-primary p-1.5 shadow-md">
                 <Camera className="h-3 w-3 text-primary-foreground" />
               </div>
             </div>
 
-            {/* Upload Area */}
             <div className="flex-1 w-full space-y-4">
               <div>
                 <p className="font-medium">{user?.name || "Usuário"}</p>
                 <p className="text-sm text-muted-foreground">{user?.email || ""}</p>
               </div>
 
-              {/* Drag & Drop Zone */}
-              <div
-                className={`relative border-2 border-dashed rounded-lg p-6 transition-colors cursor-pointer ${
-                  isDragging
-                    ? "border-primary bg-primary/10"
-                    : "border-muted-foreground/25 hover:border-primary/50"
-                }`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileInputChange}
-                />
-                
-                <div className="flex flex-col items-center gap-2 text-center">
-                  <Upload className={`h-8 w-8 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
-                  <div>
-                    <p className="font-medium">
-                      {isDragging ? "Solte a imagem aqui" : "Arraste sua foto aqui"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      ou clique para selecionar (máx. 1MB)
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <Tabs defaultValue="upload" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="upload">Anexar foto</TabsTrigger>
+                  <TabsTrigger value="preset">Escolher avatar</TabsTrigger>
+                </TabsList>
 
-              {/* Selected File Actions */}
-              {selectedFile && (
-                <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{selectedFile.name}</p>
+                <TabsContent value="upload" className="mt-4 space-y-4">
+                  <div
+                    className={`relative rounded-xl border-2 border-dashed p-6 transition-colors cursor-pointer ${
+                      isDragging
+                        ? "border-primary bg-primary/10"
+                        : "border-muted-foreground/25 hover:border-primary/50"
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleFileInputChange}
+                    />
+
+                    <div className="flex flex-col items-center gap-2 text-center">
+                      <Upload className={`h-8 w-8 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                      <div>
+                        <p className="font-medium">
+                          {isDragging ? "Solte a imagem aqui" : "Arraste sua foto aqui"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          ou clique para selecionar. Formato livre, máximo de 1MB.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedFile && (
+                    <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/40 p-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-medium">{selectedFile.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(selectedFile.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      <Button size="sm" variant="ghost" onClick={handleCancelUpload}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" onClick={handleUploadAvatar} disabled={uploadAvatarMutation.isPending}>
+                        <Save className="mr-2 h-4 w-4" />
+                        {uploadAvatarMutation.isPending ? "Enviando..." : "Salvar foto"}
+                      </Button>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="preset" className="mt-4 space-y-5">
+                  {ALTERNATIVE_AVATAR_GROUPS.map((group) => (
+                    <div key={group.id} className="space-y-3">
+                      <div>
+                        <p className="font-medium text-sm">{group.title}</p>
+                        <p className="text-xs text-muted-foreground">{group.description}</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                        {group.items.map((avatar) => {
+                          const isActive = avatarUrl === avatar.src || selectedPresetAvatar === avatar.src;
+                          return (
+                            <button
+                              key={avatar.src}
+                              type="button"
+                              onClick={() => handleSelectPresetAvatar(avatar.src)}
+                              className="group flex flex-col items-center gap-2 text-center"
+                              aria-label={`Selecionar avatar ${avatar.label}`}
+                            >
+                              <span
+                                className={`flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full p-1 transition-all ${
+                                  isActive
+                                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                                    : "hover:scale-[1.03]"
+                                }`}
+                              >
+                                <img
+                                  src={avatar.src}
+                                  alt={avatar.label}
+                                  className="h-16 w-16 rounded-full object-cover shadow-sm"
+                                />
+                              </span>
+                              <span className="text-[11px] leading-tight text-muted-foreground group-hover:text-foreground">
+                                {avatar.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2">
                     <p className="text-xs text-muted-foreground">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
+                      {selectedPresetAvatar && ALL_PRESET_AVATARS.includes(selectedPresetAvatar)
+                        ? "Avatar alternativo selecionado pronto para aplicar."
+                        : "Escolha um avatar alternativo para salvar no perfil."}
                     </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleApplyPresetAvatar}
+                      disabled={!selectedPresetAvatar || updateAvatarMutation.isPending}
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      Usar avatar
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleCancelUpload}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleUploadAvatar}
-                    disabled={uploadAvatarMutation.isPending}
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {uploadAvatarMutation.isPending ? "Enviando..." : "Salvar"}
-                  </Button>
-                </div>
-              )}
-
-              {/* URL Input (alternative) */}
-              <div className="pt-2 border-t space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  Avatares genéricos de poker:
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {POKER_GENERIC_AVATARS.map((avatar, idx) => {
-                    const isActive = avatarUrl === avatar || selectedPresetAvatar === avatar;
-                    return (
-                      <button
-                        key={avatar}
-                        type="button"
-                        onClick={() => handleSelectPresetAvatar(avatar)}
-                        className={`rounded-lg border p-1 transition-all ${
-                          isActive
-                            ? "border-primary ring-2 ring-primary/30"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        aria-label={`Selecionar avatar poker ${idx + 1}`}
-                      >
-                        <img
-                          src={avatar}
-                          alt={`Avatar poker ${idx + 1}`}
-                          className="h-16 w-16 mx-auto rounded-md object-cover"
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleApplyPresetAvatar}
-                    disabled={!selectedPresetAvatar || updateAvatarMutation.isPending}
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    Usar avatar selecionado
-                  </Button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t">
-                <p className="text-xs text-muted-foreground mb-2">
-                  Ou cole a URL de uma imagem:
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    type="url"
-                    placeholder="https://exemplo.com/sua-foto.jpg"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    className="text-sm"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (avatarUrl) {
-                        updateAvatarMutation.mutate({ avatarUrl });
-                      }
-                    }}
-                    disabled={!avatarUrl || updateAvatarMutation.isPending}
-                  >
-                    <Save className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+                </TabsContent>
+              </Tabs>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Monitor className="h-5 w-5 text-primary" />
+            Perfil de Jogo
+          </CardTitle>
+          <CardDescription>
+            Edite as preferencias usadas para ordenar sessoes e mesas desde o inicio, mesmo sem historico.
+          </CardDescription>
+          <div>
+            <Button type="button" variant="outline" size="sm" onClick={resetAbiQuestionnaire}>
+              Refazer Questionario ABI
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Voce joga mais online ou presencial?</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={profilePlayType === "online" ? "default" : "outline"}
+                onClick={() => {
+                  setProfilePlayType("online");
+                  setHasProfileChanges(true);
+                }}
+              >
+                Online
+              </Button>
+              <Button
+                type="button"
+                variant={profilePlayType === "live" ? "default" : "outline"}
+                onClick={() => {
+                  setProfilePlayType("live");
+                  setHasProfileChanges(true);
+                }}
+              >
+                Presencial
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Plataformas/locais mais usados</Label>
+            <div className="flex flex-wrap gap-2">
+              {profilePlatformOptions.map((venue) => (
+                <Button
+                  key={venue.id}
+                  type="button"
+                  size="sm"
+                  className="gap-2"
+                  variant={profilePlatforms.includes(venue.name) ? "default" : "outline"}
+                  onClick={() => toggleProfilePlatform(venue.name)}
+                >
+                  {venue.logoUrl ? (
+                    <img src={venue.logoUrl} alt={venue.name} className="h-4 w-4 object-contain" />
+                  ) : null}
+                  {venue.name}
+                </Button>
+              ))}
+            </div>
+            {profilePlatformOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">Cadastre plataformas na area de Venues para selecionar aqui.</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Formatos principais</Label>
+            <div className="flex flex-wrap gap-2">
+              {sortedProfileFormatOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  size="sm"
+                  variant={profileFormats.includes(option.value) ? "default" : "outline"}
+                  onClick={() => toggleProfileFormat(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Ficha ABI Online</Label>
+            <div className="flex flex-wrap gap-2">
+              {PROFILE_BUY_IN_RANGES.map((range) => (
+                <Tooltip key={range.key}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={profileBuyInRangesOnline.includes(range.key) ? "default" : "outline"}
+                      onClick={() => toggleProfileBuyIn(range.key, "online")}
+                    >
+                      {getRangeLabelByType(range.key, "online")}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{getOnlineRangeApproxLabel(range.key)}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Ficha ABI Live</Label>
+            <div className="flex flex-wrap gap-2">
+              {PROFILE_BUY_IN_RANGES.map((range) => (
+                <Button
+                  key={`live-${range.key}`}
+                  type="button"
+                  size="sm"
+                  variant={profileBuyInRangesLive.includes(range.key) ? "default" : "outline"}
+                  onClick={() => toggleProfileBuyIn(range.key, "live")}
+                >
+                  {getRangeLabelByType(range.key, "live")}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Joga em mais de uma plataforma na mesma sessao?</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={profileMultiPlatform ? "default" : "outline"}
+                onClick={() => {
+                  setProfileMultiPlatform(true);
+                  setHasProfileChanges(true);
+                }}
+              >
+                Sim
+              </Button>
+              <Button
+                type="button"
+                variant={!profileMultiPlatform ? "default" : "outline"}
+                onClick={() => {
+                  setProfileMultiPlatform(false);
+                  setHasProfileChanges(true);
+                }}
+              >
+                Nao
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-primary" />
+              Consentimento de Ranking
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Ranking e opcional. Voce escolhe onde deseja aparecer: global, amigos, ambos ou nenhum.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={showInGlobalRanking ? "default" : "outline"}
+                onClick={() => {
+                  setShowInGlobalRanking((prev) => !prev);
+                  setHasProfileChanges(true);
+                }}
+              >
+                Ranking Global {showInGlobalRanking ? "Ativo" : "Desativado"}
+              </Button>
+              <Button
+                type="button"
+                variant={showInFriendsRanking ? "default" : "outline"}
+                onClick={() => {
+                  setShowInFriendsRanking((prev) => !prev);
+                  setHasProfileChanges(true);
+                }}
+              >
+                Ranking de Amigos {showInFriendsRanking ? "Ativo" : "Desativado"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveProfile}
+              disabled={!hasProfileChanges || saveProfileMutation.isPending}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saveProfileMutation.isPending ? "Salvando..." : "Salvar Perfil de Jogo"}
+            </Button>
           </div>
         </CardContent>
       </Card>

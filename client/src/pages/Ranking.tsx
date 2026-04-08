@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trophy, TrendingUp, Target, DollarSign, Users, Globe } from "lucide-react";
+import { trpc as trpcClient } from "@/lib/trpc";
+import { Globe, ShieldAlert, Trophy, TrendingUp, Target, Users } from "lucide-react";
 
 function formatCurrency(centavos: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -34,8 +35,8 @@ function LeaderboardTable({
 }: {
   data: any[];
   isLoading: boolean;
-  sortBy: "roi" | "winRate" | "bestSession" | "totalProfit";
-  onSortChange: (s: "roi" | "winRate" | "bestSession" | "totalProfit") => void;
+  sortBy: "roi" | "winRate" | "bestSession" | "worstSession";
+  onSortChange: (s: "roi" | "winRate" | "bestSession" | "worstSession") => void;
 }) {
   if (isLoading) {
     return (
@@ -61,14 +62,14 @@ function LeaderboardTable({
     if (sortBy === "roi") return b.roi - a.roi;
     if (sortBy === "winRate") return b.winRate - a.winRate;
     if (sortBy === "bestSession") return b.bestSession - a.bestSession;
-    return b.totalProfit - a.totalProfit;
+    return a.worstSession - b.worstSession;
   });
 
   return (
     <div className="space-y-2">
       {/* Sort buttons */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {(["roi", "winRate", "bestSession", "totalProfit"] as const).map((key) => (
+        {(["roi", "winRate", "bestSession", "worstSession"] as const).map((key) => (
           <Button
             key={key}
             size="sm"
@@ -77,9 +78,9 @@ function LeaderboardTable({
             className="text-xs"
           >
             {key === "roi" && <><Target className="h-3 w-3 mr-1" /> ROI</>}
-            {key === "winRate" && <><TrendingUp className="h-3 w-3 mr-1" /> Win Rate</>}
-            {key === "bestSession" && <><Trophy className="h-3 w-3 mr-1" /> Maior Torneio</>}
-            {key === "totalProfit" && <><DollarSign className="h-3 w-3 mr-1" /> Lucro Total</>}
+            {key === "winRate" && <><TrendingUp className="h-3 w-3 mr-1" /> ITM Rate</>}
+            {key === "bestSession" && <><Trophy className="h-3 w-3 mr-1" /> Melhor Sessão</>}
+            {key === "worstSession" && <><Trophy className="h-3 w-3 mr-1" /> Pior Sessão</>}
           </Button>
         ))}
       </div>
@@ -119,7 +120,7 @@ function LeaderboardTable({
               </p>
             </div>
             <div className="hidden md:block">
-              <p className="text-xs text-muted-foreground">Win Rate</p>
+              <p className="text-xs text-muted-foreground">ITM Rate</p>
               <p className="font-bold text-sm">{formatPercent(player.winRate)}</p>
             </div>
             <div className="hidden lg:block">
@@ -127,9 +128,9 @@ function LeaderboardTable({
               <p className="font-bold text-sm text-chart-1">{formatCurrency(player.bestSession)}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Lucro</p>
-              <p className={`font-bold text-sm ${player.totalProfit >= 0 ? "text-chart-1" : "text-destructive"}`}>
-                {formatCurrency(player.totalProfit)}
+              <p className="text-xs text-muted-foreground">Pior</p>
+              <p className="font-bold text-sm text-destructive">
+                {formatCurrency(player.worstSession)}
               </p>
             </div>
           </div>
@@ -140,7 +141,10 @@ function LeaderboardTable({
 }
 
 export default function Ranking() {
-  const [sortBy, setSortBy] = useState<"roi" | "winRate" | "bestSession" | "totalProfit">("roi");
+  const utils = trpcClient.useUtils();
+  const [sortBy, setSortBy] = useState<"roi" | "winRate" | "bestSession" | "worstSession">("roi");
+  const [showInGlobalRanking, setShowInGlobalRanking] = useState(false);
+  const [showInFriendsRanking, setShowInFriendsRanking] = useState(false);
 
   const { data: globalData, isLoading: loadingGlobal } = trpc.ranking.leaderboard.useQuery(
     { friendsOnly: false }
@@ -148,9 +152,43 @@ export default function Ranking() {
   const { data: friendsData, isLoading: loadingFriends } = trpc.ranking.leaderboard.useQuery(
     { friendsOnly: true }
   );
+  const { data: onboardingProfile } = trpc.sessions.getOnboardingProfile.useQuery();
+
+  const saveConsentMutation = trpc.sessions.saveOnboardingProfile.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.sessions.getOnboardingProfile.invalidate(),
+        utils.ranking.leaderboard.invalidate(),
+      ]);
+    },
+  });
+
+
+  const consentAnswered = Boolean(onboardingProfile?.rankingConsentAnsweredAt);
+
+  useMemo(() => {
+    if (!onboardingProfile) return;
+    setShowInGlobalRanking(Boolean(onboardingProfile.showInGlobalRanking));
+    setShowInFriendsRanking(Boolean(onboardingProfile.showInFriendsRanking));
+  }, [onboardingProfile]);
+
+  const handleSaveConsent = () => {
+    const preferredPlayType = onboardingProfile?.preferredPlayType === "live" ? "live" : "online";
+    saveConsentMutation.mutate({
+      preferredPlayType,
+      preferredPlatforms: onboardingProfile?.preferredPlatforms ?? [],
+      preferredFormats: onboardingProfile?.preferredFormats ?? [],
+      preferredBuyIns: onboardingProfile?.preferredBuyIns ?? [],
+      preferredBuyInsOnline: onboardingProfile?.preferredBuyInsOnline ?? [],
+      preferredBuyInsLive: onboardingProfile?.preferredBuyInsLive ?? [],
+      playsMultiPlatform: onboardingProfile?.playsMultiPlatform ?? false,
+      showInGlobalRanking,
+      showInFriendsRanking,
+    });
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-5">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -158,12 +196,45 @@ export default function Ranking() {
           Ranking
         </h1>
         <p className="text-muted-foreground">
-          Veja quem está dominando as mesas — ROI, Win Rate, maior torneio e lucro total
+          Compare apenas métricas de performance com consentimento explícito: ROI, ITM Rate, melhor sessão e pior sessão.
         </p>
       </div>
 
+      <div className="grid gap-4">
+      <Card className={!consentAnswered ? "border-amber-500/40 bg-amber-50/40" : undefined}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5" /> Consentimento de Ranking
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!consentAnswered && (
+            <p className="text-sm text-muted-foreground">
+              Você ainda não respondeu se quer participar do ranking. Nada deve aparecer automaticamente até essa escolha ser salva.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant={showInGlobalRanking ? "default" : "outline"} onClick={() => setShowInGlobalRanking((prev) => !prev)}>
+              Global {showInGlobalRanking ? "Ativo" : "Desativado"}
+            </Button>
+            <Button type="button" variant={showInFriendsRanking ? "default" : "outline"} onClick={() => setShowInFriendsRanking((prev) => !prev)}>
+              Amigos {showInFriendsRanking ? "Ativo" : "Desativado"}
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button onClick={handleSaveConsent} disabled={saveConsentMutation.isPending}>
+              {saveConsentMutation.isPending ? "Salvando..." : "Salvar consentimento"}
+            </Button>
+            {consentAnswered && (
+              <Badge variant="secondary">Respondido</Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      </div>
+
       <Tabs defaultValue="global">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
           <TabsTrigger value="global" className="gap-2">
             <Globe className="h-4 w-4" /> Global
           </TabsTrigger>

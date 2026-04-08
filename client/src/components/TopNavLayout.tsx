@@ -28,7 +28,9 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { SplashScreen } from "./SplashScreen";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+const FEED_LAST_SEEN_KEY_PREFIX = "feed-last-seen-ms";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Início", path: "/" },
@@ -37,7 +39,7 @@ const menuItems = [
   { icon: Trophy, label: "Ranking", path: "/ranking" },
   { icon: Globe, label: "Feed", path: "/feed" },
   { icon: MapPin, label: "Locais", path: "/venues" },
-  { icon: Users, label: "Convites", path: "/invites" },
+  { icon: Users, label: "Amizades", path: "/invites" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
@@ -45,7 +47,51 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const { loading, user } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [feedLastSeenMs, setFeedLastSeenMs] = useState(0);
   const { theme, toggleTheme } = useTheme();
+
+  const { data: latestFeedPosts } = trpc.feed.list.useQuery(
+    { limit: 1, offset: 0 },
+    {
+      enabled: !!user,
+      refetchInterval: 30000,
+      staleTime: 10000,
+    }
+  );
+
+  const { data: incomingFriendRequests = [] } = trpc.ranking.incomingRequests.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 30000,
+    staleTime: 5000,
+  });
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const key = `${FEED_LAST_SEEN_KEY_PREFIX}:${user.id}`;
+    const savedValue = localStorage.getItem(key);
+    const parsedValue = savedValue ? Number(savedValue) : 0;
+    setFeedLastSeenMs(Number.isFinite(parsedValue) ? parsedValue : 0);
+  }, [user?.id]);
+
+  const latestPost = latestFeedPosts?.[0];
+  const latestPostMs = latestPost?.createdAt ? new Date(latestPost.createdAt).getTime() : 0;
+  const latestPostAuthorId = latestPost?.author?.id;
+  const hasPendingFeedPost =
+    !!user?.id &&
+    location !== "/feed" &&
+    latestPostMs > 0 &&
+    latestPostAuthorId !== user.id &&
+    latestPostMs > feedLastSeenMs;
+  const hasPendingFriendRequest =
+    !!user?.id && location !== "/invites" && incomingFriendRequests.length > 0;
+
+  useEffect(() => {
+    if (!user?.id || location !== "/feed") return;
+    const seenAt = Date.now();
+    const key = `${FEED_LAST_SEEN_KEY_PREFIX}:${user.id}`;
+    localStorage.setItem(key, String(seenAt));
+    setFeedLastSeenMs(seenAt);
+  }, [location, user?.id]);
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => { window.location.href = "/login"; },
@@ -92,6 +138,12 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
               >
                 <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                 <span className="text-base">{item.label}</span>
+                {item.path === "/feed" && hasPendingFeedPost && (
+                  <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" aria-label="Novo post no feed" />
+                )}
+                {item.path === "/invites" && hasPendingFriendRequest && (
+                  <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" aria-label="Novo pedido de amizade" />
+                )}
                 {isActive && <ChevronRight className="h-4 w-4 ml-auto text-primary/60" />}
               </button>
             );
@@ -184,6 +236,12 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                   >
                     <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                     <span className="text-base">{item.label}</span>
+                    {item.path === "/feed" && hasPendingFeedPost && (
+                      <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Novo post no feed" />
+                    )}
+                    {item.path === "/invites" && hasPendingFriendRequest && (
+                      <span className="ml-auto h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Novo pedido de amizade" />
+                    )}
                   </button>
                 );
               })}

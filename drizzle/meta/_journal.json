@@ -120,6 +120,48 @@
       "when": 1775443200000,
       "tag": "0016_hands_premium_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1775529600000,
+      "tag": "0017_initial_play_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1775616000000,
+      "tag": "0018_player_profile_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1775620800000,
+      "tag": "0019_split_abi_online_live",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1775520000000,
+      "tag": "0020_ranking_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1775603266807,
+      "tag": "0021_dusty_mindworm",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1775684889440,
+      "tag": "0022_brainy_black_cat",
+      "breakpoints": true
     }
   ]
 }

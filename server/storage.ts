@@ -15,6 +15,12 @@ function getStorageConfig(): StorageConfig {
     );
   }
 
+  if (apiKey === "placeholder") {
+    throw new Error(
+      "Storage proxy key inválida: configure BUILT_IN_FORGE_API_KEY no ambiente de produção"
+    );
+  }
+
   return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
 }
 

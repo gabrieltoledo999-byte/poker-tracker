@@ -199,13 +199,13 @@ export default function Login() {
               {/* Nome (só no registro) */}
               {mode === "register" && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="name" className="text-sm font-medium">Nome</Label>
+                  <Label htmlFor="name" className="text-sm font-medium">Nickname</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="name"
                       type="text"
-                      placeholder="Seu nome completo"
+                      placeholder="Seu nickname único"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       required

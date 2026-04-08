@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,6 +76,13 @@ const VENUE_COLORS = [
   "#06b6d4","#8b5cf6","#10b981","#f59e0b","#ef4444",
   "#3b82f6","#ec4899","#14b8a6","#f97316","#a855f7",
 ];
+
+const FX_RATE_META = {
+  USD: { label: "Dólar", flagUrl: "/flags/us.svg" },
+  CAD: { label: "Dólar CAD", flagUrl: "/flags/ca.svg" },
+  JPY: { label: "Iene", flagUrl: "/flags/jp.svg" },
+  CNY: { label: "Yuan", flagUrl: "/flags/cn.svg" },
+} as const;
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -170,9 +178,12 @@ function VenueRow({
                 </p>
               </div>
               <div className="bg-muted/20 rounded-lg p-2 text-center">
-                <p className="text-[10px] text-muted-foreground mb-0.5">Win Rate</p>
+                <p className="text-[10px] text-muted-foreground mb-0.5">ITM Rate</p>
                 <p className={`text-sm font-bold ${(stats.winRate || 0) >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
                   {stats.winRate !== null ? `${stats.winRate}%` : "—"}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {(stats.winningTables ?? 0)}/{tableCount}
                 </p>
               </div>
             </div>
@@ -187,6 +198,7 @@ function VenueRow({
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const { preferences: prefs, primaryType, playTypeOrder, sortVenues } = useBehaviorProfile();
   const utils = trpc.useUtils();
   const [chartPeriod, setChartPeriod] = useState<"online" | "live" | "all">("all");
   const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("roi");
@@ -204,7 +216,6 @@ export default function Dashboard() {
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
   const { data: handPatternStats } = trpc.sessions.handPatternStats.useQuery();
-  const { data: globalHandPatternStats } = trpc.feed.handPatternStats.useQuery({ limit: 8, minHands: 6 });
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
   const { data: fxRates } = trpc.currency.getRates.useQuery(undefined, { refetchInterval: 60000 });
@@ -252,12 +263,6 @@ export default function Dashboard() {
     setShowHandsEditModal(true);
   };
 
-  const handRankMap = useMemo(() => {
-    const map = new Map<number, number>();
-    (globalHandPatternStats ?? []).forEach((p: any, idx: number) => map.set(p.userId, idx + 1));
-    return map;
-  }, [globalHandPatternStats]);
-
   const chartData = useMemo(() => {
     if (!history) return [];
     return history.map((p) => ({
@@ -295,6 +300,7 @@ export default function Dashboard() {
     if (onlineVal > 0) {
       result.push({
         name: "Online",
+        type: "online",
         fullName: "Poker Online",
         value: onlineVal / 100,
         color: "#06b6d4",
@@ -304,59 +310,95 @@ export default function Dashboard() {
     if (liveVal > 0) {
       result.push({
         name: "Live",
+        type: "live",
         fullName: "Poker Live",
         value: liveVal / 100,
         color: "#8b5cf6",
         pct: Math.round((liveVal / total) * 100),
       });
     }
-    return result;
-  }, [consolidated]);
+    return [...result].sort((a, b) => playTypeOrder.indexOf(a.type as "online" | "live") - playTypeOrder.indexOf(b.type as "online" | "live"));
+  }, [consolidated, playTypeOrder]);
 
   const perfData = useMemo(() => {
     if (!venueStats) return [];
-    return venueStats
+    const mapped = venueStats
       .filter((v: any) => (v.tables ?? v.sessions) > 0)
-      .slice(0, 8)
       .map((v: any) => ({
+        venueId: v.venueId,
         name: v.venueName.length > 10 ? v.venueName.substring(0, 10) + "…" : v.venueName,
         fullName: v.venueName,
         roi: (v.totalBuyIn ?? 0) > 0 ? parseFloat(((v.totalProfit / v.totalBuyIn) * 100).toFixed(1)) : 0,
         winrate: v.winRate,
+        itmCount: v.winningTables ?? 0,
         sessions: v.sessions,
         tables: v.tables ?? v.sessions,
         profit: v.totalProfit / 100,
         color: v.totalProfit >= 0 ? "#10b981" : "#ef4444",
       }));
-  }, [venueStats]);
+    return sortVenues(mapped, (venue) => venue.venueId).slice(0, 8);
+  }, [sortVenues, venueStats]);
 
   const consolidatedTotal = consolidated?.total.current || 0;
   const consolidatedProfit = consolidated?.total.profit || 0;
-  const consolidatedBase = consolidatedTotal - consolidatedProfit;
-  const consolidatedPct = consolidatedBase > 0 ? (consolidatedProfit / consolidatedBase) * 100 : 0;
+  const roiInvestment = stats?.totalBuyIn ?? 0;
+  const roiProfit = stats?.totalProfit ?? 0;
+  const consolidatedPct = roiInvestment > 0 ? (roiProfit / roiInvestment) * 100 : 0;
+  const hasRoiData = roiInvestment > 0;
   const hasAnyBalance = consolidatedTotal > 0;
   const totalPlayedTables = consolidated?.total.tables ?? 0;
+  const abiOnlineAvg = prefs?.abiOnlineAvgBuyIn ?? 0;
+  const abiLiveAvg = prefs?.abiLiveAvgBuyIn ?? 0;
+  const abiOnlineSample = prefs?.abiOnlineSampleSize ?? 0;
+  const abiLiveSample = prefs?.abiLiveSampleSize ?? 0;
+  const usdToBrl = fxRates?.USD?.rate ?? 5.75;
+  const primaryTypeShare = ((prefs?.typeRanking ?? [])[0]?.share ?? 0) * 100;
+  const topVenueId = (prefs?.venueRanking ?? [])[0]?.value ?? prefs?.preferredVenueIds?.[0] ?? null;
+  const topFormatKey = (prefs?.gameFormatRanking ?? [])[0]?.value ?? prefs?.preferredGameFormats?.[0] ?? null;
+  const topFormatLabel = topFormatKey ? String(topFormatKey).replaceAll("_", " ") : null;
+  const topBuyInValue = primaryType === "online"
+    ? (prefs?.buyInRankingOnline ?? [])[0]?.value ?? prefs?.preferredBuyInsOnline?.[0] ?? 0
+    : (prefs?.buyInRankingLive ?? [])[0]?.value ?? prefs?.preferredBuyInsLive?.[0] ?? 0;
+  const typeSummaryCards = playTypeOrder.map((type) => ({
+    key: type,
+    title: type === "online" ? "Online" : "Live",
+    icon: type === "online" ? Wifi : MapPin,
+    badgeClass: type === "online" ? "text-cyan-400 border-cyan-500/30" : "text-violet-400 border-violet-500/30",
+    gradientClass: type === "online" ? "from-cyan-500 to-blue-600" : "from-violet-500 to-purple-700",
+    editClass: type === "online" ? "text-cyan-400 hover:text-cyan-300" : "text-violet-400 hover:text-violet-300",
+    current: consolidated?.[type].current || 0,
+    profit: consolidated?.[type].profit || 0,
+    tables: consolidated?.[type].tables || 0,
+    onEdit: type === "online" ? () => setShowOnlineModal(true) : () => setShowLiveModal(true),
+  }));
 
-  // Plataformas online (apenas para stats, sem saldo individual)
-  const onlineVenues = useMemo(() => {
+  const prioritizedVenues = useMemo(() => {
     if (!consolidated?.allVenues) return [];
     const statsMap = new Map((venueStats || []).map((s: any) => [s.venueId, s]));
-    return consolidated.allVenues
-      .filter((v: any) => v.type === "online")
-      .map((v: any) => ({
+    const merged = consolidated.allVenues.map((v: any) => ({
         ...v,
         stats: statsMap.get(v.id) || null,
       }));
-  }, [consolidated, venueStats]);
+    const personalized = sortVenues(merged, (venue) => venue.id);
+    return [...personalized].sort((a: any, b: any) => {
+      const typeDelta = playTypeOrder.indexOf(a.type) - playTypeOrder.indexOf(b.type);
+      if (typeDelta !== 0) return typeDelta;
+      const aTables = a.stats?.tables ?? a.stats?.sessions ?? 0;
+      const bTables = b.stats?.tables ?? b.stats?.sessions ?? 0;
+      return bTables - aTables;
+    });
+  }, [consolidated, playTypeOrder, sortVenues, venueStats]);
+  const topVenueName = prioritizedVenues.find((venue: any) => venue.id === topVenueId)?.name ?? null;
 
   const isLoading = loadingStats || loadingHistory || loadingConsolidated;
 
   const rateItems = useMemo(() => {
     if (!fxRates) return [];
     return [
-      { code: "USD", label: "Dólar", rate: fxRates.USD?.rate ?? 0 },
-      { code: "JPY", label: "Iene", rate: fxRates.JPY?.rate ?? 0 },
-      { code: "CNY", label: "Yuan", rate: fxRates.CNY?.rate ?? 0 },
+      { code: "USD", ...FX_RATE_META.USD, rate: fxRates.USD?.rate ?? 0 },
+      { code: "CAD", ...FX_RATE_META.CAD, rate: fxRates.CAD?.rate ?? 0 },
+      { code: "JPY", ...FX_RATE_META.JPY, rate: fxRates.JPY?.rate ?? 0 },
+      { code: "CNY", ...FX_RATE_META.CNY, rate: fxRates.CNY?.rate ?? 0 },
     ].filter((r) => r.rate > 0);
   }, [fxRates]);
 
@@ -381,6 +423,7 @@ export default function Dashboard() {
           <div className="fx-track">
             {[...rateItems, ...rateItems, ...rateItems, ...rateItems].map((item, i) => (
               <div key={`${item.code}-${i}`} className="fx-item">
+                <img className="fx-flag" src={item.flagUrl} alt={`${item.label} flag`} />
                 <span className="fx-code">{item.code}</span>
                 <span className="fx-label">{item.label}</span>
                 <span className="fx-value">R$ {item.rate.toFixed(4)}</span>
@@ -585,58 +628,183 @@ export default function Dashboard() {
           {/* Patrimônio card */}
           <Card className="bg-card/60 border-border/40">
             <CardContent className="p-5">
-              <div className="flex items-start justify-between mb-4">
-                <div>
+              {/* Stack Total + Donut lado a lado */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-5">
+                {/* Lado esquerdo: info */}
+                <div className="flex-1 min-w-0">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Stack Total</p>
                   <p className={`text-4xl font-bold tracking-tight ${!hasAnyBalance ? "text-muted-foreground" : ""}`}>
                     {formatCurrencyCompact(consolidatedTotal)}
                   </p>
+                  {hasAnyBalance && (
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <Badge variant={consolidatedPct >= 0 ? "default" : "destructive"} className="text-xs gap-1">
+                        {consolidatedPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {formatPercent(consolidatedPct)}
+                      </Badge>
+                      <span className={`text-xs ${roiProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {roiProfit >= 0 ? "+" : ""}{formatCurrencyCompact(roiProfit)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="mt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 shrink-0" />
+                        <span className="text-xs text-muted-foreground">Online</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-cyan-400">{formatCurrencyCompact(consolidated?.online.current || 0)}</span>
+                        <button
+                          onClick={() => setShowOnlineModal(true)}
+                          className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 transition-colors"
+                          title="Definir bankroll online"
+                        >
+                          {(consolidated?.online.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-violet-400 shrink-0" />
+                        <span className="text-xs text-muted-foreground">Live</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-violet-400">{formatCurrencyCompact(consolidated?.live.current || 0)}</span>
+                        <button
+                          onClick={() => setShowLiveModal(true)}
+                          className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5 transition-colors"
+                          title="Definir bankroll live"
+                        >
+                          {(consolidated?.live.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                        </button>
+                      </div>
+                    </div>
+                    {hasRoiData && (
+                      <div className="text-xs pt-1">
+                        <span className="text-muted-foreground">ROI: </span>
+                        <span className={`font-semibold ${consolidatedPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {formatPercent(consolidatedPct)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {hasAnyBalance && (
-                  <Badge variant={consolidatedProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1 mt-1">
-                    {consolidatedProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                    {formatPercent(consolidatedPct)}
-                  </Badge>
-                )}
+                {/* Lado direito: Donut */}
+                <div className="flex flex-col items-center justify-center shrink-0">
+                  {donutData.length > 0 ? (
+                    <>
+                      <div className="relative h-44 w-44">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={donutData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={52}
+                              outerRadius={75}
+                              paddingAngle={3}
+                              dataKey="value"
+                              strokeWidth={0}
+                            >
+                              {donutData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <RechartsTooltip
+                              content={({ active, payload }: any) => {
+                                if (!active || !payload?.length) return null;
+                                const d = payload[0].payload;
+                                return (
+                                  <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
+                                    <p className="font-semibold mb-1">{d.fullName}</p>
+                                    <p style={{ color: d.color }}>
+                                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.value)} ({d.pct}%)
+                                    </p>
+                                  </div>
+                                );
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                          <p className="text-sm font-bold">{formatCurrencyCompact(consolidatedTotal)}</p>
+                          <p className="text-[10px] text-muted-foreground">Total</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-3 justify-center mt-1">
+                        {donutData.map((d) => (
+                          <div key={d.name} className="flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                            <span className="text-xs text-muted-foreground">{d.name}</span>
+                            <span className="text-xs font-semibold">{d.pct}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="h-44 flex flex-col items-center justify-center gap-2 text-center w-44">
+                      <p className="text-xs text-muted-foreground px-2">Defina seu bankroll para ver a distribuição</p>
+                      <div className="flex flex-col gap-2 mt-1">
+                        <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => setShowOnlineModal(true)}>
+                          <Wifi className="h-3 w-3 text-cyan-400" /> Online
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => setShowLiveModal(true)}>
+                          <MapPin className="h-3 w-3 text-violet-400" /> Live
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-                <div>
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className="text-muted-foreground text-xs">Online</p>
-                    <button
-                      onClick={() => setShowOnlineModal(true)}
-                      className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 transition-colors"
-                      title="Definir bankroll online"
-                    >
-                      {(consolidated?.online.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
-                    </button>
-                  </div>
-                  <p className="font-semibold text-cyan-400">{formatCurrencyCompact(consolidated?.online.current || 0)}</p>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className="text-muted-foreground text-xs">Live</p>
-                    <button
-                      onClick={() => setShowLiveModal(true)}
-                      className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5 transition-colors"
-                      title="Definir bankroll live"
-                    >
-                      {(consolidated?.live.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
-                    </button>
-                  </div>
-                  <p className="font-semibold text-violet-400">{formatCurrencyCompact(consolidated?.live.current || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-xs mb-0.5">Resultado acumulado</p>
-                  <p className={`font-semibold ${consolidatedProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {consolidatedProfit >= 0 ? "+" : ""}{formatCurrencyCompact(consolidatedProfit)}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+                  <p className="text-xs text-muted-foreground mb-1">ABI Médio Online</p>
+                  <p className="text-lg font-semibold text-cyan-400">
+                    {abiOnlineSample > 0 ? formatByCurrency(abiOnlineAvg, "USD") : "—"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {abiOnlineSample > 0
+                      ? `Aprox. ${formatCurrency(Math.round(abiOnlineAvg * usdToBrl))} · ${abiOnlineSample} mesas`
+                      : "Sem amostra de mesas online"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground text-xs mb-0.5">ROI geral</p>
-                  <p className={`font-semibold ${consolidatedPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {hasAnyBalance ? formatPercent(consolidatedPct) : "—"}
+                <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+                  <p className="text-xs text-muted-foreground mb-1">ABI Médio Live</p>
+                  <p className="text-lg font-semibold text-violet-400">
+                    {abiLiveSample > 0 ? formatCurrency(abiLiveAvg) : "—"}
                   </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {abiLiveSample > 0 ? `${abiLiveSample} mesas` : "Sem amostra de mesas live"}
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 mb-4">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Foco:</span>{" "}
+                    <span className="font-semibold">{primaryType === "online" ? "Online" : "Live"}</span>{" "}
+                    <span className="text-muted-foreground">
+                      ({primaryTypeShare > 0 ? `${primaryTypeShare.toFixed(0)}%` : "sem amostra"})
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Plataforma:</span>{" "}
+                    <span className="font-semibold">{topVenueName ?? "indefinida"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Formato:</span>{" "}
+                    <span className="font-semibold">{topFormatLabel ?? "indefinido"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">BI base:</span>{" "}
+                    <span className="font-semibold">
+                      {topBuyInValue > 0
+                        ? (primaryType === "online" ? formatByCurrency(topBuyInValue, "USD") : formatCurrency(topBuyInValue))
+                        : "indefinido"}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-4 text-xs border-t border-border/30 pt-3 flex-wrap">
@@ -645,9 +813,12 @@ export default function Dashboard() {
                   <span className="font-semibold">{totalPlayedTables}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Win Rate:</span>
+                  <span className="text-muted-foreground">ITM Rate:</span>
                   <span className={`font-semibold ${(stats?.winRate || 0) >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
                     {(stats?.winRate || 0).toFixed(1)}%
+                  </span>
+                  <span className="text-muted-foreground">
+                    ({(stats as any)?.itmCount ?? 0}/{stats?.totalTables ?? 0})
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -667,81 +838,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Donut + Desempenho */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Donut: Online vs Live */}
-            <Card className="bg-card/60 border-border/40">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">Distribuição do Bankroll</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {donutData.length > 0 ? (
-                  <div className="flex flex-col items-center">
-                    <div className="relative h-52 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={donutData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={55}
-                            outerRadius={85}
-                            paddingAngle={3}
-                            dataKey="value"
-                            strokeWidth={0}
-                          >
-                            {donutData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <RechartsTooltip
-                            content={({ active, payload }: any) => {
-                              if (!active || !payload?.length) return null;
-                              const d = payload[0].payload;
-                              return (
-                                <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
-                                  <p className="font-semibold mb-1">{d.fullName}</p>
-                                  <p style={{ color: d.color }}>
-                                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.value)} ({d.pct}%)
-                                  </p>
-                                </div>
-                              );
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      {/* Centro do donut */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <p className="text-lg font-bold">{formatCurrencyCompact(consolidatedTotal)}</p>
-                        <p className="text-[10px] text-muted-foreground">Total</p>
-                      </div>
-                    </div>
-                    {/* Legenda */}
-                    <div className="flex flex-wrap gap-3 mt-2 justify-center">
-                      {donutData.map((d) => (
-                        <div key={d.name} className="flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                          <span className="text-xs text-muted-foreground">{d.name}</span>
-                          <span className="text-xs font-semibold">{d.pct}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-52 flex flex-col items-center justify-center gap-2 text-center">
-                    <p className="text-xs text-muted-foreground">Defina seu bankroll para ver a distribuição</p>
-                    <div className="flex gap-2 mt-2">
-                      <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => setShowOnlineModal(true)}>
-                        <Wifi className="h-3 w-3 text-cyan-400" /> Online
-                      </Button>
-                      <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => setShowLiveModal(true)}>
-                        <MapPin className="h-3 w-3 text-violet-400" /> Live
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
+          <div>
             {/* Desempenho por plataforma */}
             <Card className="bg-card/60 border-border/40">
               <CardHeader className="pb-2">
@@ -751,7 +848,7 @@ export default function Dashboard() {
                     {(["roi", "winrate", "sessions", "profit"] as const).map((m) => (
                       <Button key={m} size="sm" variant={perfMetric === m ? "default" : "ghost"}
                         className="h-6 px-2 text-[10px]" onClick={() => setPerfMetric(m)}>
-                        {m === "roi" ? "ROI" : m === "winrate" ? "Win%" : m === "sessions" ? "Mesas" : "R$"}
+                        {m === "roi" ? "ROI" : m === "winrate" ? "ITM%" : m === "sessions" ? "Mesas" : "R$"}
                       </Button>
                     ))}
                   </div>
@@ -828,7 +925,7 @@ export default function Dashboard() {
                                 <p className="font-semibold mb-1">{d.fullName}</p>
                                 <p>Resultado: <span className={d.profit >= 0 ? "text-emerald-400" : "text-red-400"}>{d.profit >= 0 ? "+" : ""}{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.profit)}</span></p>
                                 <p>ROI: <span className={d.roi >= 0 ? "text-emerald-400" : "text-red-400"}>{d.roi}%</span></p>
-                                <p>Win Rate: <span className="text-primary">{d.winrate}%</span></p>
+                                <p>ITM Rate: <span className="text-primary">{d.winrate}%</span> <span className="text-muted-foreground">({d.itmCount}/{d.tables})</span></p>
                                 <p>Mesas: <span className="font-semibold">{d.tables ?? d.sessions}</span></p>
                               </div>
                             );
@@ -859,9 +956,9 @@ export default function Dashboard() {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-sm font-semibold">Evolução do Bankroll</CardTitle>
-                  {hasAnyBalance && (
-                    <Badge variant={consolidatedProfit >= 0 ? "default" : "destructive"} className="text-xs gap-1">
-                      {consolidatedProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {hasRoiData && (
+                    <Badge variant={consolidatedPct >= 0 ? "default" : "destructive"} className="text-xs gap-1">
+                      {consolidatedPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                       {formatPercent(consolidatedPct)}
                     </Badge>
                   )}
@@ -931,71 +1028,51 @@ export default function Dashboard() {
         <div className="xl:col-span-2 space-y-5">
           {/* Cards Online + Live lado a lado no topo */}
           <div className="grid grid-cols-2 gap-3">
-            {/* Card Online */}
-            <Card className="border border-cyan-500/30 bg-card/60 overflow-hidden">
-              <div className="h-1 w-full bg-gradient-to-r from-cyan-500 to-blue-600" />
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Badge variant="outline" className="text-cyan-400 border-cyan-500/30 text-xs gap-1">
-                    <Wifi className="h-3 w-3" />Online
-                  </Badge>
-                  <button
-                    onClick={() => setShowOnlineModal(true)}
-                    className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 transition-colors"
-                  >
-                    {(consolidated?.online.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
-                  </button>
-                </div>
-                <p className="text-xl font-bold mb-1">{formatCurrencyCompact(consolidated?.online.current || 0)}</p>
-                <div className={`flex items-center gap-1 text-xs ${(consolidated?.online.profit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                  {(consolidated?.online.profit || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                  <span>{(consolidated?.online.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.online.profit || 0)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{consolidated?.online.tables || 0} mesas</p>
-              </CardContent>
-            </Card>
-
-            {/* Card Live */}
-            <Card className="border border-violet-500/30 bg-card/60 overflow-hidden">
-              <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-700" />
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Badge variant="outline" className="text-violet-400 border-violet-500/30 text-xs gap-1">
-                    <MapPin className="h-3 w-3" />Live
-                  </Badge>
-                  <button
-                    onClick={() => setShowLiveModal(true)}
-                    className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5 transition-colors"
-                  >
-                    {(consolidated?.live.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
-                  </button>
-                </div>
-                <p className="text-xl font-bold mb-1">{formatCurrencyCompact(consolidated?.live.current || 0)}</p>
-                <div className={`flex items-center gap-1 text-xs ${(consolidated?.live.profit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                  {(consolidated?.live.profit || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                  <span>{(consolidated?.live.profit || 0) >= 0 ? "+" : ""}{formatCurrencyCompact(consolidated?.live.profit || 0)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{consolidated?.live.tables || 0} mesas</p>
-              </CardContent>
-            </Card>
+            {typeSummaryCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <Card key={card.key} className={`border ${card.badgeClass.split(" ")[1]} bg-card/60 overflow-hidden`}>
+                  <div className={`h-1 w-full bg-gradient-to-r ${card.gradientClass}`} />
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <Badge variant="outline" className={`${card.badgeClass} text-xs gap-1`}>
+                        <Icon className="h-3 w-3" />{card.title}
+                      </Badge>
+                      <button
+                        onClick={card.onEdit}
+                        className={`text-[10px] ${card.editClass} flex items-center gap-0.5 transition-colors`}
+                      >
+                        {card.current > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                      </button>
+                    </div>
+                    <p className="text-xl font-bold mb-1">{formatCurrencyCompact(card.current)}</p>
+                    <div className={`flex items-center gap-1 text-xs ${card.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {card.profit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      <span>{card.profit >= 0 ? "+" : ""}{formatCurrencyCompact(card.profit)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{card.tables} mesas</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           {/* Minhas Plataformas (apenas stats) */}
           <Card className="bg-card/60 border-border/40">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">Minhas Plataformas</CardTitle>
+                <CardTitle className="text-sm font-semibold">Plataformas Prioritárias</CardTitle>
                 <Link href="/venues">
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-muted-foreground">
                     <Settings2 className="h-3.5 w-3.5" /> Gerenciar
                   </Button>
                 </Link>
               </div>
-              <p className="text-xs text-muted-foreground">Resultado por plataforma</p>
+              <p className="text-xs text-muted-foreground">Ordenadas por frequência de uso e ambiente dominante</p>
             </CardHeader>
             <CardContent className="px-3 py-0 max-h-[400px] overflow-y-auto">
-              {onlineVenues.length > 0 ? (
-                onlineVenues.map((venue: any, i: number) => (
+              {prioritizedVenues.length > 0 ? (
+                prioritizedVenues.map((venue: any, i: number) => (
                   <VenueRow
                     key={venue.id}
                     venue={venue}
@@ -1086,35 +1163,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold flex items-center gap-1.5"><Crown className="h-4 w-4 text-amber-500" /> Ranking Global KK/JJ</p>
-                  <p className="text-[11px] text-muted-foreground">Mínimo 6 mãos para entrar</p>
-                </div>
-                {globalHandPatternStats && globalHandPatternStats.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {globalHandPatternStats.map((player: any, idx: number) => (
-                      <div key={player.userId} className="rounded-lg border border-border/40 px-2.5 py-2 flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
-                          <p className="text-[11px] text-muted-foreground">{player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
-                          <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
-                        </div>
-                      </div>
-                    ))}
-                    {handRankMap.size > 0 && !Array.from(handRankMap.values()).includes(1) && (
-                      <p className="text-[11px] text-muted-foreground pt-1">Continue registrando para subir no ranking.</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-3 text-xs text-muted-foreground">
-                    Sem ranking elegível ainda. Registre mãos para entrar na disputa.
-                  </div>
-                )}
-              </div>
             </CardContent>
           </Card>
 

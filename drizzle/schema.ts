@@ -16,6 +16,18 @@ export const users = mysqlTable("users", {
   inviteCode: varchar("inviteCode", { length: 32 }).unique(),
   invitedBy: int("invitedBy"),
   inviteCount: int("inviteCount").default(0).notNull(),
+  preferredPlayType: mysqlEnum("preferredPlayType", ["online", "live"]),
+  preferredPlatforms: text("preferredPlatforms"),
+  preferredFormats: text("preferredFormats"),
+  preferredBuyIns: text("preferredBuyIns"),
+  preferredBuyInsOnline: text("preferredBuyInsOnline"),
+  preferredBuyInsLive: text("preferredBuyInsLive"),
+  playsMultiPlatform: int("playsMultiPlatform").default(0),
+  showInGlobalRanking: int("showInGlobalRanking").default(0).notNull(),
+  showInFriendsRanking: int("showInFriendsRanking").default(0).notNull(),
+  rankingConsentAnsweredAt: timestamp("rankingConsentAnsweredAt"),
+  playStyleAnsweredAt: timestamp("playStyleAnsweredAt"),
+  onboardingCompletedAt: timestamp("onboardingCompletedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -276,6 +288,21 @@ export type PostComment = typeof postComments.$inferSelect;
 export type InsertPostComment = typeof postComments.$inferInsert;
 
 /**
+ * Post reactions table - emoji reactions per user per post
+ */
+export const postReactions = mysqlTable("post_reactions", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),
+  userId: int("userId").notNull(),
+  emoji: varchar("emoji", { length: 8 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PostReaction = typeof postReactions.$inferSelect;
+export type InsertPostReaction = typeof postReactions.$inferInsert;
+
+/**
  * Friendships table - tracks accepted friend connections
  */
 export const friendships = mysqlTable("friendships", {
@@ -287,6 +314,21 @@ export const friendships = mysqlTable("friendships", {
 
 export type Friendship = typeof friendships.$inferSelect;
 export type InsertFriendship = typeof friendships.$inferInsert;
+
+/**
+ * Friend requests table - tracks pending friendship actions
+ */
+export const friendRequests = mysqlTable("friend_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  requesterId: int("requesterId").notNull(),
+  receiverId: int("receiverId").notNull(),
+  status: mysqlEnum("status", ["pending", "accepted", "rejected", "canceled"]).default("pending").notNull(),
+  respondedAt: timestamp("respondedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FriendRequest = typeof friendRequests.$inferSelect;
+export type InsertFriendRequest = typeof friendRequests.$inferInsert;
 
 /**
  * Clubs table - poker clubs where user allocates bankroll (online apps like PPPoker, ClubGG, etc.)
