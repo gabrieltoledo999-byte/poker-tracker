@@ -15,9 +15,10 @@ function getStorageConfig(): StorageConfig {
     );
   }
 
-  if (apiKey === "placeholder") {
+  // Allow "disabled" or "placeholder" as valid (disabled) values
+  if (apiKey === "placeholder" || apiKey === "disabled") {
     throw new Error(
-      "Storage proxy key inválida: configure BUILT_IN_FORGE_API_KEY no ambiente de produção"
+      "Storage proxy desabilitado: uploads de arquivo não estão disponíveis. Configure BUILT_IN_FORGE_API_KEY com uma chave válida."
     );
   }
 
