@@ -899,6 +899,14 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
     onError: (err) => toast.error("Erro ao atualizar mesa", { description: err.message }),
   });
 
+  const replayTableMutation = trpc.sessions.addTable.useMutation({
+    onSuccess: () => {
+      utils.sessions.getActive.invalidate();
+      toast.success("Nova mesa criada com os mesmos dados!");
+    },
+    onError: (err) => toast.error("Erro ao jogar de novo", { description: err.message }),
+  });
+
   const finalizeMutation = trpc.sessions.finalize.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
@@ -1122,6 +1130,27 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
+                  {isFinished && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 px-2"
+                      onClick={() => replayTableMutation.mutate({
+                        activeSessionId: session.id,
+                        venueId: table.venueId ?? undefined,
+                        type: table.type as "online" | "live",
+                        gameFormat: table.gameFormat as GameFormat,
+                        currency: table.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY",
+                        buyIn: table.buyIn,
+                        gameType: table.gameType ?? undefined,
+                        stakes: table.stakes ?? undefined,
+                        notes: undefined,
+                      })}
+                      disabled={replayTableMutation.isPending}
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Jogar de novo
+                    </Button>
+                  )}
                   {!isFinished && (
                     <Button
                       size="sm"
