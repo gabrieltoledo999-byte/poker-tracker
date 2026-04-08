@@ -9,11 +9,144 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy, RotateCw } from "lucide-react";
 import { useTheme, ACCENT_COLORS, type AccentColor } from "@/contexts/ThemeContext";
 
 // Helper to format currency
+
+// ─── Image Crop Modal ─────────────────────────────────────────────────────────
+const CROP_DISPLAY = 280;
+const CROP_OUTPUT = 400;
+
+function CropModal({ src, onApply, onCancel }: { src: string; onApply: (blob: Blob) => void; onCancel: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [minZoom, setMinZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
+  const dragging = useRef(false);
+  const lastPos = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      const fit = Math.max(CROP_DISPLAY / img.width, CROP_DISPLAY / img.height);
+      setMinZoom(fit);
+      setZoom(fit);
+      setOffset({ x: (CROP_DISPLAY - img.width * fit) / 2, y: (CROP_DISPLAY - img.height * fit) / 2 });
+    };
+    img.src = src;
+  }, [src]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, CROP_DISPLAY, CROP_DISPLAY);
+    ctx.save();
+    ctx.translate(CROP_DISPLAY / 2, CROP_DISPLAY / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-CROP_DISPLAY / 2, -CROP_DISPLAY / 2);
+    ctx.drawImage(img, offset.x, offset.y, img.width * zoom, img.height * zoom);
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, CROP_DISPLAY, CROP_DISPLAY);
+    ctx.arc(CROP_DISPLAY / 2, CROP_DISPLAY / 2, CROP_DISPLAY / 2, 0, Math.PI * 2, true);
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fill("evenodd");
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(CROP_DISPLAY / 2, CROP_DISPLAY / 2, CROP_DISPLAY / 2 - 1, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }, [zoom, offset, rotation]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    dragging.current = true;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!dragging.current) return;
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+    setOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+  };
+  const onPointerUp = () => { dragging.current = false; };
+
+  const handleZoomChange = (val: number[]) => { setZoom(val[0]); };
+
+  const handleRotate = () => { setRotation((r) => (r + 90) % 360); };
+
+  const handleApply = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    const offscreen = document.createElement("canvas");
+    offscreen.width = CROP_OUTPUT;
+    offscreen.height = CROP_OUTPUT;
+    const ctx = offscreen.getContext("2d")!;
+    const scale = CROP_OUTPUT / CROP_DISPLAY;
+    ctx.save();
+    ctx.translate(CROP_OUTPUT / 2, CROP_OUTPUT / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-CROP_OUTPUT / 2, -CROP_OUTPUT / 2);
+    ctx.drawImage(img, offset.x * scale, offset.y * scale, img.width * zoom * scale, img.height * zoom * scale);
+    ctx.restore();
+    offscreen.toBlob((blob) => { if (blob) onApply(blob); }, "image/jpeg", 0.92);
+  };
+
+  return (
+    <Dialog open onOpenChange={onCancel}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Ajustar foto de perfil</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-4">
+          <canvas
+            ref={canvasRef}
+            width={CROP_DISPLAY}
+            height={CROP_DISPLAY}
+            className="rounded-full cursor-grab active:cursor-grabbing touch-none"
+            style={{ width: CROP_DISPLAY, height: CROP_DISPLAY }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+          />
+          <div className="w-full space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground w-8">Zoom</span>
+              <Slider
+                min={minZoom}
+                max={minZoom * 4}
+                step={0.01}
+                value={[zoom]}
+                onValueChange={handleZoomChange}
+                className="flex-1"
+              />
+            </div>
+            <Button variant="outline" size="sm" className="gap-2 w-full" onClick={handleRotate}>
+              <RotateCw className="h-4 w-4" /> Girar 90°
+            </Button>
+          </div>
+          <div className="flex gap-2 w-full">
+            <Button variant="outline" className="flex-1" onClick={onCancel}>Cancelar</Button>
+            <Button className="flex-1" onClick={handleApply}>Aplicar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 function formatCurrency(centavos: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -167,6 +300,7 @@ export default function Settings() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPresetAvatar, setSelectedPresetAvatar] = useState<string | null>(null);
+    const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [profilePlayType, setProfilePlayType] = useState<"online" | "live">("online");
   const [profileFormats, setProfileFormats] = useState<string[]>([]);
   const [profilePlatforms, setProfilePlatforms] = useState<string[]>([]);
@@ -307,13 +441,21 @@ export default function Settings() {
       return;
     }
 
-    setSelectedFile(file);
-    setSelectedPresetAvatar(null);
-    
-    // Create preview
-    const base64 = await fileToBase64(file);
-    setAvatarPreview(base64);
+    // Open crop modal with image src
+    const reader = new FileReader();
+    reader.onload = (ev) => { setCropSrc(ev.target?.result as string); };
+    reader.readAsDataURL(file);
   }, []);
+  // Handle crop result: convert blob to File and show preview
+  const handleCropApply = useCallback((blob: Blob) => {
+    const croppedFile = new File([blob], "avatar.jpg", { type: "image/jpeg" });
+    setSelectedFile(croppedFile);
+    setSelectedPresetAvatar(null);
+    setCropSrc(null);
+    const url = URL.createObjectURL(blob);
+    setAvatarPreview(url);
+  }, []);
+
 
   // Handle drag events
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -476,6 +618,13 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
+      {cropSrc && (
+        <CropModal
+          src={cropSrc}
+          onApply={handleCropApply}
+          onCancel={() => { setCropSrc(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+        />
+      )}
       <div>
         <h2 className="text-2xl font-bold flex items-center gap-2">
           <SettingsIcon className="h-6 w-6" />
