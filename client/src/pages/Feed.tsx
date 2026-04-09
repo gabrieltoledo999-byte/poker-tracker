@@ -549,12 +549,20 @@ export default function Feed() {
 
   const kkTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.hands ?? 0), 0);
   const jjTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.hands ?? 0), 0);
+  const aaTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.aa?.hands ?? 0), 0);
+  const akTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.ak?.hands ?? 0), 0);
   const kkWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.wins ?? 0), 0);
   const kkLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.losses ?? 0), 0);
   const jjWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.wins ?? 0), 0);
   const jjLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.losses ?? 0), 0);
+  const aaWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.aa?.wins ?? 0), 0);
+  const aaLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.aa?.losses ?? 0), 0);
+  const akWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.ak?.wins ?? 0), 0);
+  const akLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.ak?.losses ?? 0), 0);
   const kkWinRate = kkTotal > 0 ? Math.round((kkWins / kkTotal) * 100) : 0;
   const jjWinRate = jjTotal > 0 ? Math.round((jjWins / jjTotal) * 100) : 0;
+  const aaWinRate = aaTotal > 0 ? Math.round((aaWins / aaTotal) * 100) : 0;
+  const akWinRate = akTotal > 0 ? Math.round((akWins / akTotal) * 100) : 0;
 
   if (!user) return null;
 
@@ -605,6 +613,56 @@ export default function Feed() {
                 <p className="text-3xl font-black text-white leading-none">{jjWinRate}%</p>
                 <p className="text-xs text-rose-100/85">taxa de vitória JJ</p>
                 <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="hidden xl:block absolute top-[320px] -left-[340px] w-[280px]">
+        <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-emerald-900/20 to-background">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-emerald-100">
+                <Crown className="h-4 w-4 text-emerald-300" /> As As
+              </p>
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
+              </span>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-3xl font-black text-white leading-none">{aaWinRate}%</p>
+                <p className="text-xs text-emerald-100/85">taxa de vitória AA</p>
+                <p className="text-xs text-emerald-100/85">Vitórias {aaWins} • Derrotas {aaLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="hidden xl:block absolute top-[320px] -right-[340px] w-[280px]">
+        <Card className="border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-cyan-900/20 to-background">
+          <CardContent className="p-4 space-y-2 text-right">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">A</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">K</span>
+              </span>
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-cyan-100">
+                As e Rei <Swords className="h-4 w-4 text-cyan-300" />
+              </p>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-3xl font-black text-white leading-none">{akWinRate}%</p>
+                <p className="text-xs text-cyan-100/85">taxa de vitória AK</p>
+                <p className="text-xs text-cyan-100/85">Vitórias {akWins} • Derrotas {akLosses}</p>
               </>
             )}
           </CardContent>
@@ -665,6 +723,52 @@ export default function Feed() {
                 <p className="text-3xl font-black text-white leading-none">{jjWinRate}%</p>
                 <p className="text-xs text-rose-100/85">taxa de vitória JJ</p>
                 <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-emerald-900/20 to-background">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-emerald-100">
+                <Crown className="h-4 w-4 text-emerald-300" /> As As
+              </p>
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
+              </span>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-3xl font-black text-white leading-none">{aaWinRate}%</p>
+                <p className="text-xs text-emerald-100/85">taxa de vitória AA</p>
+                <p className="text-xs text-emerald-100/85">Vitórias {aaWins} • Derrotas {aaLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-cyan-900/20 to-background">
+          <CardContent className="p-4 space-y-2 text-right">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">A</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">K</span>
+              </span>
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-cyan-100">
+                As e Rei <Swords className="h-4 w-4 text-cyan-300" />
+              </p>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-3xl font-black text-white leading-none">{akWinRate}%</p>
+                <p className="text-xs text-cyan-100/85">taxa de vitória AK</p>
+                <p className="text-xs text-cyan-100/85">Vitórias {akWins} • Derrotas {akLosses}</p>
               </>
             )}
           </CardContent>

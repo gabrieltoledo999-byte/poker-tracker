@@ -899,6 +899,8 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
   const [lastHandStatsSnapshot, setLastHandStatsSnapshot] = useState<{
     kk: { hands: number; wins: number; losses: number };
     jj: { hands: number; wins: number; losses: number };
+    aa: { hands: number; wins: number; losses: number };
+    ak: { hands: number; wins: number; losses: number };
   } | null>(null);
 
   const { data: venues } = trpc.venues.list.useQuery({});
@@ -975,7 +977,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
     onError: (err) => toast.error("Erro ao desfazer ação", { description: err.message }),
   });
 
-  const handleRegisterHandResult = (hand: "kk" | "jj", outcome: "win" | "loss") => {
+  const handleRegisterHandResult = (hand: "kk" | "jj" | "aa" | "ak", outcome: "win" | "loss") => {
     if (!handPatternStats) return;
     setLastHandStatsSnapshot({
       kk: {
@@ -987,6 +989,16 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
         hands: handPatternStats.jj?.hands ?? 0,
         wins: handPatternStats.jj?.wins ?? 0,
         losses: handPatternStats.jj?.losses ?? 0,
+      },
+      aa: {
+        hands: handPatternStats.aa?.hands ?? 0,
+        wins: handPatternStats.aa?.wins ?? 0,
+        losses: handPatternStats.aa?.losses ?? 0,
+      },
+      ak: {
+        hands: handPatternStats.ak?.hands ?? 0,
+        wins: handPatternStats.ak?.wins ?? 0,
+        losses: handPatternStats.ak?.losses ?? 0,
       },
     });
     registerHandResultMutation.mutate({ hand, outcome });
@@ -1043,10 +1055,10 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
         </div>
       </div>
 
-      {/* KK/JJ counters */}
+      {/* Premium hand counters */}
       <div className="rounded-xl border border-border/60 bg-card/40 p-3 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Contador KK e Vala Vala</h3>
+          <h3 className="text-sm font-semibold">Contador de Mãos Premium</h3>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Marque direto na sessão</span>
             <Button
@@ -1064,6 +1076,8 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
           {([
             { key: "kk", label: "KK (Rei Rei)", wins: handPatternStats?.kk?.wins ?? 0, losses: handPatternStats?.kk?.losses ?? 0, hands: handPatternStats?.kk?.hands ?? 0 },
             { key: "jj", label: "JJ (Vala Vala)", wins: handPatternStats?.jj?.wins ?? 0, losses: handPatternStats?.jj?.losses ?? 0, hands: handPatternStats?.jj?.hands ?? 0 },
+            { key: "aa", label: "AA (As As)", wins: handPatternStats?.aa?.wins ?? 0, losses: handPatternStats?.aa?.losses ?? 0, hands: handPatternStats?.aa?.hands ?? 0 },
+            { key: "ak", label: "AK (As e Rei)", wins: handPatternStats?.ak?.wins ?? 0, losses: handPatternStats?.ak?.losses ?? 0, hands: handPatternStats?.ak?.hands ?? 0 },
           ] as const).map((item) => (
             <div key={item.key} className="rounded-lg border border-border/60 bg-background/60 p-2.5">
               <div className="flex items-center justify-between">
