@@ -1426,7 +1426,7 @@ function SessionCard({ session }: { session: any }) {
     { sessionId: session.id },
     { enabled: expanded || editing || editTableId !== null }
   );
-  const { data: venues } = trpc.venues.list.useQuery({}, { enabled: expanded || editing || editTableId !== null });
+  const { data: venues } = trpc.venues.list.useQuery({});
 
   // Session-level edit state
   const [editNotes, setEditNotes] = useState(session.notes ?? "");
@@ -1443,6 +1443,10 @@ function SessionCard({ session }: { session: any }) {
     onSuccess: () => {
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.getCurrent.invalidate();
       toast.success("Sessão atualizada!");
       setEditing(false);
     },
