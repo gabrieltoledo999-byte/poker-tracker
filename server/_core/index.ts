@@ -106,6 +106,95 @@ async function runSafeMigrations() {
   }
 }
 
+// Aliases known → canonical name (lowercased)
+const VENUE_ALIAS_MAP: Record<string, string> = {
+  "suprema": "Suprema Poker",
+  "suprema poker": "Suprema Poker",
+  "gg poker": "GG Poker",
+  "ggpoker": "GG Poker",
+  "pp poker": "PP Poker",
+  "pppoker": "PP Poker",
+  "pokerstars": "PokerStars",
+  "poker stars": "PokerStars",
+  "888 poker": "888poker",
+  "poker bros": "PokerBros",
+  "kk poker": "KKPoker",
+  "wpt global": "WPT Global",
+  "x poker": "X-Poker",
+};
+
+function canonicalVenueName(name: string): string {
+  const key = name.toLowerCase().trim();
+  return VENUE_ALIAS_MAP[key] ?? name;
+}
+
+async function mergeDuplicateVenues() {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return;
+
+  let conn: mysql2.Connection | null = null;
+  try {
+    conn = await mysql2.createConnection(dbUrl);
+
+    const [users] = await conn.execute("SELECT id FROM users") as any[];
+    let merged = 0;
+
+    for (const user of users) {
+      const [venues] = await conn.execute(
+        "SELECT id, name, isPreset, balance FROM venues WHERE userId = ? ORDER BY id ASC",
+        [user.id]
+      ) as any[];
+
+      // Group by canonical name
+      const grouped = new Map<string, any[]>();
+      for (const v of venues) {
+        const canon = canonicalVenueName(v.name);
+        if (!grouped.has(canon)) grouped.set(canon, []);
+        grouped.get(canon)!.push(v);
+      }
+
+      for (const [canonName, group] of grouped.entries()) {
+        if (group.length < 2) continue;
+
+        // Pick canonical: prefer isPreset=1, then exact name match, then lowest id
+        group.sort((a: any, b: any) => {
+          if (b.isPreset !== a.isPreset) return b.isPreset - a.isPreset;
+          const aExact = a.name === canonName ? 0 : 1;
+          const bExact = b.name === canonName ? 0 : 1;
+          if (aExact !== bExact) return aExact - bExact;
+          return a.id - b.id;
+        });
+
+        const [canonical, ...duplicates] = group;
+        for (const dup of duplicates) {
+          // Re-point all references
+          await conn.execute("UPDATE sessions SET venueId=? WHERE userId=? AND venueId=?", [canonical.id, user.id, dup.id]);
+          await conn.execute("UPDATE session_tables SET venueId=? WHERE userId=? AND venueId=?", [canonical.id, user.id, dup.id]);
+          await conn.execute("UPDATE venue_balance_history SET venueId=? WHERE userId=? AND venueId=?", [canonical.id, user.id, dup.id]);
+          // Merge balance
+          if (dup.balance !== 0) {
+            await conn.execute("UPDATE venues SET balance = balance + ? WHERE id=?", [dup.balance, canonical.id]);
+          }
+          // Delete duplicate
+          await conn.execute("DELETE FROM venues WHERE id=?", [dup.id]);
+          merged++;
+          console.log(`[venues] Merged "${dup.name}" (id=${dup.id}) → "${canonical.name}" (id=${canonical.id}) for user ${user.id}`);
+        }
+      }
+    }
+
+    if (merged > 0) {
+      console.log(`[venues] Duplicate merge complete: ${merged} venue(s) merged.`);
+    } else {
+      console.log("[venues] No duplicate venues found.");
+    }
+  } catch (err) {
+    console.error("[venues] Error during duplicate merge:", err);
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+}
+
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
@@ -127,6 +216,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   await runSafeMigrations();
+  await mergeDuplicateVenues();
 
   const app = express();
   const server = createServer(app);
