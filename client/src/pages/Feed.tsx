@@ -571,14 +571,17 @@ export default function Feed() {
       </div>
 
       {/* Cards topo (independentes) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/15 via-sky-900/20 to-background">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
-                <Flame className="h-4 w-4 text-amber-400" /> Hey Hey (KK)
+                <Flame className="h-4 w-4 text-amber-400" /> Hey Hey
               </p>
-              <Badge variant="secondary" className="text-[10px]">Esquerda</Badge>
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
+              </span>
             </div>
             {loadingGlobalHandStats ? (
               <Skeleton className="h-14 w-full" />
@@ -595,9 +598,12 @@ export default function Feed() {
         <Card className="border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-900/20 to-background">
           <CardContent className="p-4 space-y-2 text-right">
             <div className="flex items-center justify-between">
-              <Badge variant="secondary" className="text-[10px]">Direita</Badge>
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
+              </span>
               <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
-                Valavalá (JJ) <Swords className="h-4 w-4 text-orange-400" />
+                Valavalá <Swords className="h-4 w-4 text-orange-400" />
               </p>
             </div>
             {loadingGlobalHandStats ? (
