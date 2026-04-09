@@ -799,18 +799,27 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   }
 
   const hasTableFilter = Boolean(type || gameFormat);
-  const includedSessions: Array<{ session: Session; share: number; matchedTables: number; matchedItmTables: number; totalTables: number }> = [];
+  const includedSessions: Array<{
+    session: Session;
+    share: number;
+    matchedTables: number;
+    matchedItmTables: number;
+    matchedItmEligibleTables: number;
+    totalTables: number;
+  }> = [];
 
   for (const session of allSessions) {
     const tables = tablesBySession.get(session.id) ?? [];
     const totalTables = tables.length;
 
     if (!hasTableFilter) {
+      const itmEligibleTables = tables.filter((t) => t.gameFormat !== "cash_game");
       includedSessions.push({
         session,
         share: 1,
         matchedTables: totalTables,
-        matchedItmTables: tables.filter((t) => (t.cashOut ?? 0) > 0).length,
+        matchedItmTables: itmEligibleTables.filter((t) => (t.cashOut ?? 0) > 0).length,
+        matchedItmEligibleTables: itmEligibleTables.length,
         totalTables,
       });
       continue;
@@ -821,11 +830,13 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       if (type && session.type !== type) matchedByLegacyFields = false;
       if (gameFormat && session.gameFormat !== gameFormat) matchedByLegacyFields = false;
       if (matchedByLegacyFields) {
+        const itmEligible = session.gameFormat !== "cash_game";
         includedSessions.push({
           session,
           share: 1,
           matchedTables: 1,
-          matchedItmTables: session.cashOut > 0 ? 1 : 0,
+          matchedItmTables: itmEligible && session.cashOut > 0 ? 1 : 0,
+          matchedItmEligibleTables: itmEligible ? 1 : 0,
           totalTables: 1,
         });
       }
@@ -839,7 +850,9 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     });
 
     const matchedTables = matched.length;
-    const matchedItmTables = matched.filter((t) => (t.cashOut ?? 0) > 0).length;
+    const itmEligibleMatched = matched.filter((t) => t.gameFormat !== "cash_game");
+    const matchedItmTables = itmEligibleMatched.filter((t) => (t.cashOut ?? 0) > 0).length;
+    const matchedItmEligibleTables = itmEligibleMatched.length;
 
     if (matchedTables <= 0) continue;
     includedSessions.push({
@@ -847,6 +860,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       share: matchedTables / totalTables,
       matchedTables,
       matchedItmTables,
+      matchedItmEligibleTables,
       totalTables,
     });
   }
@@ -876,6 +890,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   let totalDuration = 0;
   let totalTables = 0;
   let itmCount = 0;
+  let itmEligibleTables = 0;
   let winningSessions = 0;
   let losingSessions = 0;
   let breakEvenSessions = 0;
@@ -895,6 +910,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     totalDuration += duration;
     totalTables += row.matchedTables;
     itmCount += row.matchedItmTables;
+    itmEligibleTables += row.matchedItmEligibleTables;
 
     if (row.matchedItmTables > 0) winningSessions++;
     else if (profit < 0) losingSessions++;
@@ -927,7 +943,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     bestSession,
     worstSession,
     avgProfit: Math.round(totalProfit / includedSessions.length),
-    winRate: totalTables > 0 ? Math.round((itmCount / totalTables) * 100) : 0,
+    winRate: itmEligibleTables > 0 ? Math.round((itmCount / itmEligibleTables) * 100) : 0,
     avgHourlyRate: totalHours > 0 ? Math.round(totalProfit / totalHours) : 0,
   };
 }
