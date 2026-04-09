@@ -1424,9 +1424,9 @@ function SessionCard({ session }: { session: any }) {
   const utils = trpc.useUtils();
   const { data: tables } = trpc.sessions.getTables.useQuery(
     { sessionId: session.id },
-    { enabled: expanded }
+    { enabled: expanded || editing || editTableId !== null }
   );
-  const { data: venues } = trpc.venues.list.useQuery({}, { enabled: expanded });
+  const { data: venues } = trpc.venues.list.useQuery({}, { enabled: expanded || editing || editTableId !== null });
 
   // Session-level edit state (notes only)
   const [editNotes, setEditNotes] = useState(session.notes ?? "");
@@ -1695,16 +1695,44 @@ function SessionCard({ session }: { session: any }) {
     <Dialog open={editing} onOpenChange={setEditing}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Editar Notas da Sessão</DialogTitle>
+          <DialogTitle>Editar Sessão</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {tables && tables.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Mesas ({tables.length})</p>
+              {tables.map((t) => {
+                const tfmt = GAME_FORMATS.find(f => f.value === t.gameFormat);
+                const tp = (t.cashOut ?? 0) - t.buyIn;
+                const tableVenue = venues?.find(v => v.id === t.venueId);
+                return (
+                  <div key={t.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded bg-muted/30">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">{tfmt?.emoji} {tfmt?.label}</span>
+                      <span className="text-muted-foreground">{tableVenue?.name ?? "Sem plataforma"}{t.clubName ? ` · ${t.clubName}` : ""}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={tp >= 0 ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
+                        {tp >= 0 ? "+" : ""}{formatCurrency(Math.abs(tp), t.currency)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => { setEditing(false); setEditTableId(t.id); }}
+                      >
+                        <Edit2 className="h-3 w-3 mr-1" /> Editar
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div>
             <Label className="text-xs">Notas</Label>
             <Textarea className="text-sm mt-1 resize-none" rows={2} value={editNotes} onChange={e => setEditNotes(e.target.value)} />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Os dados de plataforma, buy-in e resultado pertencem a cada mesa. Para alterar esses valores, edite as mesas dentro da sessão.
-          </p>
         </div>
         <DialogFooter className="mt-2">
           <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancelar</Button>
