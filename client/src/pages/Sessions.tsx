@@ -1908,6 +1908,8 @@ export default function Sessions() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const { preferences: prefs, playTypeOrder, sortFormats, sortVenues, primaryType } = useBehaviorProfile();
+  const [activeSection, setActiveSection] = useState<"history" | "import">("history");
+  const [importRawText, setImportRawText] = useState("");
   const [showPlayStyleOnboarding, setShowPlayStyleOnboarding] = useState(false);
   const [selectedPlayStyle, setSelectedPlayStyle] = useState<"online" | "live">(primaryType);
   const [selectedFormats, setSelectedFormats] = useState<string[]>(["tournament"]);
@@ -1946,6 +1948,26 @@ export default function Sessions() {
       toast("Sessão iniciada!", { description: "Timer rodando. Adicione suas mesas." });
     },
     onError: (err) => toast.error("Erro", { description: err.message }),
+  });
+
+  const importPreviewMutation = trpc.sessions.importPreview.useMutation({
+    onError: (err) => toast.error("Falha ao analisar texto", { description: err.message }),
+  });
+
+  const importFromTextMutation = trpc.sessions.importFromText.useMutation({
+    onSuccess: (result) => {
+      utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.getCurrent.invalidate();
+      toast.success("Importação concluída", { description: result.message });
+      setImportRawText("");
+      importPreviewMutation.reset();
+      setActiveSection("history");
+    },
+    onError: (err) => toast.error("Falha ao importar", { description: err.message }),
   });
 
   useEffect(() => {
@@ -2079,6 +2101,25 @@ export default function Sessions() {
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant={activeSection === "history" ? "default" : "outline"}
+          onClick={() => setActiveSection("history")}
+          className="gap-2"
+        >
+          <BarChart2 className="h-4 w-4" /> Histórico
+        </Button>
+        <Button
+          type="button"
+          variant={activeSection === "import" ? "default" : "outline"}
+          onClick={() => setActiveSection("import")}
+          className="gap-2"
+        >
+          <Sparkles className="h-4 w-4" /> Importação IA
+        </Button>
       </div>
 
       {/* Stats bar */}
@@ -2314,24 +2355,102 @@ export default function Sessions() {
         </DialogContent>
       </Dialog>
 
-      {/* Session history */}
-      {loadingSessions ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-muted/30 animate-pulse" />)}
-        </div>
-      ) : sessions && sessions.length > 0 ? (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Histórico</h2>
-          {sessions.map((session) => (
-            <SessionCard key={session.id} session={session} />
-          ))}
-        </div>
-      ) : !activeSession ? (
-        <div className="text-center py-6 text-muted-foreground text-sm">
-          <BarChart2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p>Nenhuma sessão registrada ainda.</p>
-        </div>
-      ) : null}
+      {activeSection === "history" ? (
+        <>
+          {/* Session history */}
+          {loadingSessions ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-muted/30 animate-pulse" />)}
+            </div>
+          ) : sessions && sessions.length > 0 ? (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Histórico</h2>
+              {sessions.map((session) => (
+                <SessionCard key={session.id} session={session} />
+              ))}
+            </div>
+          ) : !activeSession ? (
+            <div className="text-center py-6 text-muted-foreground text-sm">
+              <BarChart2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p>Nenhuma sessão registrada ainda.</p>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="h-4 w-4" /> Importação IA (texto livre)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">Instruções para não bugar a importação</p>
+              <p>1. Cole uma sessão por linha ou por bloco separado por linha em branco.</p>
+              <p>2. Inclua data e valores, ex.: 08/04/2026 | PokerStars | torneio | buy-in 11 | cash-out 27.</p>
+              <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
+              <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Texto para importar</Label>
+              <Textarea
+                rows={8}
+                placeholder="Exemplo: 08/04/2026 | plataforma: PokerStars | torneio | buy-in 11 | cash-out 27 | 2h10"
+                value={importRawText}
+                onChange={(e) => setImportRawText(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={importRawText.trim().length < 10 || importPreviewMutation.isPending}
+                onClick={() => importPreviewMutation.mutate({ rawText: importRawText })}
+              >
+                {importPreviewMutation.isPending ? "Analisando..." : "Analisar"}
+              </Button>
+              <Button
+                type="button"
+                disabled={!importPreviewMutation.data || importFromTextMutation.isPending}
+                onClick={() => importFromTextMutation.mutate({ rawText: importRawText })}
+              >
+                {importFromTextMutation.isPending ? "Importando..." : "Importar para DB"}
+              </Button>
+            </div>
+
+            {importPreviewMutation.data && (
+              <div className="space-y-3">
+                <div className="text-sm">
+                  <p><span className="font-medium">Detectados:</span> {importPreviewMutation.data.totalDetected}</p>
+                  <p><span className="font-medium">Prontos para importar:</span> {importPreviewMutation.data.readyToImport}</p>
+                </div>
+
+                {importPreviewMutation.data.warnings.length > 0 && (
+                  <div className="rounded-md border border-amber-500/40 bg-amber-50/40 p-3 text-xs space-y-1">
+                    <p className="font-medium text-amber-900">Avisos de validação</p>
+                    {importPreviewMutation.data.warnings.slice(0, 8).map((warning, idx) => (
+                      <p key={idx} className="text-amber-900">• {warning}</p>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {importPreviewMutation.data.items.slice(0, 8).map((item, idx) => (
+                    <div key={idx} className="text-xs rounded-md border bg-muted/20 p-2 space-y-0.5">
+                      <p className="font-medium">{new Date(item.sessionDate).toLocaleDateString("pt-BR")} · {item.venueName}</p>
+                      <p className="text-muted-foreground">
+                        {item.type === "online" ? "Online" : "Live"} · {item.gameFormat} · {formatCurrency(item.buyIn, item.currency)} / {formatCurrency(item.cashOut, item.currency)} · {formatMinutes(item.durationMinutes)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

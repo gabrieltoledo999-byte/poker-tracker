@@ -90,6 +90,188 @@ const onboardingProfileInput = z.object({
   showInFriendsRanking: z.boolean().optional(),
 });
 
+type ImportType = "online" | "live";
+type ImportCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY";
+type ImportFormat = z.infer<typeof gameFormatEnum>;
+
+type ParsedImportItem = {
+  sourceText: string;
+  type: ImportType;
+  gameFormat: ImportFormat;
+  currency: ImportCurrency;
+  buyIn: number;
+  cashOut: number;
+  durationMinutes: number;
+  sessionDate: Date;
+  venueName?: string;
+  gameType?: string;
+  stakes?: string;
+  clubName?: string;
+  notes?: string;
+  warnings: string[];
+};
+
+function normalizeVenueName(name?: string): string {
+  return (name ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function parseDateFromText(text: string): Date | null {
+  const iso = text.match(/\b(\d{4})[-\/](\d{2})[-\/](\d{2})\b/);
+  if (iso) {
+    const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12, 0, 0, 0);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  const br = text.match(/\b(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})\b/);
+  if (br) {
+    const d = new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]), 12, 0, 0, 0);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  return null;
+}
+
+function parseDurationMinutes(text: string): number {
+  const hm = text.match(/(\d+)\s*h(?:oras?)?\s*(\d+)?\s*m?/i);
+  if (hm) {
+    const hours = Number(hm[1] ?? 0);
+    const mins = Number(hm[2] ?? 0);
+    return Math.max(1, hours * 60 + mins);
+  }
+  const onlyMin = text.match(/(\d+)\s*(?:min|mins|minutos?)\b/i);
+  if (onlyMin) {
+    return Math.max(1, Number(onlyMin[1]));
+  }
+  return 120;
+}
+
+function detectType(text: string): ImportType {
+  if (/\b(live|presencial|cassino|clube)\b/i.test(text)) return "live";
+  return "online";
+}
+
+function detectFormat(text: string): ImportFormat {
+  const t = text.toLowerCase();
+  if (t.includes("cash")) return "cash_game";
+  if (t.includes("sit") || t.includes("sng")) return "sit_and_go";
+  if (t.includes("spin")) return "spin_and_go";
+  if (t.includes("hyper")) return "hyper_turbo";
+  if (t.includes("turbo")) return "turbo";
+  if (t.includes("bounty") || t.includes("pko")) return "bounty";
+  if (t.includes("satelite") || t.includes("satélite") || t.includes("satellite")) return "satellite";
+  if (t.includes("freeroll")) return "freeroll";
+  if (t.includes("home game") || t.includes("homegame")) return "home_game";
+  return "tournament";
+}
+
+function detectCurrency(text: string): ImportCurrency {
+  if (/\b(CA\$|CAD)\b/i.test(text)) return "CAD";
+  if (/\b(CN¥|CNY|RMB)\b/i.test(text)) return "CNY";
+  if (/\b(¥|JPY)\b/i.test(text)) return "JPY";
+  if (/\b(US\$|USD|\$)\b/i.test(text)) return "USD";
+  return "BRL";
+}
+
+function parseMoneyValue(raw: string): number | null {
+  const cleaned = raw
+    .replace(/[R$US$CA$CN¥¥\s]/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "")
+    .replace(",", ".");
+  const num = Number(cleaned);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return Math.round(num * 100);
+}
+
+function parseBuyInAndCashOut(text: string): { buyIn: number | null; cashOut: number | null } {
+  const buyInLabel = text.match(/(?:buy\s*-?in|entrada|inscri[cç][aã]o)\s*[:=]?\s*([\w$.,]+)/i);
+  const cashOutLabel = text.match(/(?:cash\s*-?out|saida|sa[ií]da|premio|pr[eê]mio|resultado)\s*[:=]?\s*([\w$.,-]+)/i);
+
+  const buyIn = buyInLabel ? parseMoneyValue(buyInLabel[1]) : null;
+  const cashOut = cashOutLabel ? parseMoneyValue(cashOutLabel[1]) : null;
+
+  if (buyIn !== null || cashOut !== null) return { buyIn, cashOut };
+
+  const numbers = Array.from(text.matchAll(/(?:R\$|US\$|CA\$|CN¥|¥|\$)?\s*(\d+[\d.,]*)/g));
+  const first = numbers[0]?.[1] ? parseMoneyValue(numbers[0][1]) : null;
+  const second = numbers[1]?.[1] ? parseMoneyValue(numbers[1][1]) : null;
+  return { buyIn: first, cashOut: second };
+}
+
+function parseVenueName(text: string): string | undefined {
+  const byLabel = text.match(/(?:plataforma|site|local|venue)\s*[:=]\s*([^;|,\n]+)/i);
+  if (byLabel?.[1]) return byLabel[1].trim();
+
+  const known = [
+    "pp poker",
+    "pppoker",
+    "suprema",
+    "gg poker",
+    "ggpoker",
+    "pokerstars",
+    "pokerbros",
+    "wpt global",
+    "888poker",
+    "kkpoker",
+    "x-poker",
+  ];
+  const normalized = normalizeVenueName(text);
+  const hit = known.find((name) => normalized.includes(name));
+  if (!hit) return undefined;
+  if (hit === "pppoker" || hit === "pp poker") return "PP Poker";
+  if (hit === "ggpoker" || hit === "gg poker") return "GG Poker";
+  if (hit === "suprema") return "Suprema Poker";
+  if (hit === "pokerstars") return "PokerStars";
+  if (hit === "pokerbros") return "PokerBros";
+  if (hit === "wpt global") return "WPT Global";
+  if (hit === "888poker") return "888poker";
+  if (hit === "kkpoker") return "KKPoker";
+  if (hit === "x-poker") return "X-Poker";
+  return undefined;
+}
+
+function parseImportText(rawText: string): ParsedImportItem[] {
+  const chunks = rawText
+    .split(/\n\s*\n|\n(?=\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})|\n(?=\d{4}[\/\-]\d{2}[\/\-]\d{2})/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const entries = (chunks.length > 0 ? chunks : rawText.split("\n")).map((line) => line.trim()).filter(Boolean);
+
+  return entries.map((entry) => {
+    const warnings: string[] = [];
+    const type = detectType(entry);
+    const gameFormat = detectFormat(entry);
+    const currency = detectCurrency(entry);
+    const durationMinutes = parseDurationMinutes(entry);
+    const sessionDate = parseDateFromText(entry) ?? new Date();
+    const venueName = parseVenueName(entry);
+    const values = parseBuyInAndCashOut(entry);
+
+    if (!values.buyIn || values.buyIn < 0) warnings.push("Buy-in não identificado com precisão. Revise antes de importar.");
+    if (values.cashOut === null) warnings.push("Cash-out não identificado. Será usado 0 por padrão.");
+    if (!venueName) warnings.push("Plataforma/local não identificado. Será usado 'Importado'.");
+
+    return {
+      sourceText: entry,
+      type,
+      gameFormat,
+      currency,
+      buyIn: values.buyIn ?? 0,
+      cashOut: values.cashOut ?? 0,
+      durationMinutes,
+      sessionDate,
+      venueName,
+      notes: entry.slice(0, 1200),
+      warnings,
+    };
+  });
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -348,6 +530,142 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await updateUserOnboardingProfile(ctx.user.id, input);
         return await getUserPreferences(ctx.user.id);
+      }),
+
+    importPreview: protectedProcedure
+      .input(z.object({ rawText: z.string().min(10).max(120000) }))
+      .mutation(async ({ input }) => {
+        const parsed = parseImportText(input.rawText);
+        const warnings = parsed.flatMap((item, idx) => item.warnings.map((w) => `Linha ${idx + 1}: ${w}`));
+        return {
+          totalDetected: parsed.length,
+          readyToImport: parsed.filter((p) => p.buyIn >= 0).length,
+          warnings,
+          items: parsed.map((item) => ({
+            sourceText: item.sourceText,
+            type: item.type,
+            gameFormat: item.gameFormat,
+            currency: item.currency,
+            buyIn: item.buyIn,
+            cashOut: item.cashOut,
+            durationMinutes: item.durationMinutes,
+            sessionDate: item.sessionDate,
+            venueName: item.venueName ?? "Importado",
+            warnings: item.warnings,
+          })),
+        };
+      }),
+
+    importFromText: protectedProcedure
+      .input(z.object({ rawText: z.string().min(10).max(120000) }))
+      .mutation(async ({ ctx, input }) => {
+        await initializePresetVenues(ctx.user.id, PRESET_VENUES);
+
+        const parsed = parseImportText(input.rawText);
+        if (parsed.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum dado identificável para importar." });
+        }
+
+        const allVenues = await getUserVenues(ctx.user.id);
+        const venueMap = new Map(allVenues.map((v) => [normalizeVenueName(v.name), v]));
+
+        const rates = await getAllRates();
+        let imported = 0;
+        const failures: string[] = [];
+
+        for (let i = 0; i < parsed.length; i++) {
+          const item = parsed[i];
+          try {
+            const venueName = item.venueName?.trim() || "Importado";
+            const normalizedVenue = normalizeVenueName(venueName);
+            let venue = venueMap.get(normalizedVenue);
+            if (!venue) {
+              venue = await createVenue({
+                userId: ctx.user.id,
+                name: venueName,
+                type: item.type,
+                logoUrl: null,
+                website: null,
+                isPreset: 0,
+                currency: item.currency,
+                balance: 0,
+                notes: "Criado automaticamente pela importação IA",
+              } as any);
+              venueMap.set(normalizedVenue, venue);
+            }
+
+            let buyInBrl = item.buyIn;
+            let cashOutBrl = item.cashOut;
+            let exchangeRate: number | null = null;
+            let originalBuyIn: number | null = null;
+            let originalCashOut: number | null = null;
+
+            if (item.currency !== "BRL") {
+              const rate = rates[item.currency as "USD" | "CAD" | "JPY" | "CNY"]?.rate;
+              if (!rate) {
+                throw new Error(`Cotação indisponível para ${item.currency}`);
+              }
+              exchangeRate = Math.round(rate * 10000);
+              originalBuyIn = item.buyIn;
+              originalCashOut = item.cashOut;
+              buyInBrl = await convertToBrl(item.buyIn, item.currency);
+              cashOutBrl = await convertToBrl(item.cashOut, item.currency);
+            }
+
+            const createdSession = await createSession({
+              userId: ctx.user.id,
+              type: item.type,
+              gameFormat: item.gameFormat,
+              currency: item.currency,
+              buyIn: buyInBrl,
+              cashOut: cashOutBrl,
+              originalBuyIn,
+              originalCashOut,
+              exchangeRate,
+              sessionDate: item.sessionDate,
+              durationMinutes: Math.max(1, item.durationMinutes),
+              notes: item.notes,
+              venueId: venue.id,
+              gameType: item.gameType,
+              stakes: item.stakes,
+              location: null,
+              doubts: null,
+            } as any);
+
+            const startedAt = new Date(item.sessionDate);
+            const endedAt = new Date(startedAt.getTime() + Math.max(1, item.durationMinutes) * 60_000);
+            await addSessionTable({
+              userId: ctx.user.id,
+              sessionId: createdSession.id,
+              activeSessionId: null,
+              venueId: venue.id,
+              type: item.type,
+              gameFormat: item.gameFormat,
+              currency: item.currency,
+              buyIn: item.buyIn,
+              cashOut: item.cashOut,
+              clubName: item.clubName,
+              gameType: item.gameType,
+              stakes: item.stakes,
+              notes: item.notes,
+              startedAt,
+              endedAt,
+            } as any);
+
+            imported += 1;
+          } catch (err: any) {
+            failures.push(`Linha ${i + 1}: ${err?.message ?? "falha ao importar"}`);
+          }
+        }
+
+        return {
+          imported,
+          failed: failures.length,
+          failures,
+          message: failures.length === 0
+            ? `Importação concluída com ${imported} item(ns).`
+            : `Importação parcial: ${imported} importado(s), ${failures.length} com erro.`,
+        };
       }),
 
     // ── Active Session (timer-based) ──────────────────────────────────────
