@@ -1803,14 +1803,18 @@ function SessionCard({ session }: { session: any }) {
                 <Select value={editVenueId} onValueChange={setEditVenueId}>
                   <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                   <SelectContent>
-                    {venues?.map(v => (
-                      <SelectItem key={v.id} value={v.id.toString()}>
-                        <div className="flex items-center gap-2">
-                          {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
-                          {v.name}
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {venues && venues.length > 0 ? (
+                      venues.map(v => (
+                        <SelectItem key={v.id} value={v.id.toString()}>
+                          <div className="flex items-center gap-2">
+                            {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
+                            {v.name}
+                          </div>
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="p-2 text-xs text-muted-foreground text-center">Nenhuma plataforma</div>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
