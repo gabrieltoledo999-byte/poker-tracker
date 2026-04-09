@@ -14,14 +14,6 @@ const CDN = "/logos";
 export const PRESET_VENUES: PresetVenue[] = [
   // Online Poker Sites
   {
-    name: "PP Poker",
-    type: "online",
-    logoUrl: `${CDN}/pppoker-icon.png`,
-    logoFit: "contain",
-    defaultCurrency: "USD",
-    website: "https://www.pppoker.net",
-  },
-  {
     name: "Suprema Poker",
     type: "online",
     logoUrl: `${CDN}/suprema.svg`,
@@ -29,11 +21,20 @@ export const PRESET_VENUES: PresetVenue[] = [
     website: "https://supremapoker.net",
   },
   {
-    name: "GG Poker",
+    name: "PPPoker",
     type: "online",
-    logoUrl: `${CDN}/ggpoker.png`,
+    logoUrl: `${CDN}/pppoker-icon.png`,
+    logoFit: "contain",
     defaultCurrency: "USD",
-    website: "https://www.ggpoker.com",
+    website: "https://www.pppoker.net",
+  },
+  {
+    name: "PokerBros",
+    type: "online",
+    logoUrl: `${CDN}/pokerbros-icon.png`,
+    logoFit: "contain",
+    defaultCurrency: "USD",
+    website: "https://www.pokerbros.net",
   },
   {
     name: "PokerStars",
@@ -44,20 +45,11 @@ export const PRESET_VENUES: PresetVenue[] = [
     website: "https://www.pokerstars.com",
   },
   {
-    name: "OU Poker",
+    name: "GGPoker",
     type: "online",
-    logoUrl: `${CDN}/ou-poker.png`,
-    logoFit: "contain",
+    logoUrl: `${CDN}/ggpoker.png`,
     defaultCurrency: "USD",
-    website: "https://oupoker.com",
-  },
-  {
-    name: "PokerBros",
-    type: "online",
-    logoUrl: `${CDN}/pokerbros-icon.png`,
-    logoFit: "contain",
-    defaultCurrency: "USD",
-    website: "https://www.pokerbros.net",
+    website: "https://www.ggpoker.com",
   },
   {
     name: "WPT Global",
