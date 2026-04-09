@@ -783,7 +783,7 @@ function RebuyDialog({ tableId, currency, currentBuyIn, suggestedRebuy, onClose 
               toast.error("Informe um valor válido para o rebuy.");
               return;
             }
-            updateMutation.mutate({ id: tableId, buyIn: currentBuyIn + rebuyCents });
+            updateMutation.mutate({ id: tableId, buyIn: currentBuyIn + rebuyCents, incrementRebuy: true });
           }}
           disabled={updateMutation.isPending}
         >
@@ -2434,7 +2434,7 @@ export default function Sessions() {
               <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
               <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
               <p>5. Você pode fixar a moeda por clique (Auto, BRL, USD, CAD, JPY, CNY).</p>
-              <p>6. A IA não cria plataforma nova: ela só importa para plataformas já existentes (ex.: Suprema -> Suprema Poker).</p>
+              <p>6. A IA não cria plataforma nova: ela só importa para plataformas já existentes (ex.: Suprema {"->"} Suprema Poker).</p>
             </div>
 
             <div className="space-y-1">

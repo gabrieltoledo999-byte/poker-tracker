@@ -41,6 +41,9 @@ async function runSafeMigrations() {
       // passwordHash (legacy email auth – may already exist)
       "ALTER TABLE `users` ADD COLUMN `passwordHash` varchar(255)",
       "ALTER TABLE `session_tables` ADD COLUMN `clubName` varchar(120)",
+        // rebuy tracking
+        "ALTER TABLE `session_tables` ADD COLUMN `initialBuyIn` int",
+        "ALTER TABLE `session_tables` ADD COLUMN `rebuyCount` int NOT NULL DEFAULT 0",
       // currency enum expansion
       "ALTER TABLE `sessions` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
       "ALTER TABLE `session_tables` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
@@ -99,6 +102,18 @@ async function runSafeMigrations() {
     }
 
     console.log("[migrations] Safe migrations complete.");
+
+      // Backfill initialBuyIn for existing rows that don't have it yet
+      try {
+        const [result] = await conn.execute(
+          "UPDATE `session_tables` SET `initialBuyIn` = `buyIn` WHERE `initialBuyIn` IS NULL"
+        ) as any[];
+        if (result?.affectedRows > 0) {
+          console.log(`[migrations] Backfilled initialBuyIn for ${result.affectedRows} session_table row(s).`);
+        }
+      } catch (err: any) {
+        console.warn("[migrations] Could not backfill initialBuyIn:", err?.message);
+      }
   } catch (err) {
     console.error("[migrations] Failed to run safe migrations:", err);
   } finally {
@@ -153,7 +168,7 @@ async function mergeDuplicateVenues() {
         grouped.get(canon)!.push(v);
       }
 
-      for (const [canonName, group] of grouped.entries()) {
+      for (const [canonName, group] of Array.from(grouped.entries())) {
         if (group.length < 2) continue;
 
         // Pick canonical: prefer isPreset=1, then exact name match, then lowest id

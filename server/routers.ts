@@ -205,8 +205,24 @@ function parseBuyInAndCashOut(text: string): { buyIn: number | null; cashOut: nu
 }
 
 function parseVenueName(text: string): string | undefined {
+  const canonicalize = (raw?: string): string | undefined => {
+    if (!raw) return undefined;
+    const normalizedRaw = normalizeVenueName(raw);
+    if (!normalizedRaw) return undefined;
+    if (normalizedRaw.includes("pppoker") || normalizedRaw.includes("pp poker")) return "PP Poker";
+    if (normalizedRaw.includes("ggpoker") || normalizedRaw.includes("gg poker")) return "GG Poker";
+    if (normalizedRaw.includes("suprema")) return "Suprema Poker";
+    if (normalizedRaw.includes("pokerstars")) return "PokerStars";
+    if (normalizedRaw.includes("pokerbros")) return "PokerBros";
+    if (normalizedRaw.includes("wpt global")) return "WPT Global";
+    if (normalizedRaw.includes("888poker")) return "888poker";
+    if (normalizedRaw.includes("kkpoker")) return "KKPoker";
+    if (normalizedRaw.includes("x-poker") || normalizedRaw.includes("xpoker")) return "X-Poker";
+    return raw.trim();
+  };
+
   const byLabel = text.match(/(?:plataforma|site|local|venue)\s*[:=]\s*([^;|,\n]+)/i);
-  if (byLabel?.[1]) return byLabel[1].trim();
+  if (byLabel?.[1]) return canonicalize(byLabel[1]);
 
   const known = [
     "pp poker",
@@ -224,16 +240,7 @@ function parseVenueName(text: string): string | undefined {
   const normalized = normalizeVenueName(text);
   const hit = known.find((name) => normalized.includes(name));
   if (!hit) return undefined;
-  if (hit === "pppoker" || hit === "pp poker") return "PP Poker";
-  if (hit === "ggpoker" || hit === "gg poker") return "GG Poker";
-  if (hit === "suprema") return "Suprema Poker";
-  if (hit === "pokerstars") return "PokerStars";
-  if (hit === "pokerbros") return "PokerBros";
-  if (hit === "wpt global") return "WPT Global";
-  if (hit === "888poker") return "888poker";
-  if (hit === "kkpoker") return "KKPoker";
-  if (hit === "x-poker") return "X-Poker";
-  return undefined;
+  return canonicalize(hit);
 }
 
 function parseImportText(rawText: string, forcedCurrency?: ImportCurrency): ParsedImportItem[] {
@@ -256,7 +263,7 @@ function parseImportText(rawText: string, forcedCurrency?: ImportCurrency): Pars
 
     if (!values.buyIn || values.buyIn < 0) warnings.push("Buy-in não identificado com precisão. Revise antes de importar.");
     if (values.cashOut === null) warnings.push("Cash-out não identificado. Será usado 0 por padrão.");
-    if (!venueName) warnings.push("Plataforma/local não identificado. Será usado 'Importado'.");
+    if (!venueName) warnings.push("Plataforma/local não identificado. Esta linha não será importada.");
 
     return {
       sourceText: entry,
@@ -553,7 +560,7 @@ export const appRouter = router({
             cashOut: item.cashOut,
             durationMinutes: item.durationMinutes,
             sessionDate: item.sessionDate,
-            venueName: item.venueName ?? "Importado",
+            venueName: item.venueName ?? "Não mapeado",
             warnings: item.warnings,
           })),
         };
@@ -580,22 +587,22 @@ export const appRouter = router({
         for (let i = 0; i < parsed.length; i++) {
           const item = parsed[i];
           try {
-            const venueName = item.venueName?.trim() || "Importado";
+            const venueName = item.venueName?.trim();
+            if (!venueName) {
+              throw new Error("plataforma/local não identificado. Ajuste o texto para uma plataforma existente");
+            }
             const normalizedVenue = normalizeVenueName(venueName);
             let venue = venueMap.get(normalizedVenue);
             if (!venue) {
-              venue = await createVenue({
-                userId: ctx.user.id,
-                name: venueName,
-                type: item.type,
-                logoUrl: null,
-                website: null,
-                isPreset: 0,
-                currency: item.currency,
-                balance: 0,
-                notes: "Criado automaticamente pela importação IA",
-              } as any);
-              venueMap.set(normalizedVenue, venue);
+              const fallback = Array.from(venueMap.entries()).find(([key]) =>
+                key.includes(normalizedVenue) || normalizedVenue.includes(key)
+              );
+              if (fallback) {
+                venue = fallback[1];
+              }
+            }
+            if (!venue) {
+              throw new Error(`plataforma '${venueName}' não existe. Cadastre/ative essa plataforma antes de importar`);
             }
 
             let buyInBrl = item.buyIn;
@@ -734,10 +741,11 @@ export const appRouter = router({
         clubName: z.string().max(120).optional(),
         notes: z.string().optional(),
         endedAt: z.date().optional().nullable(),
+        incrementRebuy: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        const updated = await updateSessionTable(id, ctx.user.id, data as any);
+        const { id, incrementRebuy, ...data } = input;
+        const updated = await updateSessionTable(id, ctx.user.id, data as any, incrementRebuy === true);
 
         if (data.venueId && data.currency) {
           await updateVenue(data.venueId, ctx.user.id, { currency: data.currency as any });

@@ -437,6 +437,8 @@ export const sessionTables = mysqlTable("session_tables", {
   currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL").notNull(),
   buyIn: int("buyIn").notNull().default(0), // in original currency centavos
   cashOut: int("cashOut"), // null = still in progress
+  initialBuyIn: int("initialBuyIn"), // original buy-in at table creation (no rebuys), null for legacy rows
+  rebuyCount: int("rebuyCount").notNull().default(0), // number of rebuys made on this table
 
   // Optional details
   gameType: varchar("gameType", { length: 64 }), // NL Hold'em, PLO, etc.

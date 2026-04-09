@@ -2631,6 +2631,7 @@ export async function getUserPreferences(userId: number) {
       buyIn: sessionTables.buyIn,
       venueId: sessionTables.venueId,
       gameType: sessionTables.gameType,
+        initialBuyIn: sessionTables.initialBuyIn,
       currency: sessionTables.currency,
     })
     .from(sessionTables)
@@ -2642,10 +2643,10 @@ export async function getUserPreferences(userId: number) {
   const onlineAbiTables = recentTables.filter((t) => t.type === "online").slice(0, 100);
   const liveAbiTables = recentTables.filter((t) => t.type === "live").slice(0, 100);
   const abiOnlineAvgBuyIn = onlineAbiTables.length > 0
-    ? Math.round(onlineAbiTables.reduce((sum, t) => sum + (t.buyIn ?? 0), 0) / onlineAbiTables.length)
+    ? Math.round(onlineAbiTables.reduce((sum, t) => sum + (t.initialBuyIn ?? t.buyIn ?? 0), 0) / onlineAbiTables.length)
     : 0;
   const abiLiveAvgBuyIn = liveAbiTables.length > 0
-    ? Math.round(liveAbiTables.reduce((sum, t) => sum + (t.buyIn ?? 0), 0) / liveAbiTables.length)
+    ? Math.round(liveAbiTables.reduce((sum, t) => sum + (t.initialBuyIn ?? t.buyIn ?? 0), 0) / liveAbiTables.length)
     : 0;
   const abiOnlineSampleSize = onlineAbiTables.length;
   const abiLiveSampleSize = liveAbiTables.length;
@@ -2888,7 +2889,7 @@ export async function getActiveSession(userId: number): Promise<ActiveSession | 
 export async function addSessionTable(data: InsertSessionTable): Promise<SessionTable | null> {
   const db = await getDb();
   if (!db) return null;
-  await db.insert(sessionTables).values(data);
+  await db.insert(sessionTables).values({ ...data, initialBuyIn: data.initialBuyIn ?? data.buyIn });
   const [row] = await db
     .select()
     .from(sessionTables)
@@ -2903,6 +2904,18 @@ export async function updateSessionTable(
   id: number,
   userId: number,
   data: Partial<InsertSessionTable>
+): Promise<SessionTable | null>;
+export async function updateSessionTable(
+  id: number,
+  userId: number,
+  data: Partial<InsertSessionTable>,
+  incrementRebuy: boolean
+): Promise<SessionTable | null>;
+export async function updateSessionTable(
+  id: number,
+  userId: number,
+  data: Partial<InsertSessionTable>,
+  incrementRebuy?: boolean
 ): Promise<SessionTable | null> {
   const db = await getDb();
   if (!db) return null;
@@ -2920,7 +2933,11 @@ export async function updateSessionTable(
     throw new Error("Defina a plataforma/local da mesa antes de finalizar.");
   }
 
-  await db.update(sessionTables).set({ ...data, updatedAt: new Date() }).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
+  const updatePayload: any = { ...data, updatedAt: new Date() };
+  if (incrementRebuy) {
+    updatePayload.rebuyCount = (current.rebuyCount ?? 0) + 1;
+  }
+  await db.update(sessionTables).set(updatePayload).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
   const [row] = await db.select().from(sessionTables).where(eq(sessionTables.id, id)).limit(1);
   return row ?? null;
 }
