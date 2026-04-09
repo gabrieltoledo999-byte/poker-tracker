@@ -1534,19 +1534,38 @@ function SessionCard({ session }: { session: any }) {
         onClick={() => setExpanded(!expanded)}
       >
         <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-lg shrink-0 ${profit >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
-          {isMultiVenue ? (
-            <Building2 className="h-5 w-5 text-muted-foreground" />
-          ) : venueLogoUrl ? (
+          {venueLogoUrl ? (
             <img src={venueLogoUrl} alt={venueName ?? ""} className="h-8 w-8 rounded object-contain" />
           ) : (
-            fmt?.emoji ?? "🃏"
+            <div className="relative flex items-center justify-center">
+              <span>{fmt?.emoji ?? "🃏"}</span>
+              <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-background border border-border flex items-center justify-center">
+                {session.type === "online" ? (
+                  <Wifi className="h-2.5 w-2.5 text-sky-500" />
+                ) : (
+                  <MapPin className="h-2.5 w-2.5 text-amber-500" />
+                )}
+              </span>
+            </div>
           )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
+            <span className="text-sm">{fmt?.emoji ?? "🃏"}</span>
             <span className="font-medium text-sm truncate">{fmt?.label ?? session.gameFormat}</span>
             <Badge variant="outline" className="text-xs shrink-0">{session.type === "online" ? "Online" : "Live"}</Badge>
-            {venueBadgeText && <span className="text-xs text-muted-foreground truncate hidden sm:inline">{venueBadgeText}</span>}
+            {venueBadgeText && (
+              <span className="text-xs text-muted-foreground truncate hidden sm:inline flex items-center gap-1">
+                {venueLogoUrl ? (
+                  <img src={venueLogoUrl} alt={venueName ?? ""} className="h-3.5 w-3.5 rounded object-contain" />
+                ) : isMultiVenue ? (
+                  <Building2 className="h-3 w-3" />
+                ) : (
+                  <MapPin className="h-3 w-3" />
+                )}
+                {venueBadgeText}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
             <span>{date.toLocaleDateString("pt-BR")}</span>
