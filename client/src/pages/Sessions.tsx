@@ -1929,6 +1929,7 @@ export default function Sessions() {
   const { preferences: prefs, playTypeOrder, sortFormats, sortVenues, primaryType } = useBehaviorProfile();
   const [activeSection, setActiveSection] = useState<"history" | "import">("history");
   const [importRawText, setImportRawText] = useState("");
+  const [importCurrencyMode, setImportCurrencyMode] = useState<"auto" | "BRL" | "USD" | "CAD" | "JPY" | "CNY">("auto");
   const [showPlayStyleOnboarding, setShowPlayStyleOnboarding] = useState(false);
   const [selectedPlayStyle, setSelectedPlayStyle] = useState<"online" | "live">(primaryType);
   const [selectedFormats, setSelectedFormats] = useState<string[]>(["tournament"]);
@@ -2409,6 +2410,24 @@ export default function Sessions() {
               <p>2. Inclua data e valores, ex.: 08/04/2026 | PokerStars | torneio | buy-in 11 | cash-out 27.</p>
               <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
               <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
+              <p>5. Você pode fixar a moeda por clique (Auto, BRL, USD, CAD, JPY, CNY).</p>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Moeda da importação</Label>
+              <Select value={importCurrencyMode} onValueChange={(v) => setImportCurrencyMode(v as any)}>
+                <SelectTrigger className="w-full sm:w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto (detectar do texto)</SelectItem>
+                  <SelectItem value="BRL">BRL (R$)</SelectItem>
+                  <SelectItem value="USD">USD ($)</SelectItem>
+                  <SelectItem value="CAD">CAD (CA$)</SelectItem>
+                  <SelectItem value="JPY">JPY (¥)</SelectItem>
+                  <SelectItem value="CNY">CNY (CN¥)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1">
@@ -2426,14 +2445,14 @@ export default function Sessions() {
                 type="button"
                 variant="outline"
                 disabled={importRawText.trim().length < 10 || importPreviewMutation.isPending}
-                onClick={() => importPreviewMutation.mutate({ rawText: importRawText })}
+                onClick={() => importPreviewMutation.mutate({ rawText: importRawText, currencyMode: importCurrencyMode })}
               >
                 {importPreviewMutation.isPending ? "Analisando..." : "Analisar"}
               </Button>
               <Button
                 type="button"
                 disabled={!importPreviewMutation.data || importFromTextMutation.isPending}
-                onClick={() => importFromTextMutation.mutate({ rawText: importRawText })}
+                onClick={() => importFromTextMutation.mutate({ rawText: importRawText, currencyMode: importCurrencyMode })}
               >
                 {importFromTextMutation.isPending ? "Importando..." : "Importar para DB"}
               </Button>

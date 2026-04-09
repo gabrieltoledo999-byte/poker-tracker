@@ -93,6 +93,7 @@ const onboardingProfileInput = z.object({
 type ImportType = "online" | "live";
 type ImportCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY";
 type ImportFormat = z.infer<typeof gameFormatEnum>;
+const importCurrencyModeEnum = z.enum(["auto", "BRL", "USD", "CAD", "JPY", "CNY"]);
 
 type ParsedImportItem = {
   sourceText: string;
@@ -234,7 +235,7 @@ function parseVenueName(text: string): string | undefined {
   return undefined;
 }
 
-function parseImportText(rawText: string): ParsedImportItem[] {
+function parseImportText(rawText: string, forcedCurrency?: ImportCurrency): ParsedImportItem[] {
   const chunks = rawText
     .split(/\n\s*\n|\n(?=\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})|\n(?=\d{4}[\/\-]\d{2}[\/\-]\d{2})/)
     .map((part) => part.trim())
@@ -246,7 +247,7 @@ function parseImportText(rawText: string): ParsedImportItem[] {
     const warnings: string[] = [];
     const type = detectType(entry);
     const gameFormat = detectFormat(entry);
-    const currency = detectCurrency(entry);
+    const currency = forcedCurrency ?? detectCurrency(entry);
     const durationMinutes = parseDurationMinutes(entry);
     const sessionDate = parseDateFromText(entry) ?? new Date();
     const venueName = parseVenueName(entry);
@@ -533,9 +534,10 @@ export const appRouter = router({
       }),
 
     importPreview: protectedProcedure
-      .input(z.object({ rawText: z.string().min(10).max(120000) }))
+      .input(z.object({ rawText: z.string().min(10).max(120000), currencyMode: importCurrencyModeEnum.optional() }))
       .mutation(async ({ input }) => {
-        const parsed = parseImportText(input.rawText);
+        const forcedCurrency = input.currencyMode && input.currencyMode !== "auto" ? input.currencyMode : undefined;
+        const parsed = parseImportText(input.rawText, forcedCurrency);
         const warnings = parsed.flatMap((item, idx) => item.warnings.map((w) => `Linha ${idx + 1}: ${w}`));
         return {
           totalDetected: parsed.length,
@@ -557,11 +559,12 @@ export const appRouter = router({
       }),
 
     importFromText: protectedProcedure
-      .input(z.object({ rawText: z.string().min(10).max(120000) }))
+      .input(z.object({ rawText: z.string().min(10).max(120000), currencyMode: importCurrencyModeEnum.optional() }))
       .mutation(async ({ ctx, input }) => {
         await initializePresetVenues(ctx.user.id, PRESET_VENUES);
 
-        const parsed = parseImportText(input.rawText);
+        const forcedCurrency = input.currencyMode && input.currencyMode !== "auto" ? input.currencyMode : undefined;
+        const parsed = parseImportText(input.rawText, forcedCurrency);
         if (parsed.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum dado identificável para importar." });
         }
