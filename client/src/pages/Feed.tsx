@@ -548,8 +548,8 @@ export default function Feed() {
   const { data: posts, isLoading } = trpc.feed.list.useQuery();
   const { data: globalHandPatternStats, isLoading: loadingGlobalHandStats } = trpc.feed.handPatternStats.useQuery({ limit: 50, minHands: 1 });
 
-  const kkScore = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.hands ?? 0), 0);
-  const jjScore = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.hands ?? 0), 0);
+  const kkTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.hands ?? 0), 0);
+  const jjTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.hands ?? 0), 0);
   const kkWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.wins ?? 0), 0);
   const kkLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.losses ?? 0), 0);
   const jjWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.wins ?? 0), 0);
@@ -585,15 +585,19 @@ export default function Feed() {
 
             {!loadingGlobalHandStats && (
               <>
-                <div className="absolute left-[13%] right-[58%] bottom-[6.5%] top-[78.5%] flex items-center justify-center">
-                  <span className="text-[clamp(2.2rem,7vw,5rem)] font-black tracking-tight text-slate-100 drop-shadow-[0_0_18px_rgba(125,211,252,0.65)]">
-                    {kkScore}
-                  </span>
+                <div className="absolute left-[4%] top-[4%] rounded-lg border border-sky-300/30 bg-slate-950/55 px-2.5 py-1.5 backdrop-blur-sm">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-100 flex items-center gap-1">
+                    <Flame className="h-3 w-3 text-amber-400" /> Hey Hey
+                  </p>
+                  <p className="text-sm font-bold text-white leading-tight">{kkTotal} mãos</p>
+                  <p className="text-[10px] text-sky-100/85 leading-tight">V {kkWins} • D {kkLosses}</p>
                 </div>
-                <div className="absolute left-[58%] right-[13%] bottom-[6.5%] top-[78.5%] flex items-center justify-center">
-                  <span className="text-[clamp(2.2rem,7vw,5rem)] font-black tracking-tight text-slate-100 drop-shadow-[0_0_18px_rgba(248,113,113,0.7)]">
-                    {jjScore}
-                  </span>
+                <div className="absolute right-[4%] top-[4%] rounded-lg border border-rose-300/30 bg-slate-950/55 px-2.5 py-1.5 backdrop-blur-sm text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-100 flex items-center justify-end gap-1">
+                    Valavalá <Swords className="h-3 w-3 text-orange-400" />
+                  </p>
+                  <p className="text-sm font-bold text-white leading-tight">{jjTotal} mãos</p>
+                  <p className="text-[10px] text-rose-100/85 leading-tight">V {jjWins} • D {jjLosses}</p>
                 </div>
               </>
             )}
@@ -604,9 +608,9 @@ export default function Feed() {
               <div>
                 <h2 className="text-sm font-semibold flex items-center gap-1.5">
                   <Crown className="h-4 w-4 text-amber-500" />
-                  Placar Global KK/JJ
+                  Painel Global KK/JJ
                 </h2>
-                <p className="text-xs text-muted-foreground">Agora contando a partir de 1 registro para já aparecer no feed.</p>
+                <p className="text-xs text-muted-foreground">Cada lado com suas próprias vitórias e derrotas (sem confronto direto).</p>
               </div>
               <Badge variant="secondary" className="text-[10px]">Ao vivo entre players</Badge>
             </div>
@@ -619,23 +623,6 @@ export default function Feed() {
               </div>
             ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 p-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-sky-100">
-                      <Flame className="h-4 w-4 text-amber-400" /> Hey Hey
-                    </div>
-                    <p className="mt-2 text-2xl font-black text-white">{kkScore}</p>
-                    <p className="text-xs text-sky-100/80">Vitórias {kkWins} • Derrotas {kkLosses}</p>
-                  </div>
-                  <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-right">
-                    <div className="flex items-center justify-end gap-2 text-sm font-semibold text-rose-100">
-                      Valavalá <Swords className="h-4 w-4 text-orange-400" />
-                    </div>
-                    <p className="mt-2 text-2xl font-black text-white">{jjScore}</p>
-                    <p className="text-xs text-rose-100/80">Vitórias {jjWins} • Derrotas {jjLosses}</p>
-                  </div>
-                </div>
-
                 <div className="space-y-2">
                   {globalHandPatternStats.slice(0, 10).map((player: any, idx: number) => (
                     <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3 bg-background/65 backdrop-blur-sm">
