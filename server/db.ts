@@ -238,6 +238,8 @@ export async function deleteSession(id: number, userId: number): Promise<boolean
 export async function getHandPatternStats(userId: number): Promise<{
   kk: { hands: number; wins: number; losses: number; winRate: number };
   jj: { hands: number; wins: number; losses: number; winRate: number };
+  aa: { hands: number; wins: number; losses: number; winRate: number };
+  ak: { hands: number; wins: number; losses: number; winRate: number };
 }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -261,9 +263,13 @@ export async function getHandPatternStats(userId: number): Promise<{
 
   const kkRegex = /\b(kk|rei\s*rei|k\s*k)\b/i;
   const jjRegex = /\b(jj|vala\s*vala|j\s*j)\b/i;
+  const aaRegex = /\b(aa|as\s*as|a\s*a)\b/i;
+  const akRegex = /\b(ak|as\s*e\s*k|a\s*k)\b/i;
 
   const kk = { hands: 0, wins: 0, losses: 0, winRate: 0 };
   const jj = { hands: 0, wins: 0, losses: 0, winRate: 0 };
+  const aa = { hands: 0, wins: 0, losses: 0, winRate: 0 };
+  const ak = { hands: 0, wins: 0, losses: 0, winRate: 0 };
 
   for (const row of tableRows) {
     const notes = (row.notes ?? "").toString();
@@ -280,6 +286,18 @@ export async function getHandPatternStats(userId: number): Promise<{
       if (profit > 0) jj.wins += 1;
       else if (profit < 0) jj.losses += 1;
     }
+
+    if (aaRegex.test(notes)) {
+      aa.hands += 1;
+      if (profit > 0) aa.wins += 1;
+      else if (profit < 0) aa.losses += 1;
+    }
+
+    if (akRegex.test(notes)) {
+      ak.hands += 1;
+      if (profit > 0) ak.wins += 1;
+      else if (profit < 0) ak.losses += 1;
+    }
   }
 
   const [manual] = await db
@@ -290,6 +308,12 @@ export async function getHandPatternStats(userId: number): Promise<{
       jjHands: handPatternCounters.jjHands,
       jjWins: handPatternCounters.jjWins,
       jjLosses: handPatternCounters.jjLosses,
+      aaHands: handPatternCounters.aaHands,
+      aaWins: handPatternCounters.aaWins,
+      aaLosses: handPatternCounters.aaLosses,
+      akHands: handPatternCounters.akHands,
+      akWins: handPatternCounters.akWins,
+      akLosses: handPatternCounters.akLosses,
     })
     .from(handPatternCounters)
     .where(eq(handPatternCounters.userId, userId))
@@ -303,15 +327,27 @@ export async function getHandPatternStats(userId: number): Promise<{
     jj.hands += Math.max(0, Number(manual.jjHands ?? 0));
     jj.wins += Math.max(0, Number(manual.jjWins ?? 0));
     jj.losses += Math.max(0, Number(manual.jjLosses ?? 0));
+
+    aa.hands += Math.max(0, Number(manual.aaHands ?? 0));
+    aa.wins += Math.max(0, Number(manual.aaWins ?? 0));
+    aa.losses += Math.max(0, Number(manual.aaLosses ?? 0));
+
+    ak.hands += Math.max(0, Number(manual.akHands ?? 0));
+    ak.wins += Math.max(0, Number(manual.akWins ?? 0));
+    ak.losses += Math.max(0, Number(manual.akLosses ?? 0));
   }
 
   kk.hands = Math.max(kk.hands, kk.wins + kk.losses);
   jj.hands = Math.max(jj.hands, jj.wins + jj.losses);
+  aa.hands = Math.max(aa.hands, aa.wins + aa.losses);
+  ak.hands = Math.max(ak.hands, ak.wins + ak.losses);
 
   kk.winRate = kk.hands > 0 ? Math.round((kk.wins / kk.hands) * 100) : 0;
   jj.winRate = jj.hands > 0 ? Math.round((jj.wins / jj.hands) * 100) : 0;
+  aa.winRate = aa.hands > 0 ? Math.round((aa.wins / aa.hands) * 100) : 0;
+  ak.winRate = ak.hands > 0 ? Math.round((ak.wins / ak.hands) * 100) : 0;
 
-  return { kk, jj };
+  return { kk, jj, aa, ak };
 }
 
 export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promise<Array<{
@@ -320,6 +356,8 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
   avatarUrl: string | null;
   kk: { hands: number; wins: number; losses: number; winRate: number };
   jj: { hands: number; wins: number; losses: number; winRate: number };
+  aa: { hands: number; wins: number; losses: number; winRate: number };
+  ak: { hands: number; wins: number; losses: number; winRate: number };
   totalHands: number;
   totalWins: number;
   totalLosses: number;
@@ -345,6 +383,8 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
 
   const kkRegex = /\b(kk|rei\s*rei|k\s*k)\b/i;
   const jjRegex = /\b(jj|vala\s*vala|j\s*j)\b/i;
+  const aaRegex = /\b(aa|as\s*as|a\s*a)\b/i;
+  const akRegex = /\b(ak|as\s*e\s*k|a\s*k)\b/i;
 
   const byUser = new Map<number, {
     userId: number;
@@ -352,6 +392,8 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
     avatarUrl: string | null;
     kk: { hands: number; wins: number; losses: number; winRate: number };
     jj: { hands: number; wins: number; losses: number; winRate: number };
+    aa: { hands: number; wins: number; losses: number; winRate: number };
+    ak: { hands: number; wins: number; losses: number; winRate: number };
     totalHands: number;
   }>();
 
@@ -364,6 +406,8 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
         avatarUrl: row.avatarUrl ?? null,
         kk: { hands: 0, wins: 0, losses: 0, winRate: 0 },
         jj: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        aa: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        ak: { hands: 0, wins: 0, losses: 0, winRate: 0 },
         totalHands: 0,
       });
     }
@@ -387,6 +431,20 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
       matched = true;
     }
 
+    if (aaRegex.test(notes)) {
+      entry.aa.hands += 1;
+      if (profit > 0) entry.aa.wins += 1;
+      else if (profit < 0) entry.aa.losses += 1;
+      matched = true;
+    }
+
+    if (akRegex.test(notes)) {
+      entry.ak.hands += 1;
+      if (profit > 0) entry.ak.wins += 1;
+      else if (profit < 0) entry.ak.losses += 1;
+      matched = true;
+    }
+
     if (matched) entry.totalHands += 1;
   }
 
@@ -399,6 +457,12 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
       jjHands: handPatternCounters.jjHands,
       jjWins: handPatternCounters.jjWins,
       jjLosses: handPatternCounters.jjLosses,
+      aaHands: handPatternCounters.aaHands,
+      aaWins: handPatternCounters.aaWins,
+      aaLosses: handPatternCounters.aaLosses,
+      akHands: handPatternCounters.akHands,
+      akWins: handPatternCounters.akWins,
+      akLosses: handPatternCounters.akLosses,
       name: users.name,
       avatarUrl: users.avatarUrl,
     })
@@ -414,6 +478,8 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
         avatarUrl: row.avatarUrl ?? null,
         kk: { hands: 0, wins: 0, losses: 0, winRate: 0 },
         jj: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        aa: { hands: 0, wins: 0, losses: 0, winRate: 0 },
+        ak: { hands: 0, wins: 0, losses: 0, winRate: 0 },
         totalHands: 0,
       });
     }
@@ -429,17 +495,29 @@ export async function getGlobalHandPatternStats(limit = 20, minHands = 6): Promi
     entry.jj.hands += Math.max(0, Number(row.jjHands ?? 0));
     entry.jj.wins += Math.max(0, Number(row.jjWins ?? 0));
     entry.jj.losses += Math.max(0, Number(row.jjLosses ?? 0));
+
+    entry.aa.hands += Math.max(0, Number(row.aaHands ?? 0));
+    entry.aa.wins += Math.max(0, Number(row.aaWins ?? 0));
+    entry.aa.losses += Math.max(0, Number(row.aaLosses ?? 0));
+
+    entry.ak.hands += Math.max(0, Number(row.akHands ?? 0));
+    entry.ak.wins += Math.max(0, Number(row.akWins ?? 0));
+    entry.ak.losses += Math.max(0, Number(row.akLosses ?? 0));
   }
 
   const data = Array.from(byUser.values())
     .map((entry) => {
       entry.kk.hands = Math.max(entry.kk.hands, entry.kk.wins + entry.kk.losses);
       entry.jj.hands = Math.max(entry.jj.hands, entry.jj.wins + entry.jj.losses);
+      entry.aa.hands = Math.max(entry.aa.hands, entry.aa.wins + entry.aa.losses);
+      entry.ak.hands = Math.max(entry.ak.hands, entry.ak.wins + entry.ak.losses);
       entry.kk.winRate = entry.kk.hands > 0 ? Math.round((entry.kk.wins / entry.kk.hands) * 100) : 0;
       entry.jj.winRate = entry.jj.hands > 0 ? Math.round((entry.jj.wins / entry.jj.hands) * 100) : 0;
-      const totalHands = entry.kk.hands + entry.jj.hands;
-      const totalWins = entry.kk.wins + entry.jj.wins;
-      const totalLosses = entry.kk.losses + entry.jj.losses;
+      entry.aa.winRate = entry.aa.hands > 0 ? Math.round((entry.aa.wins / entry.aa.hands) * 100) : 0;
+      entry.ak.winRate = entry.ak.hands > 0 ? Math.round((entry.ak.wins / entry.ak.hands) * 100) : 0;
+      const totalHands = entry.kk.hands + entry.jj.hands + entry.aa.hands + entry.ak.hands;
+      const totalWins = entry.kk.wins + entry.jj.wins + entry.aa.wins + entry.ak.wins;
+      const totalLosses = entry.kk.losses + entry.jj.losses + entry.aa.losses + entry.ak.losses;
       const overallWinRate = totalHands > 0 ? Math.round((totalWins / totalHands) * 100) : 0;
       const performanceScore = totalHands > 0 ? Number((overallWinRate * Math.log10(totalHands + 1)).toFixed(4)) : 0;
       return {
@@ -474,6 +552,8 @@ export async function updateHandPatternManualStats(
   input: {
     kk: { hands: number; wins: number; losses: number };
     jj: { hands: number; wins: number; losses: number };
+    aa: { hands: number; wins: number; losses: number };
+    ak: { hands: number; wins: number; losses: number };
   }
 ) {
   const db = await getDb();
@@ -481,6 +561,8 @@ export async function updateHandPatternManualStats(
 
   const kk = normalizeHandCounters(input.kk);
   const jj = normalizeHandCounters(input.jj);
+  const aa = normalizeHandCounters(input.aa);
+  const ak = normalizeHandCounters(input.ak);
 
   await db
     .insert(handPatternCounters)
@@ -492,6 +574,12 @@ export async function updateHandPatternManualStats(
       jjHands: jj.hands,
       jjWins: jj.wins,
       jjLosses: jj.losses,
+      aaHands: aa.hands,
+      aaWins: aa.wins,
+      aaLosses: aa.losses,
+      akHands: ak.hands,
+      akWins: ak.wins,
+      akLosses: ak.losses,
     })
     .onDuplicateKeyUpdate({
       set: {
@@ -501,6 +589,12 @@ export async function updateHandPatternManualStats(
         jjHands: jj.hands,
         jjWins: jj.wins,
         jjLosses: jj.losses,
+        aaHands: aa.hands,
+        aaWins: aa.wins,
+        aaLosses: aa.losses,
+        akHands: ak.hands,
+        akWins: ak.wins,
+        akLosses: ak.losses,
       },
     });
 
@@ -509,7 +603,7 @@ export async function updateHandPatternManualStats(
 
 export async function registerHandPatternResult(
   userId: number,
-  hand: "kk" | "jj",
+  hand: "kk" | "jj" | "aa" | "ak",
   outcome: "win" | "loss"
 ) {
   const db = await getDb();
@@ -536,13 +630,23 @@ export async function registerHandPatternResult(
     wins: Number(row?.jjWins ?? 0),
     losses: Number(row?.jjLosses ?? 0),
   });
+  const aa = normalizeHandCounters({
+    hands: Number(row?.aaHands ?? 0),
+    wins: Number(row?.aaWins ?? 0),
+    losses: Number(row?.aaLosses ?? 0),
+  });
+  const ak = normalizeHandCounters({
+    hands: Number(row?.akHands ?? 0),
+    wins: Number(row?.akWins ?? 0),
+    losses: Number(row?.akLosses ?? 0),
+  });
 
-  const target = hand === "kk" ? kk : jj;
+  const target = hand === "kk" ? kk : hand === "jj" ? jj : hand === "aa" ? aa : ak;
   target.hands += 1;
   if (outcome === "win") target.wins += 1;
   else target.losses += 1;
 
-  return updateHandPatternManualStats(userId, { kk, jj });
+  return updateHandPatternManualStats(userId, { kk, jj, aa, ak });
 }
 
 export async function getSessionById(id: number, userId: number): Promise<Session | null> {

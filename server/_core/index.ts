@@ -41,6 +41,13 @@ async function runSafeMigrations() {
       // passwordHash (legacy email auth – may already exist)
       "ALTER TABLE `users` ADD COLUMN `passwordHash` varchar(255)",
       "ALTER TABLE `session_tables` ADD COLUMN `clubName` varchar(120)",
+      // premium hand counters
+      "ALTER TABLE `hand_pattern_counters` ADD COLUMN `aaHands` int NOT NULL DEFAULT 0",
+      "ALTER TABLE `hand_pattern_counters` ADD COLUMN `aaWins` int NOT NULL DEFAULT 0",
+      "ALTER TABLE `hand_pattern_counters` ADD COLUMN `aaLosses` int NOT NULL DEFAULT 0",
+      "ALTER TABLE `hand_pattern_counters` ADD COLUMN `akHands` int NOT NULL DEFAULT 0",
+      "ALTER TABLE `hand_pattern_counters` ADD COLUMN `akWins` int NOT NULL DEFAULT 0",
+      "ALTER TABLE `hand_pattern_counters` ADD COLUMN `akLosses` int NOT NULL DEFAULT 0",
         // rebuy tracking
         "ALTER TABLE `session_tables` ADD COLUMN `initialBuyIn` int",
         "ALTER TABLE `session_tables` ADD COLUMN `rebuyCount` int NOT NULL DEFAULT 0",

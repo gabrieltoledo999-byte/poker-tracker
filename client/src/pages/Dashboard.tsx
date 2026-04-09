@@ -210,6 +210,8 @@ export default function Dashboard() {
   const [handEdit, setHandEdit] = useState({
     kk: { hands: 0, wins: 0, losses: 0 },
     jj: { hands: 0, wins: 0, losses: 0 },
+    aa: { hands: 0, wins: 0, losses: 0 },
+    ak: { hands: 0, wins: 0, losses: 0 },
   });
 
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
@@ -258,6 +260,16 @@ export default function Dashboard() {
         hands: handPatternStats?.jj?.hands ?? 0,
         wins: handPatternStats?.jj?.wins ?? 0,
         losses: handPatternStats?.jj?.losses ?? 0,
+      },
+      aa: {
+        hands: handPatternStats?.aa?.hands ?? 0,
+        wins: handPatternStats?.aa?.wins ?? 0,
+        losses: handPatternStats?.aa?.losses ?? 0,
+      },
+      ak: {
+        hands: handPatternStats?.ak?.hands ?? 0,
+        wins: handPatternStats?.ak?.wins ?? 0,
+        losses: handPatternStats?.ak?.losses ?? 0,
       },
     });
     setShowHandsEditModal(true);
@@ -574,13 +586,15 @@ export default function Dashboard() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PencilLine className="h-5 w-5 text-amber-500" />
-              Editar Contador KK/JJ
+              Editar Contador Premium
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-1">
-            {(["kk", "jj"] as const).map((hand) => (
+            {(["kk", "jj", "aa", "ak"] as const).map((hand) => (
               <div key={hand} className="rounded-lg border border-border/60 p-3 space-y-2">
-                <p className="text-sm font-semibold">{hand.toUpperCase()} {hand === "kk" ? "(Rei Rei)" : "(Vala Vala)"}</p>
+                <p className="text-sm font-semibold">
+                  {hand.toUpperCase()} {hand === "kk" ? "(Rei Rei)" : hand === "jj" ? "(Vala Vala)" : hand === "aa" ? "(As As)" : "(As e Rei)"}
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <Label className="text-[11px]">Total</Label>
@@ -1163,6 +1177,60 @@ export default function Dashboard() {
                         className="h-8 bg-red-600 hover:bg-red-700"
                         disabled={registerHandResultMutation.isPending}
                         onClick={() => registerHandResultMutation.mutate({ hand: "jj", outcome: "loss" })}
+                      >+ Derrota</Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-300/50 overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-800 text-white">
+                  <div className="p-3 border-b border-emerald-300/20 flex items-center justify-between">
+                    <p className="text-2xl font-black tracking-tight text-emerald-200">AA <span className="text-white text-base">(As As)</span></p>
+                    <Trophy className="h-5 w-5 text-emerald-200" />
+                  </div>
+                  <div className="p-3 space-y-1.5 text-sm">
+                    <p><Flame className="h-4 w-4 inline mr-1 text-emerald-200" /> Total: <span className="font-bold">{handPatternStats?.aa?.hands ?? 0}</span></p>
+                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.aa?.wins ?? 0}</span></p>
+                    <p className="text-red-200">Derrotas: <span className="font-bold">{handPatternStats?.aa?.losses ?? 0}</span></p>
+                    <p className="text-zinc-100">Win rate: <span className="font-bold">{handPatternStats?.aa?.winRate ?? 0}%</span></p>
+                    <div className="pt-2 grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "aa", outcome: "win" })}
+                      >+ Vitória</Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-red-600 hover:bg-red-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "aa", outcome: "loss" })}
+                      >+ Derrota</Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-cyan-300/50 overflow-hidden bg-gradient-to-br from-cyan-950 via-blue-900 to-indigo-800 text-white">
+                  <div className="p-3 border-b border-cyan-300/20 flex items-center justify-between">
+                    <p className="text-2xl font-black tracking-tight text-cyan-200">AK <span className="text-white text-base">(As e Rei)</span></p>
+                    <Flame className="h-5 w-5 text-cyan-200" />
+                  </div>
+                  <div className="p-3 space-y-1.5 text-sm">
+                    <p><Flame className="h-4 w-4 inline mr-1 text-cyan-200" /> Total: <span className="font-bold">{handPatternStats?.ak?.hands ?? 0}</span></p>
+                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.ak?.wins ?? 0}</span></p>
+                    <p className="text-red-200">Derrotas: <span className="font-bold">{handPatternStats?.ak?.losses ?? 0}</span></p>
+                    <p className="text-zinc-100">Win rate: <span className="font-bold">{handPatternStats?.ak?.winRate ?? 0}%</span></p>
+                    <div className="pt-2 grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "ak", outcome: "win" })}
+                      >+ Vitória</Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-red-600 hover:bg-red-700"
+                        disabled={registerHandResultMutation.isPending}
+                        onClick={() => registerHandResultMutation.mutate({ hand: "ak", outcome: "loss" })}
                       >+ Derrota</Button>
                     </div>
                   </div>

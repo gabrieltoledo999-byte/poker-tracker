@@ -114,7 +114,7 @@ export type InsertBankrollSettings = typeof bankrollSettings.$inferInsert;
 
 /**
  * Hand pattern counters (manual + quick actions on dashboard).
- * Keeps persistent KK/JJ results per user for social/ranking interactions.
+ * Keeps persistent premium-hand results per user for social/ranking interactions.
  */
 export const handPatternCounters = mysqlTable("hand_pattern_counters", {
   id: int("id").autoincrement().primaryKey(),
@@ -127,6 +127,14 @@ export const handPatternCounters = mysqlTable("hand_pattern_counters", {
   jjHands: int("jjHands").default(0).notNull(),
   jjWins: int("jjWins").default(0).notNull(),
   jjLosses: int("jjLosses").default(0).notNull(),
+
+  aaHands: int("aaHands").default(0).notNull(),
+  aaWins: int("aaWins").default(0).notNull(),
+  aaLosses: int("aaLosses").default(0).notNull(),
+
+  akHands: int("akHands").default(0).notNull(),
+  akWins: int("akWins").default(0).notNull(),
+  akLosses: int("akLosses").default(0).notNull(),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

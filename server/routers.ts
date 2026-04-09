@@ -804,24 +804,26 @@ export const appRouter = router({
         return await getRecentPlayedTables(ctx.user.id, input?.limit ?? 8);
       }),
 
-    // Hand pattern counters from table notes (KK/JJ)
+    // Hand pattern counters from table notes (KK/JJ/AA/AK)
     handPatternStats: protectedProcedure
       .query(async ({ ctx }) => {
         return await getHandPatternStats(ctx.user.id);
       }),
 
-    // Fast increment for KK/JJ result on dashboard cards
+    // Fast increment for premium hand result on dashboard cards
     registerHandResult: protectedProcedure
-      .input(z.object({ hand: z.enum(["kk", "jj"]), outcome: z.enum(["win", "loss"]) }))
+      .input(z.object({ hand: z.enum(["kk", "jj", "aa", "ak"]), outcome: z.enum(["win", "loss"]) }))
       .mutation(async ({ ctx, input }) => {
         return await registerHandPatternResult(ctx.user.id, input.hand, input.outcome);
       }),
 
-    // Full edit for KK/JJ counters (correction modal)
+    // Full edit for premium hand counters (correction modal)
     updateHandStats: protectedProcedure
       .input(z.object({
         kk: z.object({ hands: z.number().int().min(0), wins: z.number().int().min(0), losses: z.number().int().min(0) }),
         jj: z.object({ hands: z.number().int().min(0), wins: z.number().int().min(0), losses: z.number().int().min(0) }),
+        aa: z.object({ hands: z.number().int().min(0), wins: z.number().int().min(0), losses: z.number().int().min(0) }),
+        ak: z.object({ hands: z.number().int().min(0), wins: z.number().int().min(0), losses: z.number().int().min(0) }),
       }))
       .mutation(async ({ ctx, input }) => {
         return await updateHandPatternManualStats(ctx.user.id, input);
