@@ -2642,11 +2642,26 @@ export async function getUserPreferences(userId: number) {
   // ABI baselines from the last up to 100 tables per type.
   const onlineAbiTables = recentTables.filter((t) => t.type === "online").slice(0, 100);
   const liveAbiTables = recentTables.filter((t) => t.type === "live").slice(0, 100);
+  const rates = await getAllRates().catch(() => null);
+  const toBrlFromTableCurrency = (amount: number, currency?: string | null): number => {
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    if (currency === "USD") return Math.round(amount * (rates?.USD?.rate ?? 5.75));
+    if (currency === "CAD") return Math.round(amount * (rates?.CAD?.rate ?? 4.20));
+    if (currency === "JPY") return Math.round(amount * (rates?.JPY?.rate ?? 0.033));
+    if (currency === "CNY") return Math.round(amount * (rates?.CNY?.rate ?? 0.80));
+    return Math.round(amount);
+  };
   const abiOnlineAvgBuyIn = onlineAbiTables.length > 0
     ? Math.round(onlineAbiTables.reduce((sum, t) => sum + (t.initialBuyIn ?? t.buyIn ?? 0), 0) / onlineAbiTables.length)
     : 0;
   const abiLiveAvgBuyIn = liveAbiTables.length > 0
     ? Math.round(liveAbiTables.reduce((sum, t) => sum + (t.initialBuyIn ?? t.buyIn ?? 0), 0) / liveAbiTables.length)
+    : 0;
+  const abiOnlineAvgBuyInBrl = onlineAbiTables.length > 0
+    ? Math.round(onlineAbiTables.reduce((sum, t) => sum + toBrlFromTableCurrency((t.initialBuyIn ?? t.buyIn ?? 0), t.currency), 0) / onlineAbiTables.length)
+    : 0;
+  const abiLiveAvgBuyInBrl = liveAbiTables.length > 0
+    ? Math.round(liveAbiTables.reduce((sum, t) => sum + toBrlFromTableCurrency((t.initialBuyIn ?? t.buyIn ?? 0), t.currency), 0) / liveAbiTables.length)
     : 0;
   const abiOnlineSampleSize = onlineAbiTables.length;
   const abiLiveSampleSize = liveAbiTables.length;
@@ -2697,6 +2712,8 @@ export async function getUserPreferences(userId: number) {
       onboardingCompletedAt: userProfile?.onboardingCompletedAt ?? null,
       abiOnlineAvgBuyIn,
       abiLiveAvgBuyIn,
+      abiOnlineAvgBuyInBrl,
+      abiLiveAvgBuyInBrl,
       abiOnlineSampleSize,
       abiLiveSampleSize,
     };
@@ -2858,6 +2875,8 @@ export async function getUserPreferences(userId: number) {
     onboardingCompletedAt: userProfile?.onboardingCompletedAt ?? null,
     abiOnlineAvgBuyIn,
     abiLiveAvgBuyIn,
+    abiOnlineAvgBuyInBrl,
+    abiLiveAvgBuyInBrl,
     abiOnlineSampleSize,
     abiLiveSampleSize,
   };

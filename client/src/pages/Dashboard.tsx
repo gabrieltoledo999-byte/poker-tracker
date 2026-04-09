@@ -349,9 +349,10 @@ export default function Dashboard() {
   const totalPlayedTables = consolidated?.total.tables ?? 0;
   const abiOnlineAvg = prefs?.abiOnlineAvgBuyIn ?? 0;
   const abiLiveAvg = prefs?.abiLiveAvgBuyIn ?? 0;
+  const abiOnlineAvgBrl = prefs?.abiOnlineAvgBuyInBrl ?? Math.round(abiOnlineAvg * (fxRates?.USD?.rate ?? 5.75));
+  const abiLiveAvgBrl = prefs?.abiLiveAvgBuyInBrl ?? abiLiveAvg;
   const abiOnlineSample = prefs?.abiOnlineSampleSize ?? 0;
   const abiLiveSample = prefs?.abiLiveSampleSize ?? 0;
-  const usdToBrl = fxRates?.USD?.rate ?? 5.75;
   const primaryTypeShare = ((prefs?.typeRanking ?? [])[0]?.share ?? 0) * 100;
   const topVenueId = (prefs?.venueRanking ?? [])[0]?.value ?? prefs?.preferredVenueIds?.[0] ?? null;
   const topFormatKey = (prefs?.gameFormatRanking ?? [])[0]?.value ?? prefs?.preferredGameFormats?.[0] ?? null;
@@ -762,18 +763,18 @@ export default function Dashboard() {
                 <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
                   <p className="text-xs text-muted-foreground mb-1">ABI Médio Online</p>
                   <p className="text-lg font-semibold text-cyan-400">
-                    {abiOnlineSample > 0 ? formatByCurrency(abiOnlineAvg, "USD") : "—"}
+                    {abiOnlineSample > 0 ? formatCurrency(abiOnlineAvgBrl) : "—"}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {abiOnlineSample > 0
-                      ? `Aprox. ${formatCurrency(Math.round(abiOnlineAvg * usdToBrl))} · ${abiOnlineSample} mesas`
+                      ? `${abiOnlineSample} mesas`
                       : "Sem amostra de mesas online"}
                   </p>
                 </div>
                 <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
                   <p className="text-xs text-muted-foreground mb-1">ABI Médio Live</p>
                   <p className="text-lg font-semibold text-violet-400">
-                    {abiLiveSample > 0 ? formatCurrency(abiLiveAvg) : "—"}
+                    {abiLiveSample > 0 ? formatCurrency(abiLiveAvgBrl) : "—"}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {abiLiveSample > 0 ? `${abiLiveSample} mesas` : "Sem amostra de mesas live"}
