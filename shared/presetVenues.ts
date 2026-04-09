@@ -22,14 +22,6 @@ export const PRESET_VENUES: PresetVenue[] = [
     website: "https://www.pppoker.net",
   },
   {
-    name: "OU Poker",
-    type: "online",
-    logoUrl: `${CDN}/ou-poker.png`,
-    logoFit: "contain",
-    defaultCurrency: "USD",
-    website: "https://oupoker.com",
-  },
-  {
     name: "Suprema Poker",
     type: "online",
     logoUrl: `${CDN}/suprema.svg`,
