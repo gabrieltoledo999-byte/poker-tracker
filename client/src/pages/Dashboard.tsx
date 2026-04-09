@@ -716,6 +716,8 @@ export default function Dashboard() {
                               ))}
                             </Pie>
                             <RechartsTooltip
+                              position={{ x: 10, y: 10 }}
+                              wrapperStyle={{ zIndex: 1 }}
                               content={({ active, payload }: any) => {
                                 if (!active || !payload?.length) return null;
                                 const d = payload[0].payload;
@@ -731,7 +733,7 @@ export default function Dashboard() {
                             />
                           </PieChart>
                         </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
                           <p className="text-sm font-bold">{formatCurrencyCompact(consolidatedTotal)}</p>
                           <p className="text-[10px] text-muted-foreground">Total</p>
                         </div>
