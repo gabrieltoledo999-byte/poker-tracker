@@ -353,6 +353,9 @@ export default function Dashboard() {
   const abiLiveAvgBrl = prefs?.abiLiveAvgBuyInBrl ?? abiLiveAvg;
   const abiOnlineSample = prefs?.abiOnlineSampleSize ?? 0;
   const abiLiveSample = prefs?.abiLiveSampleSize ?? 0;
+  const usdRate = fxRates?.USD?.rate ?? 5.75;
+  const abiOnlineAvgUsd = usdRate > 0 ? Math.round(abiOnlineAvgBrl / usdRate) : 0;
+  const abiLiveAvgUsd = usdRate > 0 ? Math.round(abiLiveAvgBrl / usdRate) : 0;
   const primaryTypeShare = ((prefs?.typeRanking ?? [])[0]?.share ?? 0) * 100;
   const topVenueId = (prefs?.venueRanking ?? [])[0]?.value ?? prefs?.preferredVenueIds?.[0] ?? null;
   const topFormatKey = (prefs?.gameFormatRanking ?? [])[0]?.value ?? prefs?.preferredGameFormats?.[0] ?? null;
@@ -763,7 +766,7 @@ export default function Dashboard() {
                 <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
                   <p className="text-xs text-muted-foreground mb-1">ABI Médio Online</p>
                   <p className="text-lg font-semibold text-cyan-400">
-                    {abiOnlineSample > 0 ? formatCurrency(abiOnlineAvgBrl) : "—"}
+                    {abiOnlineSample > 0 ? `${formatCurrency(abiOnlineAvgBrl)} · ${formatByCurrency(abiOnlineAvgUsd, "USD")}` : "—"}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {abiOnlineSample > 0
@@ -774,7 +777,7 @@ export default function Dashboard() {
                 <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
                   <p className="text-xs text-muted-foreground mb-1">ABI Médio Live</p>
                   <p className="text-lg font-semibold text-violet-400">
-                    {abiLiveSample > 0 ? formatCurrency(abiLiveAvgBrl) : "—"}
+                    {abiLiveSample > 0 ? `${formatCurrency(abiLiveAvgBrl)} · ${formatByCurrency(abiLiveAvgUsd, "USD")}` : "—"}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {abiLiveSample > 0 ? `${abiLiveSample} mesas` : "Sem amostra de mesas live"}
