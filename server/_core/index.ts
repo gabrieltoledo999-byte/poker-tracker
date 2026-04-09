@@ -40,6 +40,7 @@ async function runSafeMigrations() {
       "ALTER TABLE `users` ADD COLUMN `rankingConsentAnsweredAt` timestamp NULL",
       // passwordHash (legacy email auth – may already exist)
       "ALTER TABLE `users` ADD COLUMN `passwordHash` varchar(255)",
+      "ALTER TABLE `session_tables` ADD COLUMN `clubName` varchar(120)",
       // currency enum expansion
       "ALTER TABLE `sessions` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
       "ALTER TABLE `session_tables` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",

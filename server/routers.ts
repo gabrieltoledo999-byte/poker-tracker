@@ -378,6 +378,7 @@ export const appRouter = router({
         buyIn: z.number().int().min(0),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
+        clubName: z.string().max(120).optional(),
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -408,6 +409,7 @@ export const appRouter = router({
         cashOut: z.number().int().min(0).optional().nullable(),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
+        clubName: z.string().max(120).optional(),
         notes: z.string().optional(),
         endedAt: z.date().optional().nullable(),
       }))

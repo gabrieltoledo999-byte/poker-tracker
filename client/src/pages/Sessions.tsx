@@ -166,6 +166,7 @@ interface EditTableDialogProps {
     buyIn: number;
     cashOut?: number | null;
     venueId?: number | null;
+    clubName?: string | null;
     gameType?: string | null;
     stakes?: string | null;
     notes?: string | null;
@@ -173,7 +174,7 @@ interface EditTableDialogProps {
     endedAt?: string | Date | null;
   };
   venues: { id: number; name: string; logoUrl?: string | null }[];
-  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; stakes?: string; notes?: string }) => void;
+  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; clubName?: string; stakes?: string; notes?: string }) => void;
   onClose: () => void;
   isPending: boolean;
 }
@@ -184,6 +185,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
   const [gameFormat, setGameFormat] = useState<"tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game">(table.gameFormat as any);
   const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY">(table.currency as any);
   const [venueId, setVenueId] = useState(table.venueId?.toString() ?? "");
+  const [clubName, setClubName] = useState(table.clubName ?? "");
   const [buyIn, setBuyIn] = useState((table.buyIn / 100).toFixed(2));
   const [cashOut, setCashOut] = useState(table.cashOut != null ? (table.cashOut / 100).toFixed(2) : "");
   const [stakes, setStakes] = useState(table.stakes ?? "");
@@ -206,6 +208,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
       currency,
       buyIn: buyInCents,
       cashOut: cashOutCents,
+      clubName: clubName || undefined,
       stakes: stakes || undefined,
       notes: notes || undefined,
     });
@@ -278,6 +281,10 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label className="text-xs">Clube (opcional)</Label>
+            <Input className="h-8 text-sm mt-1" placeholder="Ex: Alpha Club" value={clubName} onChange={e => setClubName(e.target.value)} />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Buy-in ({currency})</Label>
@@ -336,6 +343,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY">(type === "online" ? "USD" : "BRL");
   const [venueId, setVenueId] = useState("");
   const [buyIn, setBuyIn] = useState(defaultBuyIn);
+  const [clubName, setClubName] = useState("");
   const [gameType, setGameType] = useState("");
   const [stakes, setStakes] = useState("");
 
@@ -470,6 +478,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
       gameFormat: gameFormat as any,
       currency,
       buyIn: buyInCents,
+      clubName: clubName || undefined,
       gameType: gameType || undefined,
       stakes: stakes || undefined,
     });
@@ -627,6 +636,11 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
           <Label className="text-xs text-muted-foreground">Stakes (opcional)</Label>
           <Input placeholder="1/2, 2/5..." value={stakes} onChange={(e) => setStakes(e.target.value)} />
         </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Clube (opcional)</Label>
+        <Input placeholder="Ex: Alpha Club" value={clubName} onChange={(e) => setClubName(e.target.value)} />
       </div>
 
       <DialogFooter>
@@ -846,6 +860,7 @@ interface ActiveSessionPanelProps {
       buyIn: number;
       cashOut?: number | null;
       venueId?: number | null;
+      clubName?: string | null;
       gameType?: string | null;
       stakes?: string | null;
       startedAt: string | Date;
@@ -1114,6 +1129,9 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                     <span className="text-xs text-muted-foreground">
                       Buy-in: {formatCurrency(table.buyIn, table.currency)}
                     </span>
+                      {table.clubName && (
+                        <span className="text-xs text-muted-foreground">Clube: {table.clubName}</span>
+                      )}
                     {isFinished && profit !== null && (
                       <span className={`text-xs font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {profit >= 0 ? "+" : ""}{formatCurrency(Math.abs(profit), table.currency)}
@@ -1142,6 +1160,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                         gameFormat: table.gameFormat as GameFormat,
                         currency: table.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY",
                         buyIn: table.buyIn,
+                        clubName: table.clubName ?? undefined,
                         gameType: table.gameType ?? undefined,
                         stakes: table.stakes ?? undefined,
                         notes: undefined,
@@ -1400,6 +1419,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
 function SessionCard({ session }: { session: any }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editTableId, setEditTableId] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const utils = trpc.useUtils();
   const { data: tables } = trpc.sessions.getTables.useQuery(
@@ -1433,6 +1453,16 @@ function SessionCard({ session }: { session: any }) {
       setShowDeleteConfirm(false);
     },
     onError: (err) => toast.error("Erro ao excluir sessão", { description: err.message }),
+  });
+
+  const updateTableMutation = trpc.sessions.updateTable.useMutation({
+    onSuccess: () => {
+      utils.sessions.getTables.invalidate({ sessionId: session.id });
+      utils.sessions.list.invalidate();
+      toast.success("Mesa atualizada!");
+      setEditTableId(null);
+    },
+    onError: (err) => toast.error("Erro ao atualizar mesa", { description: err.message }),
   });
 
   const sessionBuyIn = session.totalTableBuyIn ?? session.buyIn;
@@ -1595,6 +1625,7 @@ function SessionCard({ session }: { session: any }) {
                     </div>
                     <div className="text-muted-foreground">
                       {tableVenue?.name ?? "Plataforma não informada"}
+                      {t.clubName ? ` · Clube: ${t.clubName}` : ""}
                     </div>
                     {tDuration > 0 && (
                       <div className="flex items-center gap-1 text-muted-foreground">
@@ -1602,6 +1633,16 @@ function SessionCard({ session }: { session: any }) {
                         <span>{formatMinutes(tDuration)}</span>
                       </div>
                     )}
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => setEditTableId(t.id)}
+                      >
+                        <Edit2 className="h-3 w-3 mr-1" /> Editar mesa
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -1635,6 +1676,20 @@ function SessionCard({ session }: { session: any }) {
         </div>
       )}
     </Card>
+
+    {editTableId !== null && tables && venues && (() => {
+      const table = tables.find((t) => t.id === editTableId);
+      if (!table) return null;
+      return (
+        <EditTableDialog
+          table={table as any}
+          venues={venues}
+          onSave={(data) => updateTableMutation.mutate({ id: table.id, ...data })}
+          onClose={() => setEditTableId(null)}
+          isPending={updateTableMutation.isPending}
+        />
+      );
+    })()}
 
     {/* Modal de edição */}
     <Dialog open={editing} onOpenChange={setEditing}>

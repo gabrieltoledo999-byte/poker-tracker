@@ -441,6 +441,7 @@ export const sessionTables = mysqlTable("session_tables", {
   // Optional details
   gameType: varchar("gameType", { length: 64 }), // NL Hold'em, PLO, etc.
   stakes: varchar("stakes", { length: 32 }), // 1/2, 2/5, etc.
+  clubName: varchar("clubName", { length: 120 }), // Optional club label (ex: Clube XPTO)
   notes: text("notes"),
 
   // Timestamps
