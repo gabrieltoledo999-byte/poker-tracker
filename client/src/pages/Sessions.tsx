@@ -1428,12 +1428,21 @@ function SessionCard({ session }: { session: any }) {
   );
   const { data: venues } = trpc.venues.list.useQuery({}, { enabled: expanded || editing || editTableId !== null });
 
-  // Session-level edit state (notes only)
+  // Session-level edit state
   const [editNotes, setEditNotes] = useState(session.notes ?? "");
+  const [editType, setEditType] = useState<"online" | "live">(session.type ?? "online");
+  const [editGameFormat, setEditGameFormat] = useState(session.gameFormat ?? "tournament");
+  const [editCurrency, setEditCurrency] = useState(session.currency ?? "BRL");
+  const [editVenueId, setEditVenueId] = useState(session.venueId?.toString() ?? "");
+  const [editBuyIn, setEditBuyIn] = useState(session.buyIn != null ? (session.buyIn / 100).toFixed(2) : "");
+  const [editCashOut, setEditCashOut] = useState(session.cashOut != null ? (session.cashOut / 100).toFixed(2) : "");
+
+  const isLegacySession = (session.tableCount ?? 0) === 0;
 
   const updateMutation = trpc.sessions.update.useMutation({
     onSuccess: () => {
       utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
       toast.success("Sessão atualizada!");
       setEditing(false);
     },
@@ -1478,10 +1487,25 @@ function SessionCard({ session }: { session: any }) {
   const venueBadgeText = isMultiVenue ? `${session.uniqueVenueCount} plataformas` : venueName;
 
   function handleSaveEdit() {
-    updateMutation.mutate({
-      id: session.id,
-      notes: editNotes || undefined,
-    });
+    if (isLegacySession) {
+      const buyInCents = editBuyIn ? Math.round(parseFloat(editBuyIn) * 100) : undefined;
+      const cashOutCents = editCashOut !== "" ? Math.round(parseFloat(editCashOut) * 100) : undefined;
+      updateMutation.mutate({
+        id: session.id,
+        notes: editNotes || undefined,
+        type: editType,
+        gameFormat: editGameFormat as any,
+        currency: editCurrency as any,
+        venueId: editVenueId ? parseInt(editVenueId) : undefined,
+        buyIn: buyInCents,
+        cashOut: cashOutCents,
+      });
+    } else {
+      updateMutation.mutate({
+        id: session.id,
+        notes: editNotes || undefined,
+      });
+    }
   }
 
   return (
@@ -1698,7 +1722,8 @@ function SessionCard({ session }: { session: any }) {
           <DialogTitle>Editar Sessão</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          {tables && tables.length > 0 && (
+          {/* Sessões com mesas: lista de mesas editáveis */}
+          {!isLegacySession && tables && tables.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground">Mesas ({tables.length})</p>
               {tables.map((t) => {
@@ -1729,6 +1754,89 @@ function SessionCard({ session }: { session: any }) {
               })}
             </div>
           )}
+
+          {/* Sessões legadas (sem mesas): edição completa dos campos da sessão */}
+          {isLegacySession && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Tipo</Label>
+                  <Select value={editType} onValueChange={(v) => setEditType(v as "online" | "live")}>
+                    <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="live">Live</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Moeda</Label>
+                  <Select value={editCurrency} onValueChange={setEditCurrency}>
+                    <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BRL">BRL (R$)</SelectItem>
+                      <SelectItem value="USD">USD ($)</SelectItem>
+                      <SelectItem value="CAD">CAD (CA$)</SelectItem>
+                      <SelectItem value="JPY">JPY (¥)</SelectItem>
+                      <SelectItem value="CNY">CNY (CN¥)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Formato</Label>
+                <Select value={editGameFormat} onValueChange={setEditGameFormat}>
+                  <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {GAME_FORMATS.map(f => (
+                      <SelectItem key={f.value} value={f.value}>{f.emoji} {f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Plataforma / Local</Label>
+                <Select value={editVenueId} onValueChange={setEditVenueId}>
+                  <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {venues?.map(v => (
+                      <SelectItem key={v.id} value={v.id.toString()}>
+                        <div className="flex items-center gap-2">
+                          {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
+                          {v.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Buy-in</Label>
+                  <Input
+                    className="h-8 text-sm mt-1"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editBuyIn}
+                    onChange={e => setEditBuyIn(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Cash-out</Label>
+                  <Input
+                    className="h-8 text-sm mt-1"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editCashOut}
+                    onChange={e => setEditCashOut(e.target.value)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
           <div>
             <Label className="text-xs">Notas</Label>
             <Textarea className="text-sm mt-1 resize-none" rows={2} value={editNotes} onChange={e => setEditNotes(e.target.value)} />
