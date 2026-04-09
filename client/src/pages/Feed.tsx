@@ -19,7 +19,7 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Flame,
+  Crown,
   Swords,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -553,6 +553,8 @@ export default function Feed() {
   const kkLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.losses ?? 0), 0);
   const jjWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.wins ?? 0), 0);
   const jjLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.losses ?? 0), 0);
+  const kkWinRate = kkTotal > 0 ? Math.round((kkWins / kkTotal) * 100) : 0;
+  const jjWinRate = jjTotal > 0 ? Math.round((jjWins / jjTotal) * 100) : 0;
 
   if (!user) return null;
 
@@ -564,19 +566,19 @@ export default function Feed() {
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
-                <Flame className="h-4 w-4 text-amber-400" /> Hey Hey
+                <Crown className="h-4 w-4 text-amber-400" /> Hey Hey
               </p>
               <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
               </span>
             </div>
             {loadingGlobalHandStats ? (
               <Skeleton className="h-14 w-full" />
             ) : (
               <>
-                <p className="text-2xl font-black text-white leading-none">{kkTotal}</p>
-                <p className="text-xs text-sky-100/85">mãos registradas</p>
+                <p className="text-3xl font-black text-white leading-none">{kkWinRate}%</p>
+                <p className="text-xs text-sky-100/85">taxa de vitória KK</p>
                 <p className="text-xs text-sky-100/85">Vitórias {kkWins} • Derrotas {kkLosses}</p>
               </>
             )}
@@ -589,19 +591,19 @@ export default function Feed() {
           <CardContent className="p-4 space-y-2 text-right">
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
               </span>
               <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
-                Valavalá <Swords className="h-4 w-4 text-orange-400" />
+                Vala Vala <Swords className="h-4 w-4 text-orange-400" />
               </p>
             </div>
             {loadingGlobalHandStats ? (
               <Skeleton className="h-14 w-full" />
             ) : (
               <>
-                <p className="text-2xl font-black text-white leading-none">{jjTotal}</p>
-                <p className="text-xs text-rose-100/85">mãos registradas</p>
+                <p className="text-3xl font-black text-white leading-none">{jjWinRate}%</p>
+                <p className="text-xs text-rose-100/85">taxa de vitória JJ</p>
                 <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
               </>
             )}
@@ -626,19 +628,19 @@ export default function Feed() {
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
-                <Flame className="h-4 w-4 text-amber-400" /> Hey Hey
+                <Crown className="h-4 w-4 text-amber-400" /> Hey Hey
               </p>
               <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
               </span>
             </div>
             {loadingGlobalHandStats ? (
               <Skeleton className="h-14 w-full" />
             ) : (
               <>
-                <p className="text-2xl font-black text-white leading-none">{kkTotal}</p>
-                <p className="text-xs text-sky-100/85">mãos registradas</p>
+                <p className="text-3xl font-black text-white leading-none">{kkWinRate}%</p>
+                <p className="text-xs text-sky-100/85">taxa de vitória KK</p>
                 <p className="text-xs text-sky-100/85">Vitórias {kkWins} • Derrotas {kkLosses}</p>
               </>
             )}
@@ -649,19 +651,19 @@ export default function Feed() {
           <CardContent className="p-4 space-y-2 text-right">
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
-                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
+                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
               </span>
               <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
-                Valavalá <Swords className="h-4 w-4 text-orange-400" />
+                Vala Vala <Swords className="h-4 w-4 text-orange-400" />
               </p>
             </div>
             {loadingGlobalHandStats ? (
               <Skeleton className="h-14 w-full" />
             ) : (
               <>
-                <p className="text-2xl font-black text-white leading-none">{jjTotal}</p>
-                <p className="text-xs text-rose-100/85">mãos registradas</p>
+                <p className="text-3xl font-black text-white leading-none">{jjWinRate}%</p>
+                <p className="text-xs text-rose-100/85">taxa de vitória JJ</p>
                 <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
               </>
             )}
