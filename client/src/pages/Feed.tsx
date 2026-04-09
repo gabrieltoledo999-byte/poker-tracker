@@ -19,7 +19,6 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Crown,
   Flame,
   Swords,
 } from "lucide-react";
@@ -558,7 +557,58 @@ export default function Feed() {
   if (!user) return null;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="relative space-y-6 max-w-2xl mx-auto">
+      {/* Cards laterais (desktop grande) */}
+      <div className="hidden xl:block absolute top-20 -left-[340px] w-[280px]">
+        <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/15 via-sky-900/20 to-background">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
+                <Flame className="h-4 w-4 text-amber-400" /> Hey Hey
+              </p>
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-[10px] font-bold text-amber-100">K</span>
+              </span>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-2xl font-black text-white leading-none">{kkTotal}</p>
+                <p className="text-xs text-sky-100/85">mãos registradas</p>
+                <p className="text-xs text-sky-100/85">Vitórias {kkWins} • Derrotas {kkLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="hidden xl:block absolute top-20 -right-[340px] w-[280px]">
+        <Card className="border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-900/20 to-background">
+          <CardContent className="p-4 space-y-2 text-right">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
+                <span className="inline-flex h-5 w-4 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-[10px] font-bold text-rose-100">J</span>
+              </span>
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
+                Valavalá <Swords className="h-4 w-4 text-orange-400" />
+              </p>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-2xl font-black text-white leading-none">{jjTotal}</p>
+                <p className="text-xs text-rose-100/85">mãos registradas</p>
+                <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -570,8 +620,8 @@ export default function Feed() {
         </p>
       </div>
 
-      {/* Cards topo (independentes) */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3">
+      {/* Cards topo (mobile/tablet) */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:hidden">
         <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/15 via-sky-900/20 to-background">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between">
@@ -621,61 +671,6 @@ export default function Feed() {
 
       {/* New post */}
       <NewPostForm currentUserId={user.id} />
-
-      {/* Ranking global compartilhado KK/JJ */}
-      <Card>
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold flex items-center gap-1.5">
-              <Crown className="h-4 w-4 text-amber-500" />
-              Ranking Global KK/JJ
-            </h2>
-            <Badge variant="secondary" className="text-[10px]">Ao vivo entre players</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground">Aparece no ranking a partir de 1 registro.</p>
-
-          {loadingGlobalHandStats ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
-            <div className="space-y-2">
-              {globalHandPatternStats.slice(0, 10).map((player: any, idx: number) => (
-                <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3 bg-background/65 backdrop-blur-sm">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarImage src={player.avatarUrl ?? undefined} />
-                      <AvatarFallback className="text-[10px] font-semibold">
-                        {(player.name ?? "JP").slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
-                    <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-end gap-1">
-                      <Flame className="h-3 w-3 text-amber-500" /> KK {player.kk?.winRate ?? 0}%
-                      <Swords className="h-3 w-3 text-orange-500 ml-1" /> JJ {player.jj?.winRate ?? 0}%
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-4 text-xs text-muted-foreground rounded-lg border border-dashed border-border/50">
-              Sem ranking elegível ainda. Registre mãos KK/JJ para aparecer aqui.
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Posts */}
       {isLoading ? (
