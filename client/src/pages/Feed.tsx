@@ -570,94 +570,104 @@ export default function Feed() {
         </p>
       </div>
 
+      {/* Cards topo (independentes) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/15 via-sky-900/20 to-background">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
+                <Flame className="h-4 w-4 text-amber-400" /> Hey Hey (KK)
+              </p>
+              <Badge variant="secondary" className="text-[10px]">Esquerda</Badge>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-2xl font-black text-white leading-none">{kkTotal}</p>
+                <p className="text-xs text-sky-100/85">mãos registradas</p>
+                <p className="text-xs text-sky-100/85">Vitórias {kkWins} • Derrotas {kkLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-900/20 to-background">
+          <CardContent className="p-4 space-y-2 text-right">
+            <div className="flex items-center justify-between">
+              <Badge variant="secondary" className="text-[10px]">Direita</Badge>
+              <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
+                Valavalá (JJ) <Swords className="h-4 w-4 text-orange-400" />
+              </p>
+            </div>
+            {loadingGlobalHandStats ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <>
+                <p className="text-2xl font-black text-white leading-none">{jjTotal}</p>
+                <p className="text-xs text-rose-100/85">mãos registradas</p>
+                <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* New post */}
       <NewPostForm currentUserId={user.id} />
 
       {/* Ranking global compartilhado KK/JJ */}
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="p-0">
-          <div className="relative overflow-hidden">
-            <img
-              src="/hand-scoreboard-hero.svg"
-              alt="Placar global Hey Hey vs Valavala"
-              className="w-full h-auto block"
-            />
-
-            {!loadingGlobalHandStats && (
-              <>
-                <div className="absolute left-[4%] top-[4%] rounded-lg border border-sky-300/30 bg-slate-950/55 px-2.5 py-1.5 backdrop-blur-sm">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-100 flex items-center gap-1">
-                    <Flame className="h-3 w-3 text-amber-400" /> Hey Hey
-                  </p>
-                  <p className="text-sm font-bold text-white leading-tight">{kkTotal} mãos</p>
-                  <p className="text-[10px] text-sky-100/85 leading-tight">V {kkWins} • D {kkLosses}</p>
-                </div>
-                <div className="absolute right-[4%] top-[4%] rounded-lg border border-rose-300/30 bg-slate-950/55 px-2.5 py-1.5 backdrop-blur-sm text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-100 flex items-center justify-end gap-1">
-                    Valavalá <Swords className="h-3 w-3 text-orange-400" />
-                  </p>
-                  <p className="text-sm font-bold text-white leading-tight">{jjTotal} mãos</p>
-                  <p className="text-[10px] text-rose-100/85 leading-tight">V {jjWins} • D {jjLosses}</p>
-                </div>
-              </>
-            )}
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold flex items-center gap-1.5">
+              <Crown className="h-4 w-4 text-amber-500" />
+              Ranking Global KK/JJ
+            </h2>
+            <Badge variant="secondary" className="text-[10px]">Ao vivo entre players</Badge>
           </div>
+          <p className="text-xs text-muted-foreground">Aparece no ranking a partir de 1 registro.</p>
 
-          <div className="p-4 space-y-4 bg-gradient-to-b from-background to-muted/20">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold flex items-center gap-1.5">
-                  <Crown className="h-4 w-4 text-amber-500" />
-                  Painel Global KK/JJ
-                </h2>
-                <p className="text-xs text-muted-foreground">Cada lado com suas próprias vitórias e derrotas (sem confronto direto).</p>
-              </div>
-              <Badge variant="secondary" className="text-[10px]">Ao vivo entre players</Badge>
+          {loadingGlobalHandStats ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
             </div>
-
-            {loadingGlobalHandStats ? (
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
-              <>
-                <div className="space-y-2">
-                  {globalHandPatternStats.slice(0, 10).map((player: any, idx: number) => (
-                    <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3 bg-background/65 backdrop-blur-sm">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Avatar className="h-8 w-8 shrink-0">
-                          <AvatarImage src={player.avatarUrl ?? undefined} />
-                          <AvatarFallback className="text-[10px] font-semibold">
-                            {(player.name ?? "JP").slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">
-                            {player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
-                        <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-end gap-1">
-                          <Flame className="h-3 w-3 text-amber-500" /> KK {player.kk?.winRate ?? 0}%
-                          <Swords className="h-3 w-3 text-orange-500 ml-1" /> JJ {player.jj?.winRate ?? 0}%
-                        </p>
-                      </div>
+          ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
+            <div className="space-y-2">
+              {globalHandPatternStats.slice(0, 10).map((player: any, idx: number) => (
+                <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3 bg-background/65 backdrop-blur-sm">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarImage src={player.avatarUrl ?? undefined} />
+                      <AvatarFallback className="text-[10px] font-semibold">
+                        {(player.name ?? "JP").slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}
+                      </p>
                     </div>
-                  ))}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
+                    <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-end gap-1">
+                      <Flame className="h-3 w-3 text-amber-500" /> KK {player.kk?.winRate ?? 0}%
+                      <Swords className="h-3 w-3 text-orange-500 ml-1" /> JJ {player.jj?.winRate ?? 0}%
+                    </p>
+                  </div>
                 </div>
-              </>
-            ) : (
-              <div className="text-center py-4 text-xs text-muted-foreground rounded-lg border border-dashed border-border/50">
-                Sem ranking elegível ainda. Registre mãos KK/JJ para aparecer aqui.
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-xs text-muted-foreground rounded-lg border border-dashed border-border/50">
+              Sem ranking elegível ainda. Registre mãos KK/JJ para aparecer aqui.
+            </div>
+          )}
         </CardContent>
       </Card>
 
