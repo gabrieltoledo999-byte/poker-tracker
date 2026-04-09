@@ -158,7 +158,8 @@ function detectType(text: string): ImportType {
 
 function detectFormat(text: string): ImportFormat {
   const t = text.toLowerCase();
-  if (t.includes("cash")) return "cash_game";
+  if (/\b(torneio|tournament|mtt)\b/i.test(t)) return "tournament";
+  if (/\b(cash\s*game|cashgame|cash_game|ring\s*game)\b/i.test(t)) return "cash_game";
   if (t.includes("sit") || t.includes("sng")) return "sit_and_go";
   if (t.includes("spin")) return "spin_and_go";
   if (t.includes("hyper")) return "hyper_turbo";
