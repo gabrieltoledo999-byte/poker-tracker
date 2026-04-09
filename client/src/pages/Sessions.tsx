@@ -1492,6 +1492,18 @@ function SessionCard({ session }: { session: any }) {
     onError: (err) => toast.error("Erro ao atualizar mesa", { description: err.message }),
   });
 
+  const deleteTableMutation = trpc.sessions.removeTable.useMutation({
+    onSuccess: () => {
+      utils.sessions.getTables.invalidate({ sessionId: session.id });
+      utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.getCurrent.invalidate();
+      toast.success("Mesa excluída!");
+    },
+    onError: (err) => toast.error("Erro ao excluir mesa", { description: err.message }),
+  });
+
   const sessionBuyIn = session.totalTableBuyIn ?? session.buyIn;
   const sessionCashOut = session.totalTableCashOut ?? session.cashOut;
   const profit = session.totalTableProfit ?? (sessionCashOut - sessionBuyIn);
@@ -1784,6 +1796,17 @@ function SessionCard({ session }: { session: any }) {
                         onClick={() => { setEditing(false); setEditTableId(t.id); }}
                       >
                         <Edit2 className="h-3 w-3 mr-1" /> Editar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[11px] text-destructive hover:bg-destructive/10"
+                        onClick={() => {
+                          if (confirm("Excluir esta mesa?")) deleteTableMutation.mutate({ id: t.id });
+                        }}
+                        disabled={deleteTableMutation.isPending}
+                      >
+                        <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
@@ -2411,6 +2434,7 @@ export default function Sessions() {
               <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
               <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
               <p>5. Você pode fixar a moeda por clique (Auto, BRL, USD, CAD, JPY, CNY).</p>
+              <p>6. A IA não cria plataforma nova: ela só importa para plataformas já existentes (ex.: Suprema -> Suprema Poker).</p>
             </div>
 
             <div className="space-y-1">
