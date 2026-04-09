@@ -546,7 +546,14 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
 export default function Feed() {
   const { user } = useAuth();
   const { data: posts, isLoading } = trpc.feed.list.useQuery();
-  const { data: globalHandPatternStats, isLoading: loadingGlobalHandStats } = trpc.feed.handPatternStats.useQuery({ limit: 10, minHands: 6 });
+  const { data: globalHandPatternStats, isLoading: loadingGlobalHandStats } = trpc.feed.handPatternStats.useQuery({ limit: 50, minHands: 1 });
+
+  const kkScore = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.hands ?? 0), 0);
+  const jjScore = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.hands ?? 0), 0);
+  const kkWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.wins ?? 0), 0);
+  const kkLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.losses ?? 0), 0);
+  const jjWins = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.wins ?? 0), 0);
+  const jjLosses = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.losses ?? 0), 0);
 
   if (!user) return null;
 
@@ -567,57 +574,103 @@ export default function Feed() {
       <NewPostForm currentUserId={user.id} />
 
       {/* Ranking global compartilhado KK/JJ */}
-      <Card>
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold flex items-center gap-1.5">
-              <Crown className="h-4 w-4 text-amber-500" />
-              Ranking Global KK/JJ
-            </h2>
-            <Badge variant="secondary" className="text-[10px]">Compartilhado entre players</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground">Mínimo de 6 mãos registradas para entrar no ranking.</p>
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="p-0">
+          <div className="relative overflow-hidden">
+            <img
+              src="/hand-scoreboard-hero.svg"
+              alt="Placar global Hey Hey vs Valavala"
+              className="w-full h-auto block"
+            />
 
-          {loadingGlobalHandStats ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
+            {!loadingGlobalHandStats && (
+              <>
+                <div className="absolute left-[13%] right-[58%] bottom-[6.5%] top-[78.5%] flex items-center justify-center">
+                  <span className="text-[clamp(2.2rem,7vw,5rem)] font-black tracking-tight text-slate-100 drop-shadow-[0_0_18px_rgba(125,211,252,0.65)]">
+                    {kkScore}
+                  </span>
+                </div>
+                <div className="absolute left-[58%] right-[13%] bottom-[6.5%] top-[78.5%] flex items-center justify-center">
+                  <span className="text-[clamp(2.2rem,7vw,5rem)] font-black tracking-tight text-slate-100 drop-shadow-[0_0_18px_rgba(248,113,113,0.7)]">
+                    {jjScore}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="p-4 space-y-4 bg-gradient-to-b from-background to-muted/20">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold flex items-center gap-1.5">
+                  <Crown className="h-4 w-4 text-amber-500" />
+                  Placar Global KK/JJ
+                </h2>
+                <p className="text-xs text-muted-foreground">Agora contando a partir de 1 registro para já aparecer no feed.</p>
+              </div>
+              <Badge variant="secondary" className="text-[10px]">Ao vivo entre players</Badge>
             </div>
-          ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
-            <div className="space-y-2">
-              {globalHandPatternStats.map((player: any, idx: number) => (
-                <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarImage src={player.avatarUrl ?? undefined} />
-                      <AvatarFallback className="text-[10px] font-semibold">
-                        {(player.name ?? "JP").slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}
-                      </p>
+
+            {loadingGlobalHandStats ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : globalHandPatternStats && globalHandPatternStats.length > 0 ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-sky-100">
+                      <Flame className="h-4 w-4 text-amber-400" /> Hey Hey
                     </div>
+                    <p className="mt-2 text-2xl font-black text-white">{kkScore}</p>
+                    <p className="text-xs text-sky-100/80">Vitórias {kkWins} • Derrotas {kkLosses}</p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
-                    <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-end gap-1">
-                      <Flame className="h-3 w-3 text-amber-500" /> KK {player.kk?.winRate ?? 0}%
-                      <Swords className="h-3 w-3 text-orange-500 ml-1" /> JJ {player.jj?.winRate ?? 0}%
-                    </p>
+                  <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-right">
+                    <div className="flex items-center justify-end gap-2 text-sm font-semibold text-rose-100">
+                      Valavalá <Swords className="h-4 w-4 text-orange-400" />
+                    </div>
+                    <p className="mt-2 text-2xl font-black text-white">{jjScore}</p>
+                    <p className="text-xs text-rose-100/80">Vitórias {jjWins} • Derrotas {jjLosses}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-4 text-xs text-muted-foreground rounded-lg border border-dashed border-border/50">
-              Sem ranking elegível ainda. Registre mãos KK/JJ para aparecer aqui.
-            </div>
-          )}
+
+                <div className="space-y-2">
+                  {globalHandPatternStats.slice(0, 10).map((player: any, idx: number) => (
+                    <div key={player.userId} className="rounded-lg border border-border/60 px-3 py-2.5 flex items-center justify-between gap-3 bg-background/65 backdrop-blur-sm">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="h-8 w-8 shrink-0">
+                          <AvatarImage src={player.avatarUrl ?? undefined} />
+                          <AvatarFallback className="text-[10px] font-semibold">
+                            {(player.name ?? "JP").slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">#{idx + 1} {player.name || `Jogador #${player.userId}`}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {player.totalHands} mãos · W/L {player.totalWins}/{player.totalLosses}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-bold text-emerald-500">{player.overallWinRate}%</p>
+                        <p className="text-[11px] text-muted-foreground">Score {player.performanceScore}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-end gap-1">
+                          <Flame className="h-3 w-3 text-amber-500" /> KK {player.kk?.winRate ?? 0}%
+                          <Swords className="h-3 w-3 text-orange-500 ml-1" /> JJ {player.jj?.winRate ?? 0}%
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-4 text-xs text-muted-foreground rounded-lg border border-dashed border-border/50">
+                Sem ranking elegível ainda. Registre mãos KK/JJ para aparecer aqui.
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
