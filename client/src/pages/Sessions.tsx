@@ -259,14 +259,21 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
             <Select value={venueId} onValueChange={setVenueId}>
               <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
               <SelectContent>
-                {venues.map(v => (
-                  <SelectItem key={v.id} value={v.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
-                      {v.name}
-                    </div>
-                  </SelectItem>
-                ))}
+                {(() => {
+                  const seen = new Set<string>();
+                  return venues.filter(v => {
+                    if (seen.has(v.name)) return false;
+                    seen.add(v.name);
+                    return true;
+                  }).map(v => (
+                    <SelectItem key={v.id} value={v.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
+                        {v.name}
+                      </div>
+                    </SelectItem>
+                  ));
+                })()}
               </SelectContent>
             </Select>
           </div>
@@ -349,10 +356,17 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
 
   const { data: venues } = trpc.venues.list.useQuery({ type });
 
-  // Sort venues by preference
+  // Sort venues by preference and remove duplicates by name
   const sortedVenues = useMemo(() => {
     if (!venues) return [];
-    return sortVenues(venues, (venue) => venue.id);
+    const sorted = sortVenues(venues, (venue) => venue.id);
+    // Remove duplicates by name (keep first occurrence)
+    const seen = new Set<string>();
+    return sorted.filter(venue => {
+      if (seen.has(venue.name)) return false;
+      seen.add(venue.name);
+      return true;
+    });
   }, [venues, sortVenues]);
 
   // Sort game formats by preference
@@ -1804,14 +1818,21 @@ function SessionCard({ session }: { session: any }) {
                   <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                   <SelectContent>
                     {venues && venues.length > 0 ? (
-                      venues.map(v => (
-                        <SelectItem key={v.id} value={v.id.toString()}>
-                          <div className="flex items-center gap-2">
-                            {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
-                            {v.name}
-                          </div>
-                        </SelectItem>
-                      ))
+                      (() => {
+                        const seen = new Set<string>();
+                        return venues.filter(v => {
+                          if (seen.has(v.name)) return false;
+                          seen.add(v.name);
+                          return true;
+                        }).map(v => (
+                          <SelectItem key={v.id} value={v.id.toString()}>
+                            <div className="flex items-center gap-2">
+                              {v.logoUrl && <img src={v.logoUrl} alt={v.name} className="h-4 w-4 object-contain" />}
+                              {v.name}
+                            </div>
+                          </SelectItem>
+                        ));
+                      })()
                     ) : (
                       <div className="p-2 text-xs text-muted-foreground text-center">Nenhuma plataforma</div>
                     )}
