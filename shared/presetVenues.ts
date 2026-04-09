@@ -31,7 +31,7 @@ export const PRESET_VENUES: PresetVenue[] = [
   {
     name: "GG Poker",
     type: "online",
-    logoUrl: `${CDN}/ggpoker.png`,
+    logoUrl: `${CDN}/ggpoker.jpg`,
     defaultCurrency: "USD",
     website: "https://www.ggpoker.com",
   },
