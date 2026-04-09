@@ -62,8 +62,37 @@ function LeaderboardTable({
     if (sortBy === "roi") return b.roi - a.roi;
     if (sortBy === "winRate") return b.winRate - a.winRate;
     if (sortBy === "bestSession") return b.bestSession - a.bestSession;
-    return a.worstSession - b.worstSession;
+    return b.worstSession - a.worstSession; // maior (menos negativo) = melhor colocação
   });
+
+  const statsConfig = [
+    {
+      key: "roi" as const,
+      label: "ROI",
+      value: (p: any) => formatPercent(p.roi),
+      colorClass: (p: any) => p.roi >= 0 ? "text-chart-1" : "text-destructive",
+    },
+    {
+      key: "winRate" as const,
+      label: "ITM Rate",
+      value: (p: any) => formatPercent(p.winRate),
+      colorClass: () => "",
+    },
+    {
+      key: "bestSession" as const,
+      label: "Melhor",
+      value: (p: any) => formatCurrency(p.bestSession),
+      colorClass: () => "text-chart-1",
+    },
+    {
+      key: "worstSession" as const,
+      label: "Pior",
+      value: (p: any) => formatCurrency(p.worstSession),
+      colorClass: () => "text-destructive",
+    },
+  ];
+
+  const responsiveClasses = ["", "hidden sm:block", "hidden md:block", "hidden lg:block"];
 
   return (
     <div className="space-y-2">
@@ -85,59 +114,54 @@ function LeaderboardTable({
         ))}
       </div>
 
-      {sorted.map((player, index) => (
-        <div
-          key={player.userId}
-          className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
-            index < 3
-              ? "border-primary/30 bg-primary/5"
-              : "border-border bg-muted/20"
-          }`}
-        >
-          {/* Position */}
-          <div className="w-10 text-center font-bold text-lg shrink-0">
-            {getMedalEmoji(index + 1)}
-          </div>
+      {sorted.map((player, index) => {
+        const orderedStats = [
+          statsConfig.find(s => s.key === sortBy)!,
+          ...statsConfig.filter(s => s.key !== sortBy),
+        ];
 
-          {/* Avatar + Name */}
-          <Avatar className="h-10 w-10 shrink-0">
-            <AvatarImage src={player.avatarUrl ?? undefined} />
-            <AvatarFallback className="text-sm font-semibold">
-              {(player.name ?? "?").slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold truncate">{player.name ?? "Jogador"}</p>
-            <p className="text-xs text-muted-foreground">
-              {player.totalSessions} sessões • {player.totalTables ?? 0} mesas
-            </p>
-          </div>
+        return (
+          <div
+            key={player.userId}
+            className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
+              index < 3
+                ? "border-primary/30 bg-primary/5"
+                : "border-border bg-muted/20"
+            }`}
+          >
+            {/* Position */}
+            <div className="w-10 text-center font-bold text-lg shrink-0">
+              {getMedalEmoji(index + 1)}
+            </div>
 
-          {/* Stats */}
-          <div className="flex gap-4 shrink-0 text-right">
-            <div className="hidden sm:block">
-              <p className="text-xs text-muted-foreground">ROI</p>
-              <p className={`font-bold text-sm ${player.roi >= 0 ? "text-chart-1" : "text-destructive"}`}>
-                {formatPercent(player.roi)}
+            {/* Avatar + Name */}
+            <Avatar className="h-10 w-10 shrink-0">
+              <AvatarImage src={player.avatarUrl ?? undefined} />
+              <AvatarFallback className="text-sm font-semibold">
+                {(player.name ?? "?").slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold truncate">{player.name ?? "Jogador"}</p>
+              <p className="text-xs text-muted-foreground">
+                {player.totalSessions} sessões • {player.totalTables ?? 0} mesas
               </p>
             </div>
-            <div className="hidden md:block">
-              <p className="text-xs text-muted-foreground">ITM Rate</p>
-              <p className="font-bold text-sm">{formatPercent(player.winRate)}</p>
-            </div>
-            <div className="hidden lg:block">
-              <p className="text-xs text-muted-foreground">Melhor</p>
-              <p className="font-bold text-sm text-chart-1">{formatCurrency(player.bestSession)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Pior</p>
-              <p className="font-bold text-sm text-destructive">
-                {formatCurrency(player.worstSession)}
-              </p>
+
+            {/* Stats — reordered so active sort is always first/visible */}
+            <div className="flex gap-4 shrink-0 text-right">
+              {orderedStats.map((stat, i) => (
+                <div key={stat.key} className={responsiveClasses[i]}>
+                  <p className="text-xs text-muted-foreground">{stat.label}</p>
+                  <p className={`font-bold text-sm ${stat.colorClass(player)}`}>
+                    {stat.value(player)}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
