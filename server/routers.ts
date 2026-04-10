@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest } from "./db";
+import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest, removeFriendship, blockUser, resetFriendshipNetworkForUser, resetFriendshipNetworkGlobally, sendMessage, getConversation, getConversationList, markConversationRead, getUnreadCount, toggleMessageReaction } from "./db";
 import { z } from "zod";
 import {
   createSession,
@@ -89,6 +89,20 @@ const onboardingProfileInput = z.object({
   showInGlobalRanking: z.boolean().optional(),
   showInFriendsRanking: z.boolean().optional(),
 });
+
+function isAcceptedAvatarUrl(value: string): boolean {
+  const avatarUrl = value.trim();
+  if (!avatarUrl) return false;
+  if (avatarUrl.startsWith("/avatars/")) return true;
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(avatarUrl)) return true;
+
+  try {
+    const parsed = new URL(avatarUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 type ImportType = "online" | "live";
 type ImportCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY";
@@ -1025,7 +1039,13 @@ export const appRouter = router({
   profile: router({
     // Update avatar from URL
     updateAvatar: protectedProcedure
-      .input(z.object({ avatarUrl: z.string().url() }))
+      .input(
+        z.object({
+          avatarUrl: z.string().trim().min(1).refine(isAcceptedAvatarUrl, {
+            message: "Avatar invalido. Use URL http(s), /avatars/... ou data:image/...",
+          }),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         await updateUserAvatar(ctx.user.id, input.avatarUrl);
         return { success: true };
@@ -1111,10 +1131,8 @@ export const appRouter = router({
         const liveStats = await getSessionStats(ctx.user.id, "live");
         const fundTotals = await getFundTransactionsTotals(ctx.user.id);
 
-        const onlineRaw = initialOnline + onlineStats.totalProfit + fundTotals.online.net;
-        const liveRaw = initialLive + liveStats.totalProfit + fundTotals.live.net;
-        const onlineCurrent = Math.max(0, onlineRaw);
-        const liveCurrent = Math.max(0, liveRaw);
+        const onlineCurrent = initialOnline + onlineStats.totalProfit + fundTotals.online.net;
+        const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
 
         return {
           online: {
@@ -1170,13 +1188,13 @@ export const appRouter = router({
         const liveVenues = venuesWithStats.filter(v => v.type === "live");
         
         // Online bankroll = initialOnline + all online session profit + fund movements
-        const onlineBalanceTotal = Math.max(0, initialOnline + onlineStats.totalProfit + fundTotals.online.net);
+        const onlineBalanceTotal = initialOnline + onlineStats.totalProfit + fundTotals.online.net;
         
         // Live bankroll = initialLive + live session profit + fund movements
         const liveCurrent = initialLive + liveStats.totalProfit + fundTotals.live.net;
         
         // Total = online + live
-        const totalCurrent = onlineBalanceTotal + Math.max(0, liveCurrent);
+        const totalCurrent = onlineBalanceTotal + liveCurrent;
         
         return {
           hasVenueBalances: false, // deprecated, kept for compatibility
@@ -1190,7 +1208,7 @@ export const appRouter = router({
           },
           live: {
             initial: initialLive,
-            current: Math.max(0, liveCurrent),
+            current: liveCurrent,
             profit: liveStats.totalProfit,
             sessions: liveStats.totalSessions,
             tables: liveStats.totalTables,
@@ -1366,7 +1384,7 @@ export const appRouter = router({
         return await getFriends(ctx.user.id);
       }),
     searchUsers: protectedProcedure
-      .input(z.object({ query: z.string().trim().min(2).max(64) }))
+      .input(z.object({ query: z.string().trim().min(1).max(64) }))
       .query(async ({ ctx, input }) => {
         return await searchUsersToAdd(ctx.user.id, input.query);
       }),
@@ -1401,6 +1419,34 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const success = await cancelFriendRequest(ctx.user.id, input.requestId);
         return { success };
+      }),
+    removeFriend: protectedProcedure
+      .input(z.object({ friendId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.friendId === ctx.user.id) {
+          throw new Error("Ação inválida.");
+        }
+        const success = await removeFriendship(ctx.user.id, input.friendId);
+        return { success };
+      }),
+    blockUser: protectedProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.userId === ctx.user.id) {
+          throw new Error("Ação inválida.");
+        }
+        return await blockUser(ctx.user.id, input.userId);
+      }),
+    resetMyNetwork: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        return await resetFriendshipNetworkForUser(ctx.user.id);
+      }),
+    resetAllNetwork: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Somente admin pode resetar globalmente." });
+        }
+        return await resetFriendshipNetworkGlobally();
       }),
   }),
 
@@ -1544,6 +1590,43 @@ export const appRouter = router({
         const key = `club-logos/${ctx.user.id}-${Date.now()}.${ext}`;
         const { url } = await storagePut(key, buffer, input.mimeType);
         return { url, key };
+      }),
+  }),
+
+  chat: router({
+    conversations: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getConversationList(ctx.user.id);
+      }),
+    messages: protectedProcedure
+      .input(z.object({ friendId: z.number().int().positive(), limit: z.number().int().min(1).max(100).optional(), before: z.number().int().positive().optional() }))
+      .query(async ({ ctx, input }) => {
+        const msgs = await getConversation(ctx.user.id, input.friendId, input.limit ?? 50, input.before);
+        return msgs.reverse();
+      }),
+    send: protectedProcedure
+      .input(z.object({ receiverId: z.number().int().positive(), content: z.string().trim().min(1).max(4000), caption: z.string().trim().max(500).optional(), type: z.enum(["text", "image"]).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.receiverId === ctx.user.id) throw new TRPCError({ code: "BAD_REQUEST", message: "Não pode enviar mensagem para si mesmo." });
+        if ((input.type ?? "text") === "image" && !input.caption?.trim()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Escreva uma mensagem antes de enviar a foto." });
+        }
+        return await sendMessage(ctx.user.id, input.receiverId, input.content, input.type ?? "text", input.caption);
+      }),
+    react: protectedProcedure
+      .input(z.object({ messageId: z.number().int().positive(), emoji: z.string().trim().min(1).max(16) }))
+      .mutation(async ({ ctx, input }) => {
+        return await toggleMessageReaction(input.messageId, ctx.user.id, input.emoji);
+      }),
+    markRead: protectedProcedure
+      .input(z.object({ friendId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        await markConversationRead(ctx.user.id, input.friendId);
+        return { ok: true };
+      }),
+    unreadCount: protectedProcedure
+      .query(async ({ ctx }) => {
+        return { count: await getUnreadCount(ctx.user.id) };
       }),
   }),
 });

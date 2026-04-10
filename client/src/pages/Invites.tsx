@@ -1,37 +1,14 @@
 import { useState } from "react";
-import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import SocialHubNav from "@/components/SocialHubNav";
+import { trpc } from "@/lib/trpc";
+import { Link2, MessageCircle, Search, ShieldBan, UserMinus, UserPlus, UserCheck, Clock3, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Copy,
-  Share2,
-  Trophy,
-  Users,
-  Mail,
-  Check,
-  Clock,
-  Crown,
-  Medal,
-  Award,
-  UserPlus,
-  Search,
-} from "lucide-react";
-
-function formatDate(date: Date | string): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(date));
-}
+import { useLocation } from "wouter";
 
 function getInitials(name: string | null | undefined): string {
   if (!name) return "?";
@@ -43,73 +20,65 @@ function getInitials(name: string | null | undefined): string {
     .slice(0, 2);
 }
 
-function getRankIcon(position: number) {
-  switch (position) {
-    case 1:
-      return <Crown className="h-5 w-5 text-yellow-500" />;
-    case 2:
-      return <Medal className="h-5 w-5 text-gray-400" />;
-    case 3:
-      return <Award className="h-5 w-5 text-amber-600" />;
-    default:
-      return <span className="text-muted-foreground font-medium">{position}º</span>;
-  }
+function getAvatarSrc(params: {
+  id?: number | null;
+  name?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+}): string | undefined {
+  const avatarUrl = params.avatarUrl?.trim();
+  if (avatarUrl) return avatarUrl;
+
+  const seedRaw = params.name?.trim() || params.email?.trim() || String(params.id ?? "user");
+  const seed = encodeURIComponent(seedRaw);
+  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${seed}`;
 }
 
 export default function Invites() {
-  const { user } = useAuth();
-  const [email, setEmail] = useState("");
-  const [nicknameInput, setNicknameInput] = useState("");
   const [search, setSearch] = useState("");
+  const [, setLocation] = useLocation();
 
-  const { data: myCode, isLoading: loadingCode } = trpc.invites.getMyCode.useQuery();
-  const { data: myInvites, isLoading: loadingInvites } = trpc.invites.list.useQuery();
-  const { data: ranking, isLoading: loadingRanking } = trpc.invites.ranking.useQuery({ limit: 10 });
-  const { data: friends = [], isLoading: loadingFriends } = trpc.ranking.friends.useQuery();
-  const { data: incomingRequests = [], isLoading: loadingIncomingRequests } = trpc.ranking.incomingRequests.useQuery();
-  const { data: outgoingRequests = [], isLoading: loadingOutgoingRequests } = trpc.ranking.outgoingRequests.useQuery();
+  const { data: myCode } = trpc.invites.getMyCode.useQuery();
+  const { data: friends = [], isLoading: loadingFriends } = trpc.ranking.friends.useQuery(undefined, {
+    refetchInterval: 5000,
+    staleTime: 2000,
+    refetchOnWindowFocus: true,
+  });
+  const { data: incomingRequests = [], isLoading: loadingIncomingRequests } = trpc.ranking.incomingRequests.useQuery(undefined, {
+    refetchInterval: 3000,
+    staleTime: 1500,
+    refetchOnWindowFocus: true,
+  });
+  const { data: outgoingRequests = [], isLoading: loadingOutgoingRequests } = trpc.ranking.outgoingRequests.useQuery(undefined, {
+    refetchInterval: 5000,
+    staleTime: 2000,
+    refetchOnWindowFocus: true,
+  });
   const { data: searchResults = [], isFetching: loadingSearch } = trpc.ranking.searchUsers.useQuery(
     { query: search },
-    { enabled: search.trim().length >= 2 }
+    {
+      enabled: search.trim().length >= 1,
+      refetchInterval: 4000,
+      staleTime: 1500,
+      refetchOnWindowFocus: true,
+    }
   );
 
-  const createInviteMutation = trpc.invites.create.useMutation({
-    onSuccess: () => {
-      toast.success("Convite enviado com sucesso!");
-      setEmail("");
-    },
-    onError: (error) => {
-      toast.error(`Erro ao criar convite: ${error.message}`);
-    },
-  });
-
   const utils = trpc.useUtils();
+
+  const refreshFriendshipData = async () => {
+    await Promise.all([
+      utils.ranking.friends.invalidate(),
+      utils.ranking.searchUsers.invalidate(),
+      utils.ranking.incomingRequests.invalidate(),
+      utils.ranking.outgoingRequests.invalidate(),
+    ]);
+  };
+
   const sendFriendRequestMutation = trpc.ranking.sendRequest.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.ranking.friends.invalidate(),
-        utils.ranking.searchUsers.invalidate(),
-        utils.ranking.incomingRequests.invalidate(),
-        utils.ranking.outgoingRequests.invalidate(),
-      ]);
-      setSearch("");
+      await refreshFriendshipData();
       toast.success("Pedido de amizade enviado.");
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const sendFriendRequestByNicknameMutation = trpc.ranking.sendRequestByNickname.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.ranking.friends.invalidate(),
-        utils.ranking.searchUsers.invalidate(),
-        utils.ranking.incomingRequests.invalidate(),
-        utils.ranking.outgoingRequests.invalidate(),
-      ]);
-      setNicknameInput("");
-      toast.success("Pedido por nickname enviado.");
     },
     onError: (error) => {
       toast.error(error.message);
@@ -118,12 +87,7 @@ export default function Invites() {
 
   const respondRequestMutation = trpc.ranking.respondRequest.useMutation({
     onSuccess: async ({ status }) => {
-      await Promise.all([
-        utils.ranking.friends.invalidate(),
-        utils.ranking.searchUsers.invalidate(),
-        utils.ranking.incomingRequests.invalidate(),
-        utils.ranking.outgoingRequests.invalidate(),
-      ]);
+      await refreshFriendshipData();
       toast.success(status === "accepted" ? "Pedido aceito." : "Pedido recusado.");
     },
     onError: (error) => {
@@ -133,11 +97,7 @@ export default function Invites() {
 
   const cancelRequestMutation = trpc.ranking.cancelRequest.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.ranking.searchUsers.invalidate(),
-        utils.ranking.incomingRequests.invalidate(),
-        utils.ranking.outgoingRequests.invalidate(),
-      ]);
+      await refreshFriendshipData();
       toast.success("Pedido cancelado.");
     },
     onError: (error) => {
@@ -145,131 +105,130 @@ export default function Invites() {
     },
   });
 
+  const removeFriendMutation = trpc.ranking.removeFriend.useMutation({
+    onSuccess: async () => {
+      await refreshFriendshipData();
+      toast.success("Amizade desfeita.");
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const blockUserMutation = trpc.ranking.blockUser.useMutation({
+    onSuccess: async () => {
+      await refreshFriendshipData();
+      toast.success("Usuario bloqueado com sucesso.");
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
   const inviteUrl = myCode ? `${window.location.origin}?invite=${myCode.code}` : "";
-
-  const copyInviteLink = () => {
-    if (inviteUrl) {
-      navigator.clipboard.writeText(inviteUrl);
-      toast.success("Link copiado para a área de transferência!");
-    }
-  };
-
-  const shareInvite = async () => {
-    if (navigator.share && inviteUrl) {
-      try {
-        await navigator.share({
-          title: "Convite para The Rail",
-          text: `${user?.name || "Um amigo"} está te convidando para usar o The Rail!`,
-          url: inviteUrl,
-        });
-      } catch (e) {
-        copyInviteLink();
-      }
-    } else {
-      copyInviteLink();
-    }
-  };
-
-  const handleSendInvite = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email.trim()) {
-      createInviteMutation.mutate({ email: email.trim() });
-    }
-  };
-
-  const acceptedInvites = myInvites?.filter((i) => i.status === "accepted") || [];
-  const pendingInvites = myInvites?.filter((i) => i.status === "pending") || [];
   const pendingOutgoingIds = new Set(outgoingRequests.map((request) => request.receiverId));
 
-  if (loadingCode || loadingInvites || loadingRanking) {
+  const copyInviteLink = () => {
+    if (!inviteUrl) return;
+    navigator.clipboard.writeText(inviteUrl);
+    toast.success("Link copiado para a area de transferencia.");
+  };
+
+  if (loadingFriends || loadingIncomingRequests || loadingOutgoingRequests) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-48" />
-        <div className="grid gap-6 md:grid-cols-2">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
+      <div className="social-page space-y-4">
+        <SocialHubNav />
+        <Skeleton className="h-24 w-full rounded-[1.75rem]" />
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+          <Skeleton className="h-[32rem] rounded-[1.75rem]" />
+          <Skeleton className="h-[32rem] rounded-[1.75rem]" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Amizades e Convites</h1>
-        <p className="text-muted-foreground">
-          Gerencie seus pedidos de amizade e convites da plataforma.
-        </p>
+    <div className="social-page space-y-4">
+      <SocialHubNav />
+
+      <div className="social-shell flex flex-wrap items-center justify-between gap-4 p-5 md:p-6">
+        <div>
+          <h1 className="text-2xl font-bold">Pessoas</h1>
+          <p className="text-muted-foreground">Descubra jogadores, aceite pedidos e mova a conversa para o inbox em um toque.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => setLocation("/chat")}>
+            <MessageCircle className="mr-2 h-4 w-4" />
+            Ir para mensagens
+          </Button>
+          <Button type="button" variant="outline" onClick={copyInviteLink} disabled={!inviteUrl}>
+            <Link2 className="mr-2 h-4 w-4" />
+            Copiar link de convite
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-primary" />
-            Pedidos de Amizade
-            {incomingRequests.length > 0 && (
-              <Badge variant="destructive">{incomingRequests.length} novos</Badge>
-            )}
-          </CardTitle>
-          <CardDescription>
-            Envie, aceite ou recuse pedidos de amizade.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Adicionar por nickname</Label>
-            <div className="flex gap-2">
-              <Input
-                value={nicknameInput}
-                onChange={(e) => setNicknameInput(e.target.value)}
-                placeholder="Digite o nickname exato"
-              />
-              <Button
-                type="button"
-                onClick={() => sendFriendRequestByNicknameMutation.mutate({ nickname: nicknameInput })}
-                disabled={sendFriendRequestByNicknameMutation.isPending || nicknameInput.trim().length < 2}
-              >
-                Enviar
-              </Button>
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="social-shell p-4 md:p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="flex items-center gap-2 text-base font-semibold">
+                <UserPlus className="h-4 w-4 text-primary" />
+                Descobrir pessoas
+              </p>
+              <p className="text-sm text-muted-foreground">Procure por nome, login ou email e puxe a pessoa para sua rede.</p>
             </div>
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              Social mode
+            </span>
           </div>
 
-          <div className="space-y-2">
-            <Label>Buscar usuário para adicionar</Label>
+          <div className="social-muted-panel p-3">
             <div className="flex gap-2">
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nickname, email ou código"
+                placeholder="Digite nome, login/codigo ou email"
+                className="h-12 rounded-full border-border/60 bg-background/75 px-5"
               />
-              <Button type="button" variant="outline" size="icon" disabled>
+              <Button type="button" variant="outline" size="icon" disabled className="h-12 w-12 rounded-full">
                 <Search className="h-4 w-4" />
               </Button>
             </div>
-            {search.trim().length >= 2 && (
-              <div className="space-y-2">
+          </div>
+
+          <div className="app-scrollbar mt-4 max-h-[calc(100dvh-18rem)] space-y-3 overflow-y-auto pr-1">
+            {search.trim().length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Buscando por: <span className="font-medium text-foreground">{search.trim()}</span>
+                </p>
                 {loadingSearch ? (
-                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-16 w-full rounded-[1.5rem]" />
                 ) : searchResults.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum usuário disponível para adicionar.</p>
+                  <div className="social-muted-panel px-4 py-8 text-center text-sm text-muted-foreground">Nenhuma pessoa encontrada com esse termo.</div>
                 ) : (
                   searchResults.map((player) => (
-                    <div key={player.id} className="flex items-center gap-3 rounded-lg border p-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={player.avatarUrl ?? undefined} />
+                    <div key={player.id} className="social-muted-panel flex items-center gap-3 p-3.5">
+                      <Avatar className="h-11 w-11">
+                        <AvatarImage
+                          src={getAvatarSrc({ id: player.id, name: player.name, email: player.email, avatarUrl: player.avatarUrl })}
+                        />
                         <AvatarFallback>{getInitials(player.name)}</AvatarFallback>
                       </Avatar>
+
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{player.name ?? "Jogador"}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {player.email ?? "Sem email publico"}
-                        </p>
+                        <p className="truncate text-xs text-muted-foreground">{player.email ?? "Sem email publico"}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">Login: {player.inviteCode}</p>
                       </div>
+
                       <Button
                         size="sm"
                         onClick={() => sendFriendRequestMutation.mutate({ friendId: player.id })}
                         disabled={sendFriendRequestMutation.isPending || pendingOutgoingIds.has(player.id)}
+                        className="rounded-full px-4"
                       >
                         {pendingOutgoingIds.has(player.id) ? "Pendente" : "Enviar pedido"}
                       </Button>
@@ -277,318 +236,168 @@ export default function Invites() {
                   ))
                 )}
               </div>
+            ) : (
+              <div className="social-muted-panel px-4 py-8 text-center text-sm text-muted-foreground">Digite para ver sugestoes de quem ja tem login.</div>
             )}
           </div>
+        </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Pedidos recebidos</p>
-              {loadingIncomingRequests ? (
-                <Skeleton className="h-12 w-full" />
-              ) : incomingRequests.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum pedido pendente.</p>
-              ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {incomingRequests.map((request) => (
-                    <div key={request.id} className="flex items-center gap-3 rounded-lg border p-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={request.requester.avatarUrl ?? undefined} />
-                        <AvatarFallback>{getInitials(request.requester.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{request.requester.name ?? "Jogador"}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => respondRequestMutation.mutate({ requestId: request.id, action: "accept" })}
-                          disabled={respondRequestMutation.isPending}
-                        >
-                          Aceitar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => respondRequestMutation.mutate({ requestId: request.id, action: "reject" })}
-                          disabled={respondRequestMutation.isPending}
-                        >
-                          Recusar
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+        <aside className="space-y-4">
+          <section className="social-shell p-4 md:p-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <UserCheck className="h-4 w-4 text-primary" />
+                Pedidos recebidos
+              </p>
+              {incomingRequests.length > 0 ? <Badge variant="destructive">{incomingRequests.length}</Badge> : null}
             </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Pedidos enviados</p>
-              {loadingOutgoingRequests ? (
-                <Skeleton className="h-12 w-full" />
-              ) : outgoingRequests.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Você não enviou pedidos pendentes.</p>
+            <div className="app-scrollbar max-h-64 space-y-2 overflow-y-auto pr-1">
+              {incomingRequests.length === 0 ? (
+                <div className="social-muted-panel px-4 py-6 text-sm text-muted-foreground">Nenhum pedido pendente.</div>
               ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {outgoingRequests.map((request) => (
-                    <div key={request.id} className="flex items-center gap-3 rounded-lg border p-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={request.receiver.avatarUrl ?? undefined} />
-                        <AvatarFallback>{getInitials(request.receiver.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{request.receiver.name ?? "Jogador"}</p>
-                      </div>
+                incomingRequests.map((request) => (
+                  <div key={request.id} className="social-muted-panel flex items-center gap-3 p-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage
+                        src={getAvatarSrc({
+                          id: request.requester.id,
+                          name: request.requester.name,
+                          email: request.requester.email,
+                          avatarUrl: request.requester.avatarUrl,
+                        })}
+                      />
+                      <AvatarFallback>{getInitials(request.requester.name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{request.requester.name ?? "Jogador"}</p>
+                      <p className="truncate text-xs text-muted-foreground">Quer entrar na sua rede</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => respondRequestMutation.mutate({ requestId: request.id, action: "accept" })}
+                        disabled={respondRequestMutation.isPending}
+                      >
+                        Aceitar
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => cancelRequestMutation.mutate({ requestId: request.id })}
-                        disabled={cancelRequestMutation.isPending}
+                        onClick={() => respondRequestMutation.mutate({ requestId: request.id, action: "reject" })}
+                        disabled={respondRequestMutation.isPending}
                       >
-                        Cancelar
+                        Recusar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => blockUserMutation.mutate({ userId: request.requester.id })}
+                        disabled={blockUserMutation.isPending}
+                      >
+                        <ShieldBan className="mr-1 h-3.5 w-3.5" />
+                        Bloquear
                       </Button>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))
               )}
             </div>
-          </div>
+          </section>
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Sua lista de amigos</p>
-            {loadingFriends ? (
-              <Skeleton className="h-12 w-full" />
-            ) : friends.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Você ainda não adicionou ninguém.</p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {friends.map((friend) => (
-                  <div key={friend.id} className="flex items-center gap-3 rounded-lg border p-3">
+          <section className="social-shell p-4 md:p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Clock3 className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold">Pedidos enviados</p>
+            </div>
+            <div className="app-scrollbar max-h-56 space-y-2 overflow-y-auto pr-1">
+              {outgoingRequests.length === 0 ? (
+                <div className="social-muted-panel px-4 py-6 text-sm text-muted-foreground">Voce nao enviou pedidos pendentes.</div>
+              ) : (
+                outgoingRequests.map((request) => (
+                  <div key={request.id} className="social-muted-panel flex items-center gap-3 p-3">
                     <Avatar className="h-9 w-9">
-                      <AvatarImage src={friend.avatarUrl ?? undefined} />
+                      <AvatarImage
+                        src={getAvatarSrc({
+                          id: request.receiver.id,
+                          name: request.receiver.name,
+                          email: request.receiver.email,
+                          avatarUrl: request.receiver.avatarUrl,
+                        })}
+                      />
+                      <AvatarFallback>{getInitials(request.receiver.name)}</AvatarFallback>
+                    </Avatar>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{request.receiver.name ?? "Jogador"}</p>
+                      <p className="truncate text-xs text-muted-foreground">Aguardando resposta</p>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => cancelRequestMutation.mutate({ requestId: request.id })}
+                      disabled={cancelRequestMutation.isPending}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="social-shell p-4 md:p-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <MessageCircle className="h-4 w-4 text-primary" />
+                Sua rede
+              </p>
+              <Badge variant="secondary">{friends.length}</Badge>
+            </div>
+            <div className="app-scrollbar max-h-[22rem] space-y-2 overflow-y-auto pr-1">
+              {friends.length === 0 ? (
+                <div className="social-muted-panel px-4 py-6 text-sm text-muted-foreground">Voce ainda nao adicionou ninguem.</div>
+              ) : (
+                friends.map((friend) => (
+                  <div key={friend.id} className="social-muted-panel flex items-center gap-3 p-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={getAvatarSrc({ id: friend.id, name: friend.name, email: friend.email, avatarUrl: friend.avatarUrl })} />
                       <AvatarFallback>{getInitials(friend.name)}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
                       <p className="truncate font-medium">{friend.name ?? "Jogador"}</p>
                       <p className="truncate text-xs text-muted-foreground">{friend.email ?? "Sem email publico"}</p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[1.25fr_0.95fr]">
-        {/* My Invite Link */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Share2 className="h-5 w-5 text-primary" />
-              Seu Link de Convite
-            </CardTitle>
-            <CardDescription>
-              Compartilhe este link com seus amigos para convidá-los
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                value={inviteUrl}
-                readOnly
-                className="font-mono text-sm sm:flex-1"
-              />
-              <Button variant="outline" size="icon" onClick={copyInviteLink}>
-                <Copy className="h-4 w-4" />
-              </Button>
-              <Button onClick={shareInvite} className="sm:min-w-[150px]">
-                <Share2 className="h-4 w-4 mr-2" />
-                Compartilhar
-              </Button>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-lg border border-border/40 bg-muted/30 px-4 py-3">
-              <div className="flex items-center gap-2 rounded-full bg-background/70 px-3 py-2">
-                <Users className="h-5 w-5 text-primary" />
-                <span className="text-xl font-bold leading-none">{acceptedInvites.length}</span>
-              </div>
-              <div className="text-sm text-muted-foreground leading-tight">
-                {acceptedInvites.length === 1 ? "amigo convidado" : "amigos convidados"}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Send Invite by Email */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary" />
-              Enviar Convite por Email
-            </CardTitle>
-            <CardDescription>
-              Envie um convite diretamente para o email do seu amigo
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSendInvite} className="space-y-3">
-              <div className="space-y-2">
-                <Label>Email do amigo</Label>
-                <Input
-                  type="email"
-                  placeholder="amigo@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={createInviteMutation.isPending}
-              >
-                {createInviteMutation.isPending ? "Enviando..." : "Enviar Convite"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabs for Ranking and My Invites */}
-      <Tabs defaultValue="ranking">
-        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-          <TabsTrigger value="ranking" className="flex items-center gap-2">
-            <Trophy className="h-4 w-4" />
-            Ranking
-          </TabsTrigger>
-          <TabsTrigger value="invites" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Convites ({myInvites?.length || 0})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="ranking" className="mt-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-yellow-500" />
-                Ranking de Convites
-              </CardTitle>
-              <CardDescription>
-                Os jogadores que mais convidaram amigos
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {ranking && ranking.length > 0 ? (
-                <div className="space-y-2.5">
-                  {ranking.map((player, index) => (
-                    <div
-                      key={player.id}
-                      className={`flex items-center gap-3 rounded-lg p-3 ${
-                        index < 3 ? "bg-muted/50" : ""
-                      } ${player.id === user?.id ? "ring-2 ring-primary" : ""}`}
-                    >
-                      <div className="w-8 flex justify-center">
-                        {getRankIcon(index + 1)}
-                      </div>
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={player.avatarUrl || undefined} />
-                        <AvatarFallback>{getInitials(player.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {player.name || "Jogador"}
-                          {player.id === user?.id && (
-                            <Badge variant="outline" className="ml-2">
-                              Você
-                            </Badge>
-                          )}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-base font-bold text-primary leading-none">
-                          {player.inviteCount}
-                        </p>
-                        <p className="text-xs text-muted-foreground">convites</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Trophy className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Nenhum convite aceito ainda.</p>
-                  <p className="text-sm">Seja o primeiro a convidar amigos!</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="invites" className="mt-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>Meus Convites Enviados</CardTitle>
-              <CardDescription>
-                Histórico de convites que você enviou
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {myInvites && myInvites.length > 0 ? (
-                <div className="space-y-2.5">
-                  {myInvites.map((invite) => (
-                    <div
-                      key={invite.id}
-                      className="flex items-center gap-3 rounded-lg border border-border/40 bg-muted/20 p-3"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {invite.inviteeEmail || `Código: ${invite.code}`}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Enviado em {formatDate(invite.createdAt)}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={
-                          invite.status === "accepted"
-                            ? "default"
-                            : invite.status === "expired"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                        className="flex items-center gap-1"
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <Button size="sm" onClick={() => setLocation("/chat")} className="rounded-full">
+                        Conversar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => removeFriendMutation.mutate({ friendId: friend.id })}
+                        disabled={removeFriendMutation.isPending}
                       >
-                        {invite.status === "accepted" ? (
-                          <>
-                            <Check className="h-3 w-3" /> Aceito
-                          </>
-                        ) : invite.status === "expired" ? (
-                          <>
-                            <Clock className="h-3 w-3" /> Expirado
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="h-3 w-3" /> Pendente
-                          </>
-                        )}
-                      </Badge>
+                        <UserMinus className="mr-1 h-3.5 w-3.5" />
+                        Desfazer
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => blockUserMutation.mutate({ userId: friend.id })}
+                        disabled={blockUserMutation.isPending}
+                      >
+                        <ShieldBan className="mr-1 h-3.5 w-3.5" />
+                        Bloquear
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Mail className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Você ainda não enviou nenhum convite.</p>
-                  <p className="text-sm">
-                    Compartilhe seu link ou envie por email!
-                  </p>
-                </div>
+                  </div>
+                ))
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

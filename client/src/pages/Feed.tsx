@@ -1,13 +1,12 @@
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import SocialHubNav from "@/components/SocialHubNav";
 import {
   Heart,
   MessageCircle,
@@ -19,8 +18,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Crown,
-  Swords,
+  Sparkles,
+  Flame,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -69,7 +68,7 @@ function CommentSection({ postId, currentUserId }: { postId: number; currentUser
                 {(c.author.name ?? "?").slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0 bg-muted/40 rounded-lg px-3 py-2">
+            <div className="flex-1 min-w-0 rounded-2xl bg-muted/40 px-3 py-2">
               <p className="text-xs font-semibold">{c.author.name ?? "Jogador"}</p>
               <p className="text-sm mt-0.5 break-words">{c.comment.content}</p>
             </div>
@@ -193,8 +192,7 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
   });
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-4">
+    <article className="social-post p-4 md:p-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-3">
@@ -327,8 +325,7 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
         {showComments && (
           <CommentSection postId={post.id} currentUserId={currentUserId} />
         )}
-      </CardContent>
-    </Card>
+    </article>
   );
 }
 
@@ -433,9 +430,8 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
   };
 
   return (
-    <Card>
-      <CardContent
-        className={`p-4 space-y-3 transition-colors ${isDraggingImage ? "rounded-lg border border-dashed border-primary/60 bg-primary/5" : ""}`}
+    <div
+      className={`social-post p-4 space-y-3 transition-colors md:p-5 ${isDraggingImage ? "border-dashed border-primary/60 bg-primary/5" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -457,7 +453,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
           onChange={(e) => setContent(e.target.value)}
           onPaste={handlePasteImage}
           placeholder="Compartilhe um resultado, uma mão interessante ou uma conquista..."
-          className="min-h-[80px] resize-none"
+          className="min-h-[92px] resize-none rounded-[1.5rem] border-border/60 bg-background/75 px-4 py-3"
           maxLength={1000}
         />
 
@@ -502,7 +498,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
               size="sm"
               variant="outline"
               onClick={() => fileRef.current?.click()}
-              className="gap-1.5"
+              className="gap-1.5 rounded-full"
             >
               <ImagePlus className="h-4 w-4" />
               Foto
@@ -511,7 +507,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
               value={visibility}
               onValueChange={(v) => setVisibility(v as "public" | "friends")}
             >
-              <SelectTrigger className="w-36 h-9 text-sm">
+              <SelectTrigger className="h-10 w-36 rounded-full text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -531,14 +527,13 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
           <Button
             onClick={handleSubmit}
             disabled={(!content.trim() && !imageBase64) || createPost.isPending || uploadImage.isPending}
-            className="gap-1.5"
+            className="gap-1.5 rounded-full px-5"
           >
             <Send className="h-4 w-4" />
             {createPost.isPending || uploadImage.isPending ? "Publicando..." : "Publicar"}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -567,250 +562,106 @@ export default function Feed() {
   if (!user) return null;
 
   return (
-    <div className="relative space-y-6 max-w-2xl mx-auto">
-      {/* Cards laterais (desktop grande) */}
-      <div className="hidden xl:block absolute top-20 -left-[340px] w-[280px]">
-        <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/15 via-sky-900/20 to-background">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
-                <Crown className="h-4 w-4 text-amber-400" /> Hey Hey
-              </p>
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
-              </span>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{kkWinRate}%</p>
-                <p className="text-xs text-sky-100/85">taxa de vitória KK</p>
-                <p className="text-xs text-sky-100/85">Vitórias {kkWins} • Derrotas {kkLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+    <div className="social-page space-y-4">
+      <SocialHubNav />
+
+      <div className="social-shell p-5 md:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Globe className="h-6 w-6 text-primary" />
+              Feed da comunidade
+            </h1>
+            <p className="text-muted-foreground">
+              Menos dashboard, mais timeline: resultados, fotos, mãos e interação social em um fluxo só.
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-4 py-2 text-sm font-medium">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Modo rede social
+          </div>
+        </div>
       </div>
 
-      <div className="hidden xl:block absolute top-20 -right-[340px] w-[280px]">
-        <Card className="border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-900/20 to-background">
-          <CardContent className="p-4 space-y-2 text-right">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
-              </span>
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
-                Vala Vala <Swords className="h-4 w-4 text-orange-400" />
-              </p>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{jjWinRate}%</p>
-                <p className="text-xs text-rose-100/85">taxa de vitória JJ</p>
-                <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="hidden xl:block absolute top-[320px] -left-[340px] w-[280px]">
-        <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-emerald-900/20 to-background">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-emerald-100">
-                <Crown className="h-4 w-4 text-emerald-300" /> As As
-              </p>
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
-              </span>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{aaWinRate}%</p>
-                <p className="text-xs text-emerald-100/85">taxa de vitória AA</p>
-                <p className="text-xs text-emerald-100/85">Vitórias {aaWins} • Derrotas {aaLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="hidden xl:block absolute top-[320px] -right-[340px] w-[280px]">
-        <Card className="border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-cyan-900/20 to-background">
-          <CardContent className="p-4 space-y-2 text-right">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">A</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">K</span>
-              </span>
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-cyan-100">
-                As e Rei <Swords className="h-4 w-4 text-cyan-300" />
-              </p>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{akWinRate}%</p>
-                <p className="text-xs text-cyan-100/85">taxa de vitória AK</p>
-                <p className="text-xs text-cyan-100/85">Vitórias {akWins} • Derrotas {akLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Globe className="h-6 w-6 text-primary" />
-          Feed da Comunidade
-        </h1>
-        <p className="text-muted-foreground">
-          Compartilhe resultados, mãos e conquistas com a comunidade
-        </p>
-      </div>
-
-      {/* Cards topo (mobile/tablet) */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:hidden">
-        <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/15 via-sky-900/20 to-background">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-sky-100">
-                <Crown className="h-4 w-4 text-amber-400" /> Hey Hey
-              </p>
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-amber-300/40 bg-slate-900/70 text-sm font-black text-amber-100">K</span>
-              </span>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{kkWinRate}%</p>
-                <p className="text-xs text-sky-100/85">taxa de vitória KK</p>
-                <p className="text-xs text-sky-100/85">Vitórias {kkWins} • Derrotas {kkLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-900/20 to-background">
-          <CardContent className="p-4 space-y-2 text-right">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-rose-300/40 bg-slate-900/70 text-sm font-black text-rose-100">J</span>
-              </span>
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-100">
-                Vala Vala <Swords className="h-4 w-4 text-orange-400" />
-              </p>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{jjWinRate}%</p>
-                <p className="text-xs text-rose-100/85">taxa de vitória JJ</p>
-                <p className="text-xs text-rose-100/85">Vitórias {jjWins} • Derrotas {jjLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-emerald-900/20 to-background">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-emerald-100">
-                <Crown className="h-4 w-4 text-emerald-300" /> As As
-              </p>
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-emerald-300/40 bg-slate-900/70 text-sm font-black text-emerald-100">A</span>
-              </span>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{aaWinRate}%</p>
-                <p className="text-xs text-emerald-100/85">taxa de vitória AA</p>
-                <p className="text-xs text-emerald-100/85">Vitórias {aaWins} • Derrotas {aaLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-cyan-900/20 to-background">
-          <CardContent className="p-4 space-y-2 text-right">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-0.5">
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">A</span>
-                <span className="inline-flex h-7 w-6 items-center justify-center rounded-sm border border-cyan-300/40 bg-slate-900/70 text-sm font-black text-cyan-100">K</span>
-              </span>
-              <p className="text-sm font-semibold flex items-center gap-1.5 text-cyan-100">
-                As e Rei <Swords className="h-4 w-4 text-cyan-300" />
-              </p>
-            </div>
-            {loadingGlobalHandStats ? (
-              <Skeleton className="h-14 w-full" />
-            ) : (
-              <>
-                <p className="text-3xl font-black text-white leading-none">{akWinRate}%</p>
-                <p className="text-xs text-cyan-100/85">taxa de vitória AK</p>
-                <p className="text-xs text-cyan-100/85">Vitórias {akWins} • Derrotas {akLosses}</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* New post */}
-      <NewPostForm currentUserId={user.id} />
-
-      {/* Posts */}
-      {isLoading ? (
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="space-y-1">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-20" />
+          <NewPostForm currentUserId={user.id} />
+
+          {isLoading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="social-post space-y-3 p-4 md:p-5">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="space-y-1">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
                   </div>
+                  <Skeleton className="h-16 w-full rounded-2xl" />
                 </div>
-                <Skeleton className="h-16 w-full" />
-              </CardContent>
-            </Card>
-          ))}
+              ))}
+            </div>
+          ) : posts && posts.length > 0 ? (
+            <div className="space-y-4">
+              {posts.map((post: any) => (
+                <PostCard key={post.id} post={post} currentUserId={user.id} />
+              ))}
+            </div>
+          ) : (
+            <div className="social-post py-16 text-center text-muted-foreground">
+              <Globe className="mx-auto mb-3 h-12 w-12 opacity-40" />
+              <p className="font-medium">Nenhum post ainda</p>
+              <p className="mt-1 text-sm">Seja o primeiro a compartilhar um resultado.</p>
+            </div>
+          )}
         </div>
-      ) : posts && posts.length > 0 ? (
-        <div className="space-y-4">
-          {posts.map((post: any) => (
-            <PostCard key={post.id} post={post} currentUserId={user.id} />
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
-            <Globe className="h-12 w-12 mx-auto mb-3 opacity-40" />
-            <p className="font-medium">Nenhum post ainda</p>
-            <p className="text-sm mt-1">Seja o primeiro a compartilhar um resultado!</p>
-          </CardContent>
-        </Card>
-      )}
+
+        <aside className="space-y-4">
+          <div className="social-shell p-4 md:sticky md:top-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <Flame className="h-4 w-4 text-primary" />
+              Destaques da mesa
+            </div>
+            {loadingGlobalHandStats ? (
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="social-muted-panel flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold">KK</p>
+                    <p className="text-xs text-muted-foreground">Vitórias {kkWins} • Derrotas {kkLosses}</p>
+                  </div>
+                  <span className="text-xl font-black text-primary">{kkWinRate}%</span>
+                </div>
+                <div className="social-muted-panel flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold">JJ</p>
+                    <p className="text-xs text-muted-foreground">Vitórias {jjWins} • Derrotas {jjLosses}</p>
+                  </div>
+                  <span className="text-xl font-black text-primary">{jjWinRate}%</span>
+                </div>
+                <div className="social-muted-panel flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold">AA</p>
+                    <p className="text-xs text-muted-foreground">Vitórias {aaWins} • Derrotas {aaLosses}</p>
+                  </div>
+                  <span className="text-xl font-black text-primary">{aaWinRate}%</span>
+                </div>
+                <div className="social-muted-panel flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold">AK</p>
+                    <p className="text-xs text-muted-foreground">Vitórias {akWins} • Derrotas {akLosses}</p>
+                  </div>
+                  <span className="text-xl font-black text-primary">{akWinRate}%</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

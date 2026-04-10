@@ -84,6 +84,14 @@ async function runSafeMigrations() {
       "CREATE UNIQUE INDEX `post_reactions_post_user_unique` ON `post_reactions` (`postId`,`userId`)",
       "CREATE INDEX `post_reactions_post_idx` ON `post_reactions` (`postId`)",
       "CREATE INDEX `post_reactions_emoji_idx` ON `post_reactions` (`emoji`)",
+      `CREATE TABLE IF NOT EXISTS \`user_blocks\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`blockedUserId\` int NOT NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT (now()),
+        CONSTRAINT \`user_blocks_id\` PRIMARY KEY(\`id\`)
+      )`,
+      "CREATE UNIQUE INDEX `user_blocks_user_blocked_unique` ON `user_blocks` (`userId`,`blockedUserId`)",
     ];
 
     for (const sql of alterStatements) {

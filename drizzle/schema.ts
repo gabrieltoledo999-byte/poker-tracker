@@ -339,6 +339,48 @@ export type FriendRequest = typeof friendRequests.$inferSelect;
 export type InsertFriendRequest = typeof friendRequests.$inferInsert;
 
 /**
+ * User blocks table - tracks blocked users
+ */
+export const userBlocks = mysqlTable("user_blocks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  blockedUserId: int("blockedUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type UserBlock = typeof userBlocks.$inferSelect;
+export type InsertUserBlock = typeof userBlocks.$inferInsert;
+
+/**
+ * Private messages between friends
+ */
+export const messages = mysqlTable("messages", {
+  id: int("id").autoincrement().primaryKey(),
+  senderId: int("senderId").notNull(),
+  receiverId: int("receiverId").notNull(),
+  content: text("content").notNull(),
+  caption: text("caption"),
+  type: mysqlEnum("type", ["text", "image"]).default("text").notNull(),
+  readAt: timestamp("readAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = typeof messages.$inferInsert;
+
+export const messageReactions = mysqlTable("message_reactions", {
+  id: int("id").autoincrement().primaryKey(),
+  messageId: int("messageId").notNull(),
+  userId: int("userId").notNull(),
+  emoji: varchar("emoji", { length: 16 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type InsertMessageReaction = typeof messageReactions.$inferInsert;
+
+/**
  * Clubs table - poker clubs where user allocates bankroll (online apps like PPPoker, ClubGG, etc.)
  */
 export const clubs = mysqlTable("clubs", {

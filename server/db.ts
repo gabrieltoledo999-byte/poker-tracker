@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters, userBlocks, messages, Message, messageReactions } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAllRates } from "./currency";
 import { authCompatUserSelect } from "./userCompat";
@@ -1052,6 +1052,340 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   };
 }
 
+// ─── Private Chat ─────────────────────────────────────────────────────────────
+
+const ALLOWED_MESSAGE_REACTIONS = ["❤️", "🔥", "😂", "👏", "👀"] as const;
+type AllowedMessageReaction = (typeof ALLOWED_MESSAGE_REACTIONS)[number];
+
+function isDuplicateColumnError(error: unknown): boolean {
+  const err = error as { code?: string; message?: string; cause?: { code?: string; message?: string } } | undefined;
+  const code = String(err?.code ?? err?.cause?.code ?? "").toUpperCase();
+  const message = String(err?.message ?? err?.cause?.message ?? "").toLowerCase();
+
+  return code === "ER_DUP_FIELDNAME" || message.includes("duplicate column name");
+}
+
+async function addColumnIfMissing(
+  db: Awaited<ReturnType<typeof getDb>>,
+  tableName: string,
+  columnDefinition: string
+) {
+  try {
+    await db.execute(sql.raw(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition}`));
+  } catch (error) {
+    if (!isDuplicateColumnError(error)) {
+      throw error;
+    }
+  }
+}
+
+async function modifyColumn(
+  db: Awaited<ReturnType<typeof getDb>>,
+  tableName: string,
+  columnDefinition: string
+) {
+  await db.execute(sql.raw(`ALTER TABLE ${tableName} MODIFY COLUMN ${columnDefinition}`));
+}
+
+async function ensureMessagesTable(db: Awaited<ReturnType<typeof getDb>>) {
+  if (!db) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS messages (
+      id int AUTO_INCREMENT NOT NULL,
+      senderId int NOT NULL,
+      receiverId int NOT NULL,
+      content text NOT NULL,
+      caption text NULL,
+      type enum('text','image') NOT NULL DEFAULT 'text',
+      readAt timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT (now()),
+      CONSTRAINT messages_id PRIMARY KEY(id)
+    )
+  `);
+
+  // Ensure old deployments with partial schema are upgraded in place.
+  await addColumnIfMissing(db, "messages", "senderId int NOT NULL");
+  await addColumnIfMissing(db, "messages", "receiverId int NOT NULL");
+  await addColumnIfMissing(db, "messages", "content text NOT NULL");
+  await addColumnIfMissing(db, "messages", "caption text NULL");
+  await addColumnIfMissing(db, "messages", "type enum('text','image') NOT NULL DEFAULT 'text'");
+  await addColumnIfMissing(db, "messages", "readAt timestamp NULL");
+  await addColumnIfMissing(db, "messages", "createdAt timestamp NOT NULL DEFAULT (now())");
+  await modifyColumn(db, "messages", "id int AUTO_INCREMENT NOT NULL");
+  await modifyColumn(db, "messages", "senderId int NOT NULL");
+  await modifyColumn(db, "messages", "receiverId int NOT NULL");
+  await modifyColumn(db, "messages", "content text NOT NULL");
+  await modifyColumn(db, "messages", "caption text NULL");
+  await modifyColumn(db, "messages", "type enum('text','image') NOT NULL DEFAULT 'text'");
+  await modifyColumn(db, "messages", "readAt timestamp NULL DEFAULT NULL");
+  await modifyColumn(db, "messages", "createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP");
+}
+
+async function ensureMessageReactionsTable(db: Awaited<ReturnType<typeof getDb>>) {
+  if (!db) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      id int AUTO_INCREMENT NOT NULL,
+      messageId int NOT NULL,
+      userId int NOT NULL,
+      emoji varchar(16) NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT (now()),
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT message_reactions_id PRIMARY KEY(id)
+    )
+  `);
+
+  await addColumnIfMissing(db, "message_reactions", "messageId int NOT NULL");
+  await addColumnIfMissing(db, "message_reactions", "userId int NOT NULL");
+  await addColumnIfMissing(db, "message_reactions", "emoji varchar(16) NOT NULL");
+  await addColumnIfMissing(db, "message_reactions", "createdAt timestamp NOT NULL DEFAULT (now())");
+  await addColumnIfMissing(db, "message_reactions", "updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+  await modifyColumn(db, "message_reactions", "messageId int NOT NULL");
+  await modifyColumn(db, "message_reactions", "userId int NOT NULL");
+  await modifyColumn(db, "message_reactions", "emoji varchar(16) NOT NULL");
+}
+
+function isMessagesSchemaError(error: unknown): boolean {
+  const err = error as { code?: string; message?: string; sql?: string; cause?: { code?: string; message?: string; sql?: string } } | undefined;
+  if (!err) return false;
+  const code = String(err.code ?? err.cause?.code ?? "").toUpperCase();
+  const message = String(err.message ?? err.cause?.message ?? "").toLowerCase();
+  const sqlText = String(err.sql ?? err.cause?.sql ?? "").toLowerCase();
+
+  // 1146: table doesn't exist; 1054: unknown column; 1265/1366: bad enum value;
+  // 1364: field doesn't have default; 1048: column cannot be null
+  if (
+    code === "ER_NO_SUCH_TABLE" ||
+    code === "ER_BAD_FIELD_ERROR" ||
+    code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD" ||
+    code === "ER_TRUNCATED_WRONG_VALUE" ||
+    code === "ER_NO_DEFAULT_FOR_FIELD" ||
+    code === "ER_BAD_NULL_ERROR"
+  ) {
+    return true;
+  }
+
+  if (
+    sqlText.includes("insert into `messages`") ||
+    sqlText.includes("insert into messages") ||
+    sqlText.includes("message_reactions") ||
+    (message.includes("failed query") && message.includes("insert into `messages`")) ||
+    (message.includes("failed query") && message.includes("insert into messages")) ||
+    (message.includes("failed query") && message.includes("message_reactions"))
+  ) {
+    return true;
+  }
+
+  return (
+    (message.includes("messages") || message.includes("message_reactions") || message.includes("field list") || message.includes("default value")) &&
+    (message.includes("doesn't exist") ||
+      message.includes("unknown column") ||
+      message.includes("incorrect") ||
+      message.includes("truncated") ||
+      message.includes("doesn't have a default value") ||
+      message.includes("cannot be null"))
+  );
+}
+
+async function runWithMessagesTableRetry<T>(
+  db: Awaited<ReturnType<typeof getDb>>,
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isMessagesSchemaError(error)) {
+      throw error;
+    }
+    await ensureMessagesTable(db);
+    await ensureMessageReactionsTable(db);
+    return await operation();
+  }
+}
+
+async function getMessageReactionState(db: Awaited<ReturnType<typeof getDb>>, currentUserId: number, messageIds: number[]) {
+  if (messageIds.length === 0) {
+    return { summaryByMessage: new Map<number, Array<{ emoji: string; count: number }>>(), myReactionByMessage: new Map<number, string | null>() };
+  }
+
+  const rows = await runWithMessagesTableRetry(db, async () => {
+    return db.select().from(messageReactions).where(inArray(messageReactions.messageId, messageIds));
+  });
+
+  const byMessageAndEmoji = new Map<number, Map<string, number>>();
+  const myReactionByMessage = new Map<number, string | null>();
+
+  for (const row of rows) {
+    if (!byMessageAndEmoji.has(row.messageId)) {
+      byMessageAndEmoji.set(row.messageId, new Map<string, number>());
+    }
+    const bucket = byMessageAndEmoji.get(row.messageId)!;
+    bucket.set(row.emoji, (bucket.get(row.emoji) ?? 0) + 1);
+    if (row.userId === currentUserId) {
+      myReactionByMessage.set(row.messageId, row.emoji);
+    }
+  }
+
+  const summaryByMessage = new Map<number, Array<{ emoji: string; count: number }>>();
+  for (const [messageId, emojiMap] of byMessageAndEmoji.entries()) {
+    summaryByMessage.set(
+      messageId,
+      Array.from(emojiMap.entries())
+        .map(([emoji, count]) => ({ emoji, count }))
+        .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji))
+    );
+  }
+
+  return { summaryByMessage, myReactionByMessage };
+}
+
+export async function sendMessage(
+  senderId: number,
+  receiverId: number,
+  content: string,
+  type: "text" | "image" = "text",
+  caption?: string | null
+): Promise<Message> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return runWithMessagesTableRetry(db, async () => {
+    const [result] = await db.insert(messages).values({ senderId, receiverId, content, type, caption: caption?.trim() || null }).$returningId();
+    const [msg] = await db.select().from(messages).where(eq(messages.id, result.id)).limit(1);
+    return msg;
+  });
+}
+
+export async function getConversation(userId: number, friendId: number, limit = 50, before?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return runWithMessagesTableRetry(db, async () => {
+    const cond = and(
+      or(
+        and(eq(messages.senderId, userId), eq(messages.receiverId, friendId)),
+        and(eq(messages.senderId, friendId), eq(messages.receiverId, userId))
+      ),
+      before ? sql`${messages.id} < ${before}` : undefined
+    );
+    const rows = await db.select().from(messages).where(cond).orderBy(desc(messages.createdAt)).limit(limit);
+    const reactionState = await getMessageReactionState(db, userId, rows.map((row) => row.id));
+    return rows.map((row) => ({
+      ...row,
+      reactionSummary: reactionState.summaryByMessage.get(row.id) ?? [],
+      myReaction: reactionState.myReactionByMessage.get(row.id) ?? null,
+    }));
+  });
+}
+
+export async function markConversationRead(userId: number, senderId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await runWithMessagesTableRetry(db, async () => {
+    await db
+      .update(messages)
+      .set({ readAt: new Date() })
+      .where(and(eq(messages.senderId, senderId), eq(messages.receiverId, userId), isNull(messages.readAt)));
+  });
+}
+
+export async function getUnreadCount(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  return runWithMessagesTableRetry(db, async () => {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(messages)
+      .where(and(eq(messages.receiverId, userId), isNull(messages.readAt)));
+    return Number(row?.count ?? 0);
+  });
+}
+
+export async function getConversationList(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return runWithMessagesTableRetry(db, async () => {
+    // Get all messages involving this user, ordered newest first
+    const allMessages = await db
+      .select()
+      .from(messages)
+      .where(or(eq(messages.senderId, userId), eq(messages.receiverId, userId)))
+      .orderBy(desc(messages.createdAt));
+
+    // Build a map of friendId -> last message
+    const seen = new Map<number, Message>();
+    for (const msg of allMessages) {
+      const friendId = msg.senderId === userId ? msg.receiverId : msg.senderId;
+      if (!seen.has(friendId)) seen.set(friendId, msg);
+    }
+
+    // Count unread per friend
+    const unreadMessages = await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.receiverId, userId), isNull(messages.readAt)));
+    const unreadByFriend = new Map<number, number>();
+    for (const msg of unreadMessages) {
+      unreadByFriend.set(msg.senderId, (unreadByFriend.get(msg.senderId) ?? 0) + 1);
+    }
+
+    // Fetch friend info
+    const friendIds = [...seen.keys()];
+    if (friendIds.length === 0) return [];
+
+    const friendUsers = await db
+      .select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl, inviteCode: users.inviteCode })
+      .from(users)
+      .where(inArray(users.id, friendIds));
+
+    return friendUsers.map((friend) => ({
+      friend,
+      lastMessage: seen.get(friend.id)!,
+      unreadCount: unreadByFriend.get(friend.id) ?? 0,
+    })).sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime());
+  });
+}
+
+export async function toggleMessageReaction(messageId: number, userId: number, emoji: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!ALLOWED_MESSAGE_REACTIONS.includes(emoji as AllowedMessageReaction)) {
+    throw new Error("Reação inválida.");
+  }
+
+  return runWithMessagesTableRetry(db, async () => {
+    const [message] = await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, messageId), or(eq(messages.senderId, userId), eq(messages.receiverId, userId))))
+      .limit(1);
+
+    if (!message) {
+      throw new Error("Mensagem não encontrada.");
+    }
+
+    const [existing] = await db
+      .select()
+      .from(messageReactions)
+      .where(and(eq(messageReactions.messageId, messageId), eq(messageReactions.userId, userId)))
+      .limit(1);
+
+    if (existing) {
+      if (existing.emoji === emoji) {
+        await db.delete(messageReactions).where(eq(messageReactions.id, existing.id));
+      } else {
+        await db.update(messageReactions).set({ emoji, updatedAt: new Date() }).where(eq(messageReactions.id, existing.id));
+      }
+    } else {
+      await db.insert(messageReactions).values({ messageId, userId, emoji });
+    }
+
+    const reactionState = await getMessageReactionState(db, userId, [messageId]);
+    return {
+      reactionSummary: reactionState.summaryByMessage.get(messageId) ?? [],
+      myReaction: reactionState.myReactionByMessage.get(messageId) ?? null,
+    };
+  });
+}
+
 // ============== BANKROLL QUERIES ==============
 
 export async function getBankrollSettings(userId: number): Promise<BankrollSettings | null> {
@@ -1230,11 +1564,106 @@ export async function getBankrollHistory(userId: number, type?: "online" | "live
 
 // ============== VENUE QUERIES ==============
 
+const VENUE_ALIAS_MAP: Record<string, string> = {
+  "suprema": "Suprema Poker",
+  "suprema poker": "Suprema Poker",
+  "gg poker": "GG Poker",
+  "ggpoker": "GG Poker",
+  "pp poker": "PP Poker",
+  "pppoker": "PP Poker",
+  "pokerstars": "PokerStars",
+  "poker stars": "PokerStars",
+  "888 poker": "888poker",
+  "poker bros": "PokerBros",
+  "kk poker": "KKPoker",
+  "wpt global": "WPT Global",
+  "x poker": "X-Poker",
+};
+
+function normalizeVenueText(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function canonicalVenueName(name: string): string {
+  const normalized = normalizeVenueText(name);
+  return VENUE_ALIAS_MAP[normalized] ?? name.trim();
+}
+
+function venueCanonicalKey(type: "online" | "live", name: string): string {
+  const canonical = canonicalVenueName(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  return `${type}:${canonical}`;
+}
+
+async function mergeDuplicateVenuesForUser(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const allVenues = await db.select().from(venues).where(eq(venues.userId, userId));
+  if (allVenues.length < 2) return;
+
+  const grouped = new Map<string, Venue[]>();
+  for (const venue of allVenues) {
+    const key = venueCanonicalKey(venue.type, venue.name);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(venue);
+  }
+
+  for (const group of Array.from(grouped.values())) {
+    if (group.length < 2) continue;
+
+    group.sort((a: Venue, b: Venue) => {
+      if (b.isPreset !== a.isPreset) return b.isPreset - a.isPreset;
+      return a.id - b.id;
+    });
+
+    const canonical = group[0];
+    for (const duplicate of group.slice(1)) {
+      await db.update(sessions)
+        .set({ venueId: canonical.id })
+        .where(and(eq(sessions.userId, userId), eq(sessions.venueId, duplicate.id)));
+
+      await db.update(sessionTables)
+        .set({ venueId: canonical.id })
+        .where(and(eq(sessionTables.userId, userId), eq(sessionTables.venueId, duplicate.id)));
+
+      await db.update(venueBalanceHistory)
+        .set({ venueId: canonical.id })
+        .where(and(eq(venueBalanceHistory.userId, userId), eq(venueBalanceHistory.venueId, duplicate.id)));
+
+      if ((duplicate.balance ?? 0) !== 0) {
+        await db.update(venues)
+          .set({
+            balance: sql`${venues.balance} + ${duplicate.balance}` as any,
+            updatedAt: new Date(),
+          })
+          .where(eq(venues.id, canonical.id));
+      }
+
+      await db.delete(venues).where(eq(venues.id, duplicate.id));
+    }
+  }
+}
+
 export async function createVenue(data: InsertVenue): Promise<Venue> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  const [result] = await db.insert(venues).values(data).$returningId();
+
+  await mergeDuplicateVenuesForUser(data.userId);
+
+  const normalizedName = canonicalVenueName(data.name);
+  const sameTypeVenues = await db.select().from(venues)
+    .where(and(eq(venues.userId, data.userId), eq(venues.type, data.type)));
+  const existing = sameTypeVenues.find((venue) => venueCanonicalKey(venue.type, venue.name) === venueCanonicalKey(data.type, normalizedName));
+  if (existing) {
+    return existing;
+  }
+
+  const [result] = await db.insert(venues).values({ ...data, name: normalizedName }).$returningId();
   const [venue] = await db.select().from(venues).where(eq(venues.id, result.id));
   return venue;
 }
@@ -1242,10 +1671,27 @@ export async function createVenue(data: InsertVenue): Promise<Venue> {
 export async function updateVenue(id: number, userId: number, data: Partial<InsertVenue>): Promise<Venue | null> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const [current] = await db.select().from(venues)
+    .where(and(eq(venues.id, id), eq(venues.userId, userId)));
+  if (!current) return null;
+
+  await mergeDuplicateVenuesForUser(userId);
+
+  const nextType = data.type ?? current.type;
+  const nextName = canonicalVenueName(data.name ?? current.name);
+  const sameTypeVenues = await db.select().from(venues)
+    .where(and(eq(venues.userId, userId), eq(venues.type, nextType)));
+  const duplicate = sameTypeVenues.find((venue) => venue.id !== id && venueCanonicalKey(venue.type, venue.name) === venueCanonicalKey(nextType, nextName));
+  if (duplicate) {
+    throw new Error("Ja existe uma plataforma com esse nome.");
+  }
   
   await db.update(venues)
-    .set({ ...data, updatedAt: new Date() })
+    .set({ ...data, name: nextName, updatedAt: new Date() })
     .where(and(eq(venues.id, id), eq(venues.userId, userId)));
+
+  await mergeDuplicateVenuesForUser(userId);
   
   const [venue] = await db.select().from(venues).where(eq(venues.id, id));
   return venue || null;
@@ -1270,6 +1716,8 @@ export async function deleteVenue(id: number, userId: number): Promise<boolean> 
 export async function getUserVenues(userId: number, type?: "online" | "live"): Promise<Venue[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  await mergeDuplicateVenuesForUser(userId);
   
   const conditions = [eq(venues.userId, userId)];
   if (type) {
@@ -1296,6 +1744,8 @@ export async function getVenueById(id: number, userId: number): Promise<Venue | 
 export async function initializePresetVenues(userId: number, presets: Array<{ name: string; type: "online" | "live"; logoUrl: string; defaultCurrency?: string; website?: string }>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  await mergeDuplicateVenuesForUser(userId);
 
   // Legacy cleanup: merge old ClubGG preset into GGPoker.
   const [legacyClubGg] = await db.select().from(venues)
@@ -1330,23 +1780,23 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
   // Get existing preset venues
   const existingPresets = await db.select().from(venues)
     .where(and(eq(venues.userId, userId), eq(venues.isPreset, 1)));
-  
-  const existingNames = new Set(existingPresets.map(v => v.name));
-  const presetNames = new Set(presets.map(p => p.name));
+
+  const presetKeys = new Set(presets.map((preset) => venueCanonicalKey(preset.type, preset.name)));
 
   // Update logos/websites for existing presets
   for (const preset of presets) {
-    const existing = existingPresets.find(v => v.name === preset.name);
+    const canonicalName = canonicalVenueName(preset.name);
+    const existing = existingPresets.find((venue) => venueCanonicalKey(venue.type, venue.name) === venueCanonicalKey(preset.type, canonicalName));
     if (existing) {
       // Update logo, website if changed (do not override user-set currency)
       await db.update(venues)
-        .set({ logoUrl: preset.logoUrl, website: preset.website || null })
+        .set({ name: canonicalName, logoUrl: preset.logoUrl, website: preset.website || null, updatedAt: new Date() })
         .where(eq(venues.id, existing.id));
     } else {
       // Insert new preset with default currency
       await db.insert(venues).values({
         userId,
-        name: preset.name,
+        name: canonicalName,
         type: preset.type,
         logoUrl: preset.logoUrl,
         website: preset.website || null,
@@ -1358,7 +1808,7 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
 
   // Remove old presets that are no longer in the list (no sessions attached)
   for (const existing of existingPresets) {
-    if (!presetNames.has(existing.name)) {
+    if (!presetKeys.has(venueCanonicalKey(existing.type, existing.name))) {
       // Only delete if no sessions reference this venue
       const sessionCount = await db.select().from(sessions)
         .where(and(eq(sessions.userId, userId), eq(sessions.venueId, existing.id)));
@@ -1367,6 +1817,8 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
       }
     }
   }
+
+  await mergeDuplicateVenuesForUser(userId);
 }
 
 export async function getStatsByVenue(userId: number) {
@@ -2021,6 +2473,145 @@ export async function addFriendship(userId: number, friendId: number): Promise<v
   await db.insert(friendships).ignore().values({ userId: friendId, friendId: userId });
 }
 
+export async function removeFriendship(userId: number, friendId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .delete(friendships)
+    .where(
+      or(
+        and(eq(friendships.userId, userId), eq(friendships.friendId, friendId)),
+        and(eq(friendships.userId, friendId), eq(friendships.friendId, userId))
+      )
+    );
+
+  return ((result as any)[0]?.affectedRows ?? 0) > 0;
+}
+
+async function getBlockedRelationshipIds(userId: number): Promise<Set<number>> {
+  const db = await getDb();
+  if (!db) return new Set<number>();
+
+  const blockedByMe = await db
+    .select({ blockedUserId: userBlocks.blockedUserId })
+    .from(userBlocks)
+    .where(eq(userBlocks.userId, userId));
+
+  const blockedMe = await db
+    .select({ blockerId: userBlocks.userId })
+    .from(userBlocks)
+    .where(eq(userBlocks.blockedUserId, userId));
+
+  return new Set<number>([
+    ...blockedByMe.map((row) => row.blockedUserId),
+    ...blockedMe.map((row) => row.blockerId),
+  ]);
+}
+
+async function hasBlockedRelationship(userId: number, targetUserId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const found = await db
+    .select({ id: userBlocks.id })
+    .from(userBlocks)
+    .where(
+      or(
+        and(eq(userBlocks.userId, userId), eq(userBlocks.blockedUserId, targetUserId)),
+        and(eq(userBlocks.userId, targetUserId), eq(userBlocks.blockedUserId, userId))
+      )
+    )
+    .limit(1);
+
+  return found.length > 0;
+}
+
+export async function blockUser(userId: number, targetUserId: number): Promise<{ success: true; blocked: true }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (userId === targetUserId) {
+    throw new Error("Você não pode bloquear a si mesmo.");
+  }
+
+  await db.insert(userBlocks).ignore().values({ userId, blockedUserId: targetUserId });
+
+  await db
+    .delete(friendships)
+    .where(
+      or(
+        and(eq(friendships.userId, userId), eq(friendships.friendId, targetUserId)),
+        and(eq(friendships.userId, targetUserId), eq(friendships.friendId, userId))
+      )
+    );
+
+  await db
+    .update(friendRequests)
+    .set({ status: "canceled", respondedAt: new Date() })
+    .where(
+      and(
+        eq(friendRequests.status, "pending"),
+        or(
+          and(eq(friendRequests.requesterId, userId), eq(friendRequests.receiverId, targetUserId)),
+          and(eq(friendRequests.requesterId, targetUserId), eq(friendRequests.receiverId, userId))
+        )
+      )
+    );
+
+  return { success: true, blocked: true } as const;
+}
+
+export async function resetFriendshipNetworkForUser(userId: number): Promise<{
+  success: true;
+  removedFriendships: number;
+  removedRequests: number;
+  removedBlocks: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const deletedFriendships = await db
+    .delete(friendships)
+    .where(or(eq(friendships.userId, userId), eq(friendships.friendId, userId)));
+
+  const deletedRequests = await db
+    .delete(friendRequests)
+    .where(or(eq(friendRequests.requesterId, userId), eq(friendRequests.receiverId, userId)));
+
+  const deletedBlocks = await db
+    .delete(userBlocks)
+    .where(or(eq(userBlocks.userId, userId), eq(userBlocks.blockedUserId, userId)));
+
+  return {
+    success: true,
+    removedFriendships: Number((deletedFriendships as any)[0]?.affectedRows ?? 0),
+    removedRequests: Number((deletedRequests as any)[0]?.affectedRows ?? 0),
+    removedBlocks: Number((deletedBlocks as any)[0]?.affectedRows ?? 0),
+  } as const;
+}
+
+export async function resetFriendshipNetworkGlobally(): Promise<{
+  success: true;
+  removedFriendships: number;
+  removedRequests: number;
+  removedBlocks: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const deletedFriendships = await db.delete(friendships);
+  const deletedRequests = await db.delete(friendRequests);
+  const deletedBlocks = await db.delete(userBlocks);
+
+  return {
+    success: true,
+    removedFriendships: Number((deletedFriendships as any)[0]?.affectedRows ?? 0),
+    removedRequests: Number((deletedRequests as any)[0]?.affectedRows ?? 0),
+    removedBlocks: Number((deletedBlocks as any)[0]?.affectedRows ?? 0),
+  } as const;
+}
+
 async function hasFriendship(userId: number, friendId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
@@ -2045,6 +2636,11 @@ export async function sendFriendRequest(requesterId: number, receiverId: number)
 
   if (requesterId === receiverId) {
     throw new Error("Você não pode enviar pedido para si mesmo.");
+  }
+
+  const hasBlocked = await hasBlockedRelationship(requesterId, receiverId);
+  if (hasBlocked) {
+    throw new Error("Não é possível enviar pedido para este usuário.");
   }
 
   const alreadyFriends = await hasFriendship(requesterId, receiverId);
@@ -2119,7 +2715,9 @@ export async function getIncomingFriendRequests(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
+  const blockedIds = await getBlockedRelationshipIds(userId);
+
+  const rows = await db
     .select({
       id: friendRequests.id,
       createdAt: friendRequests.createdAt,
@@ -2134,13 +2732,17 @@ export async function getIncomingFriendRequests(userId: number) {
     .innerJoin(users, eq(friendRequests.requesterId, users.id))
     .where(and(eq(friendRequests.receiverId, userId), eq(friendRequests.status, "pending")))
     .orderBy(desc(friendRequests.createdAt));
+
+  return rows.filter((row) => !blockedIds.has(row.requester.id));
 }
 
 export async function getOutgoingFriendRequests(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
+  const blockedIds = await getBlockedRelationshipIds(userId);
+
+  const rows = await db
     .select({
       id: friendRequests.id,
       receiverId: friendRequests.receiverId,
@@ -2156,6 +2758,8 @@ export async function getOutgoingFriendRequests(userId: number) {
     .innerJoin(users, eq(friendRequests.receiverId, users.id))
     .where(and(eq(friendRequests.requesterId, userId), eq(friendRequests.status, "pending")))
     .orderBy(desc(friendRequests.createdAt));
+
+  return rows.filter((row) => !blockedIds.has(row.receiver.id));
 }
 
 export async function respondToFriendRequest(userId: number, requestId: number, action: "accept" | "reject") {
@@ -2202,7 +2806,9 @@ export async function getFriends(userId: number) {
   if (!db) return [];
 
   const friendIds = await getFriendIds(userId);
-  if (friendIds.length === 0) return [];
+  const blockedIds = await getBlockedRelationshipIds(userId);
+  const visibleFriendIds = friendIds.filter((id) => !blockedIds.has(id));
+  if (visibleFriendIds.length === 0) return [];
 
   return db
     .select({
@@ -2212,7 +2818,7 @@ export async function getFriends(userId: number) {
       avatarUrl: users.avatarUrl,
     })
     .from(users)
-    .where(inArray(users.id, friendIds));
+    .where(inArray(users.id, visibleFriendIds));
 }
 
 export async function searchUsersToAdd(userId: number, query: string) {
@@ -2234,6 +2840,8 @@ export async function searchUsersToAdd(userId: number, query: string) {
     );
 
   const excludedIds = new Set([userId, ...friendIds]);
+  const blockedIds = await getBlockedRelationshipIds(userId);
+  Array.from(blockedIds).forEach((blockedId) => excludedIds.add(blockedId));
   for (const request of pending) {
     excludedIds.add(request.requesterId);
     excludedIds.add(request.receiverId);
@@ -2257,6 +2865,15 @@ export async function searchUsersToAdd(userId: number, query: string) {
           like(users.inviteCode, `%${normalizedQuery.toUpperCase()}%`)
         )
       )
+    )
+    .orderBy(
+      sql`CASE
+        WHEN LOWER(${users.name}) = LOWER(${normalizedQuery}) THEN 0
+        WHEN LOWER(${users.name}) LIKE LOWER(${`${normalizedQuery}%`}) THEN 1
+        WHEN LOWER(${users.email}) LIKE LOWER(${`${normalizedQuery}%`}) THEN 2
+        ELSE 3
+      END`,
+      users.name
     )
     .limit(12);
 
