@@ -22,6 +22,7 @@ import {
   X,
   ChevronRight,
   Sparkles,
+  Globe,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
@@ -38,7 +39,7 @@ const menuItems = [
   { icon: Wallet, label: "Fundos", path: "/funds" },
   { icon: Trophy, label: "Ranking", path: "/ranking" },
   { icon: MapPin, label: "Locais", path: "/venues" },
-  { icon: Sparkles, label: "Comunidade", path: "/feed" },
+  { icon: Globe, label: "Feed", path: "/feed" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
