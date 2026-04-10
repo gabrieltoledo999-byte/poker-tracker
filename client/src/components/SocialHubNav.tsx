@@ -2,9 +2,9 @@ import { MessageCircle, Users, Globe } from "lucide-react";
 import { useLocation } from "wouter";
 
 const socialItems = [
+  { path: "/feed", label: "Feed", icon: Globe },
   { path: "/chat", label: "Mensagens", icon: MessageCircle },
   { path: "/invites", label: "Pessoas", icon: Users },
-  { path: "/feed", label: "Feed", icon: Globe },
 ];
 
 export default function SocialHubNav() {
