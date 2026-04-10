@@ -15,7 +15,6 @@ import Ranking from "./pages/Ranking";
 import Feed from "./pages/Feed";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
-import Social from "./pages/Social";
 function Router() {
   return (
     <Switch>
@@ -28,7 +27,7 @@ function Router() {
             <Route path="/venues" component={Venues} />
             <Route path="/invites" component={Invites} />
             <Route path="/funds" component={Funds} />
-            <Route path="/social" component={Social} />
+            <Route path="/social" component={Feed} />
             <Route path="/chat" component={Chat} />
             <Route path="/ranking" component={Ranking} />
             <Route path="/feed" component={Feed} />

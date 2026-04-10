@@ -38,7 +38,7 @@ const menuItems = [
   { icon: Wallet, label: "Fundos", path: "/funds" },
   { icon: Trophy, label: "Ranking", path: "/ranking" },
   { icon: MapPin, label: "Locais", path: "/venues" },
-  { icon: Sparkles, label: "Comunidade", path: "/social" },
+  { icon: Sparkles, label: "Comunidade", path: "/feed" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
