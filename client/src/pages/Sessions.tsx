@@ -156,6 +156,66 @@ function formatDuration(startedAt: string | Date) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function playPositiveCashOutCelebration() {
+  if (typeof window === "undefined") return;
+  const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) return;
+
+  try {
+    const ctx = new AudioContextCtor();
+    const startAt = ctx.currentTime + 0.03;
+
+    const playTone = (
+      frequency: number,
+      at: number,
+      duration: number,
+      type: OscillatorType,
+      volume: number,
+      glideTo?: number,
+    ) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(frequency, at);
+      if (glideTo && glideTo > 0) {
+        osc.frequency.exponentialRampToValueAtTime(glideTo, at + duration);
+      }
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(volume, at + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + duration);
+    };
+
+    for (let i = 0; i < 8; i++) {
+      const at = startAt + i * 0.05;
+      const freq = 1200 + Math.random() * 900;
+      playTone(freq, at, 0.06, "triangle", 0.06);
+    }
+
+    for (let i = 0; i < 7; i++) {
+      const at = startAt + 0.28 + i * 0.07;
+      const from = 980 - i * 95;
+      const to = Math.max(220, from - 260);
+      playTone(from, at, 0.11, "square", 0.08, to);
+    }
+
+    const melody = [523.25, 659.25, 783.99, 1046.5];
+    melody.forEach((note, index) => {
+      const at = startAt + 0.92 + index * 0.12;
+      playTone(note, at, 0.2, "sine", 0.09);
+    });
+
+    window.setTimeout(() => {
+      void ctx.close();
+    }, 2600);
+  } catch {
+    // Silent fallback
+  }
+}
+
 // ─── Edit Table Dialog ────────────────────────────────────────────────────────
 interface EditTableDialogProps {
   table: {
@@ -678,14 +738,22 @@ interface CashOutDialogProps {
 function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps) {
   const utils = trpc.useUtils();
   const [cashOut, setCashOut] = useState("0");
+  const lastSubmittedProfitRef = useRef<number | null>(null);
 
   const updateMutation = trpc.sessions.updateTable.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
+      if ((lastSubmittedProfitRef.current ?? 0) > 0) {
+        playPositiveCashOutCelebration();
+      }
+      lastSubmittedProfitRef.current = null;
       toast("Cash-out registrado!");
       onClose();
     },
-    onError: (err) => toast.error("Erro", { description: err.message }),
+    onError: (err) => {
+      lastSubmittedProfitRef.current = null;
+      toast.error("Erro", { description: err.message });
+    },
   });
 
   const profit = Math.round(parseFloat(cashOut) * 100) - buyIn;
@@ -716,6 +784,7 @@ function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps
           onClick={() => {
             const cents = Math.round(parseFloat(cashOut) * 100);
             if (isNaN(cents) || cents < 0) return;
+            lastSubmittedProfitRef.current = cents - buyIn;
             updateMutation.mutate({ id: tableId, cashOut: cents, endedAt: new Date() });
           }}
           disabled={updateMutation.isPending}
