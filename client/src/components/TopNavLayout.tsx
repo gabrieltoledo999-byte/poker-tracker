@@ -112,6 +112,20 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const previousIncomingCountRef = useRef(0);
   const previousUnreadChatCountRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const notificationPermissionRef = useRef(false);
+
+  const requestNotificationPermission = () => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      notificationPermissionRef.current = true;
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          notificationPermissionRef.current = true;
+        }
+      });
+    }
+  };
 
   const ensureAudioContext = () => {
     if (typeof window === "undefined") return null;
@@ -161,6 +175,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     const unlock = () => {
       ensureAudioContext();
+      requestNotificationPermission();
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };
@@ -208,6 +223,18 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
         const friendId = latestConv?.friend?.id;
         const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName });
 
+        // Show system notification with sound (works in background)
+        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+          new Notification(delta > 1 ? `${delta} novas mensagens` : "Mensagem nova", {
+            icon: friendAvatar,
+            badge: friendAvatar,
+            tag: "message-notification",
+            requireInteraction: false,
+          });
+        }
+
+        
+        // Also show in-app toast for visibility
         toast.info(
           delta > 1 ? `${delta} novas mensagens` : "Mensagem nova",
           {
