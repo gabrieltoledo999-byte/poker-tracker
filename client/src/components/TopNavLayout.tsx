@@ -94,10 +94,14 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     const createdAtMs = post.createdAt ? new Date(post.createdAt).getTime() : 0;
     return createdAtMs > 0 && createdAtMs > feedLastSeenMs && post.author?.id !== user?.id;
   }).length;
-  const socialPendingCount = pendingFeedCount + incomingFriendRequests.length + unreadChatCount;
-  const isInsideSocial = location === "/social" || location === "/feed" || location === "/invites" || location === "/chat";
-  const hasPendingSocial = !!user?.id && !isInsideSocial && socialPendingCount > 0;
-  const socialBadgeLabel = socialPendingCount > 99 ? "99+" : String(socialPendingCount);
+
+  // Red dot: unread messages (clears when on /chat)
+  const hasUnreadMessages = !!user?.id && unreadChatCount > 0 && location !== "/chat";
+
+  // Green badge: new feed posts + pending friend requests (clears when on /feed or /invites)
+  const greenCount = pendingFeedCount + incomingFriendRequests.length;
+  const hasFeedUpdates = !!user?.id && greenCount > 0 && location !== "/feed" && location !== "/invites";
+  const feedUpdatesLabel = greenCount > 99 ? "99+" : String(greenCount);
   const previousIncomingCountRef = useRef(0);
   const previousUnreadChatCountRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -254,20 +258,23 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
               >
                 <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                 <span className="text-base">{item.label}</span>
-                {((item.path === "/social" && hasPendingSocial) ||
-                  isActive) && (
-                  <span className="ml-auto flex items-center gap-2">
-                    {item.path === "/social" && hasPendingSocial && (
-                      <span
-                        className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
-                        aria-label={`${socialBadgeLabel} novidades na Comunidade`}
-                      >
-                        {socialBadgeLabel}
-                      </span>
-                    )}
-                    {isActive && <ChevronRight className="h-4 w-4 text-primary/60" />}
-                  </span>
-                )}
+                <span className="ml-auto flex items-center gap-1.5">
+                  {item.path === "/feed" && hasUnreadMessages && (
+                    <span
+                      className="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]"
+                      aria-label="Mensagens não lidas"
+                    />
+                  )}
+                  {item.path === "/feed" && hasFeedUpdates && (
+                    <span
+                      className="inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
+                      aria-label={`${feedUpdatesLabel} atualizações`}
+                    >
+                      {feedUpdatesLabel}
+                    </span>
+                  )}
+                  {isActive && <ChevronRight className="h-4 w-4 text-primary/60" />}
+                </span>
               </button>
             );
           })}
@@ -359,12 +366,22 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                   >
                     <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                     <span className="text-base">{item.label}</span>
-                    {item.path === "/social" && hasPendingSocial && (
-                      <span
-                        className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
-                        aria-label={`${socialBadgeLabel} novidades na Comunidade`}
-                      >
-                        {socialBadgeLabel}
+                    {item.path === "/feed" && (
+                      <span className="ml-auto flex items-center gap-1.5">
+                        {hasUnreadMessages && (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full bg-red-500"
+                            aria-label="Mensagens não lidas"
+                          />
+                        )}
+                        {hasFeedUpdates && (
+                          <span
+                            className="inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                            aria-label={`${feedUpdatesLabel} atualizações`}
+                          >
+                            {feedUpdatesLabel}
+                          </span>
+                        )}
                       </span>
                     )}
                   </button>
