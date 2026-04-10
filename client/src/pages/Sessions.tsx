@@ -189,31 +189,112 @@ function playPositiveCashOutCelebration() {
       osc.stop(at + duration);
     };
 
-    for (let i = 0; i < 8; i++) {
-      const at = startAt + i * 0.05;
-      const freq = 1200 + Math.random() * 900;
-      playTone(freq, at, 0.06, "triangle", 0.06);
+    // 1) Aplauso: rajada de ruído curto simulada com frequências altas aleatórias.
+    for (let i = 0; i < 18; i++) {
+      const at = startAt + i * 0.03;
+      const freq = 800 + Math.random() * 2400;
+      playTone(freq, at, 0.045, "triangle", 0.055);
     }
 
-    for (let i = 0; i < 7; i++) {
-      const at = startAt + 0.28 + i * 0.07;
-      const from = 980 - i * 95;
-      const to = Math.max(220, from - 260);
-      playTone(from, at, 0.11, "square", 0.08, to);
+    // 2) Dinheiro caindo: tom descendente em passos rápidos.
+    for (let i = 0; i < 10; i++) {
+      const at = startAt + 0.36 + i * 0.055;
+      const from = 1500 - i * 130;
+      const to = Math.max(180, from - 450);
+      playTone(from, at, 0.1, "square", 0.075, to);
     }
 
-    const melody = [523.25, 659.25, 783.99, 1046.5];
-    melody.forEach((note, index) => {
-      const at = startAt + 0.92 + index * 0.12;
-      playTone(note, at, 0.2, "sine", 0.09);
+    // 3) Comemoração: mini fanfarra em acordes.
+    const fanfare = [
+      [523.25, 659.25, 783.99],
+      [659.25, 783.99, 987.77],
+      [783.99, 987.77, 1174.66],
+    ];
+    fanfare.forEach((chord, chordIndex) => {
+      const at = startAt + 1.02 + chordIndex * 0.18;
+      chord.forEach((note) => {
+        playTone(note, at, 0.22, "sine", 0.07);
+      });
     });
 
     window.setTimeout(() => {
       void ctx.close();
     }, 2600);
+
+    window.dispatchEvent(new CustomEvent("cashout-positive-celebration"));
   } catch {
     // Silent fallback
   }
+}
+
+function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
+  const drops = useMemo(
+    () => Array.from({ length: 34 }).map((_, index) => ({
+      id: index,
+      left: Math.random() * 100,
+      delay: Math.random() * 0.45,
+      duration: 1.4 + Math.random() * 1.2,
+      size: 18 + Math.random() * 20,
+      sway: 14 + Math.random() * 24,
+      rotate: -18 + Math.random() * 36,
+      icon: Math.random() > 0.6 ? "💵" : "💸",
+    })),
+    [],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(onDone, 2400);
+    return () => window.clearTimeout(timer);
+  }, [onDone]);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[140] overflow-hidden" aria-hidden>
+      <style>{`
+        @keyframes cash-rain-fall {
+          0% { transform: translateY(-18vh) rotate(0deg); opacity: 0; }
+          10% { opacity: 1; }
+          100% { transform: translateY(110vh) rotate(var(--bill-rotate)); opacity: 0.95; }
+        }
+        @keyframes cash-rain-sway {
+          0% { margin-left: 0; }
+          50% { margin-left: var(--bill-sway); }
+          100% { margin-left: calc(var(--bill-sway) * -0.7); }
+        }
+        @keyframes cash-rain-flash {
+          0% { opacity: 0; }
+          30% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+      `}</style>
+
+      <div
+        className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.22),transparent_55%)]"
+        style={{ animation: "cash-rain-flash 650ms ease-out" }}
+      />
+
+      <div className="absolute top-8 left-1/2 -translate-x-1/2 rounded-full bg-emerald-500/90 px-4 py-2 text-sm font-bold text-white shadow-lg">
+        Cash-out positivo!
+      </div>
+
+      {drops.map((drop) => (
+        <span
+          key={drop.id}
+          className="absolute top-0"
+          style={{
+            left: `${drop.left}%`,
+            fontSize: `${drop.size}px`,
+            animation: `cash-rain-fall ${drop.duration}s linear ${drop.delay}s forwards, cash-rain-sway ${Math.max(0.9, drop.duration * 0.75)}s ease-in-out ${drop.delay}s 2 alternate`,
+            filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.25))",
+            transformOrigin: "center",
+            ["--bill-sway" as any]: `${drop.sway}px`,
+            ["--bill-rotate" as any]: `${drop.rotate}deg`,
+          }}
+        >
+          {drop.icon}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 // ─── Edit Table Dialog ────────────────────────────────────────────────────────
@@ -2046,6 +2127,7 @@ export default function Sessions() {
   const [showInGlobalRanking, setShowInGlobalRanking] = useState<boolean>(false);
   const [showInFriendsRanking, setShowInFriendsRanking] = useState<boolean>(false);
   const [rankingConsentTouched, setRankingConsentTouched] = useState<boolean>(false);
+  const [moneyRainVisible, setMoneyRainVisible] = useState(false);
 
   const { data: activeSession, isLoading: loadingActive } = trpc.sessions.getActive.useQuery(undefined, {
     refetchInterval: 5000, // poll every 5s to keep timer in sync
@@ -2119,6 +2201,17 @@ export default function Sessions() {
       setSelectedPlayStyle(primaryType);
     }
   }, [onboardingProfile?.preferredPlayType, primaryType]);
+
+  useEffect(() => {
+    const handler = () => {
+      setMoneyRainVisible(false);
+      window.setTimeout(() => setMoneyRainVisible(true), 0);
+    };
+    window.addEventListener("cashout-positive-celebration", handler as EventListener);
+    return () => {
+      window.removeEventListener("cashout-positive-celebration", handler as EventListener);
+    };
+  }, []);
 
   if (!user) return null;
   const needsPlayStyleOnboarding = !user.onboardingCompletedAt;
@@ -2206,6 +2299,8 @@ export default function Sessions() {
 
   return (
     <div className="p-6 space-y-6 max-w-2xl mx-auto">
+      {moneyRainVisible && <MoneyRainOverlay onDone={() => setMoneyRainVisible(false)} />}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
