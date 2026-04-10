@@ -315,11 +315,21 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                 <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                 <span className="text-base">{item.label}</span>
                 <span className="ml-auto flex items-center gap-1.5">
-                  {item.path === "/feed" && hasUnreadMessages && (
+                  {item.path === "/chat" && unreadChatCount > 0 && (
                     <span
-                      className="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]"
-                      aria-label="Mensagens não lidas"
-                    />
+                      className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
+                      aria-label={`${unreadChatCount > 99 ? "99+" : unreadChatCount} mensagens não lidas`}
+                    >
+                      {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                    </span>
+                  )}
+                  {item.path === "/invites" && incomingFriendRequests.length > 0 && (
+                    <span
+                      className="inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
+                      aria-label={`${incomingFriendRequests.length > 99 ? "99+" : incomingFriendRequests.length} pedidos de amizade`}
+                    >
+                      {incomingFriendRequests.length > 99 ? "99+" : incomingFriendRequests.length}
+                    </span>
                   )}
                   {item.path === "/feed" && hasFeedUpdates && (
                     <span
@@ -422,24 +432,32 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                   >
                     <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
                     <span className="text-base">{item.label}</span>
-                    {item.path === "/feed" && (
-                      <span className="ml-auto flex items-center gap-1.5">
-                        {hasUnreadMessages && (
-                          <span
-                            className="h-2.5 w-2.5 rounded-full bg-red-500"
-                            aria-label="Mensagens não lidas"
-                          />
-                        )}
-                        {hasFeedUpdates && (
-                          <span
-                            className="inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
-                            aria-label={`${feedUpdatesLabel} atualizações`}
-                          >
-                            {feedUpdatesLabel}
-                          </span>
-                        )}
-                      </span>
-                    )}
+                    <span className="ml-auto flex items-center gap-1.5">
+                      {item.path === "/chat" && unreadChatCount > 0 && (
+                        <span
+                          className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                          aria-label={`${unreadChatCount > 99 ? "99+" : unreadChatCount} mensagens não lidas`}
+                        >
+                          {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                        </span>
+                      )}
+                      {item.path === "/invites" && incomingFriendRequests.length > 0 && (
+                        <span
+                          className="inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                          aria-label={`${incomingFriendRequests.length > 99 ? "99+" : incomingFriendRequests.length} pedidos de amizade`}
+                        >
+                          {incomingFriendRequests.length > 99 ? "99+" : incomingFriendRequests.length}
+                        </span>
+                      )}
+                      {item.path === "/feed" && hasFeedUpdates && (
+                        <span
+                          className="inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                          aria-label={`${feedUpdatesLabel} atualizações`}
+                        >
+                          {feedUpdatesLabel}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 );
               })}
