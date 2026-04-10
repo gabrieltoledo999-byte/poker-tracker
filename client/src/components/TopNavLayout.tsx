@@ -82,6 +82,13 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   });
   const unreadChatCount = unreadChatData?.count ?? 0;
 
+  const { data: conversations = [] } = trpc.chat.conversations.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 3000,
+    staleTime: 1500,
+    refetchOnWindowFocus: true,
+  });
+
   useEffect(() => {
     if (!user?.id) return;
     const key = `${FEED_LAST_SEEN_KEY_PREFIX}:${user.id}`;
@@ -196,14 +203,39 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
 
       if (location !== "/chat") {
         const delta = current - previous;
-        toast.info(delta > 1 ? `${delta} novas mensagens` : "Nova mensagem recebida", {
-          description: "Abra a aba Mensagens para responder.",
-        });
+        const latestConv = conversations[0];
+        const friendName = latestConv?.friend?.name ?? "Jogador";
+        const friendId = latestConv?.friend?.id;
+        const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName });
+
+        toast.info(
+          delta > 1 ? `${delta} novas mensagens` : `Mensagem de ${friendName}`,
+          {
+            description: latestConv ? (
+              <div
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => friendId && setLocation(`/chat?friend=${friendId}`)}
+              >
+                <img
+                  src={friendAvatar}
+                  alt={friendName}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{friendName}</p>
+                  <p className="text-xs text-muted-foreground truncate">Toque para responder</p>
+                </div>
+              </div>
+            ) : (
+              "Abra o chat para responder."
+            ),
+          }
+        );
       }
     }
 
     previousUnreadChatCountRef.current = current;
-  }, [location, unreadChatCount, user?.id]);
+  }, [location, unreadChatCount, user?.id, conversations]);
 
   useEffect(() => {
     if (!user?.id || location !== "/feed") return;
