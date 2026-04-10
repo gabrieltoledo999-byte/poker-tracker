@@ -198,7 +198,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     const current = unreadChatCount;
     const increased = current > previous;
 
-    if (increased && document.visibilityState === "visible") {
+    if (increased) {
       playIncomingMessageSound();
 
       if (location !== "/chat") {
@@ -209,7 +209,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
         const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName });
 
         toast.info(
-          delta > 1 ? `${delta} novas mensagens` : `Mensagem de ${friendName}`,
+          delta > 1 ? `${delta} novas mensagens` : "Mensagem nova",
           {
             description: latestConv ? (
               <div
@@ -221,10 +221,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                   alt={friendName}
                   className="h-8 w-8 rounded-full object-cover"
                 />
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{friendName}</p>
-                  <p className="text-xs text-muted-foreground truncate">Toque para responder</p>
-                </div>
+                <p className="text-xs text-muted-foreground">Toque para responder</p>
               </div>
             ) : (
               "Abra o chat para responder."
