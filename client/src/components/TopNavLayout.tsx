@@ -26,6 +26,7 @@ import {
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { SplashScreen } from "./SplashScreen";
+import SocialHubNav from "./SocialHubNav";
 import { trpc } from "@/lib/trpc";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -325,6 +326,11 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
             className="h-14 w-14 object-contain"
           />
           <span className="text-xl font-bold tracking-tight gradient-text">The Rail</span>
+        </div>
+
+        {/* Social Hub Nav */}
+        <div className="px-2 py-3 border-b border-border/30">
+          <SocialHubNav />
         </div>
 
         {/* Nav Items */}
