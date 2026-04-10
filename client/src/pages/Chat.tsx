@@ -445,7 +445,7 @@ export default function Chat() {
             <MessageCircle className="h-6 w-6 text-primary" />
             Mensagens
           </h1>
-          <p className="text-sm text-muted-foreground">Seu inbox social para conversar, responder stories do feed e manter a rede viva.</p>
+
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/70 px-4 py-2 text-sm font-medium shadow-sm">
           <Sparkles className="h-4 w-4 text-primary" />

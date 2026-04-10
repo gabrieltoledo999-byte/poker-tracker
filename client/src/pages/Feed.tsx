@@ -565,24 +565,6 @@ export default function Feed() {
     <div className="social-page space-y-4">
       <SocialHubNav />
 
-      <div className="social-shell p-5 md:p-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Globe className="h-6 w-6 text-primary" />
-              Feed da comunidade
-            </h1>
-            <p className="text-muted-foreground">
-              Menos dashboard, mais timeline: resultados, fotos, mãos e interação social em um fluxo só.
-            </p>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-4 py-2 text-sm font-medium">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Modo rede social
-          </div>
-        </div>
-      </div>
-
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         <div className="space-y-4">
           <NewPostForm currentUserId={user.id} />

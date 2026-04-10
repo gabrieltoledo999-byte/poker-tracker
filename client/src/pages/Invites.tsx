@@ -154,7 +154,6 @@ export default function Invites() {
       <div className="social-shell flex flex-wrap items-center justify-between gap-4 p-5 md:p-6">
         <div>
           <h1 className="text-2xl font-bold">Pessoas</h1>
-          <p className="text-muted-foreground">Descubra jogadores, aceite pedidos e mova a conversa para o inbox em um toque.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setLocation("/chat")}>
