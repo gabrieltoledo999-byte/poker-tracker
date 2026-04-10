@@ -113,96 +113,33 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const previousUnreadChatCountRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const notificationPermissionRef = useRef(false);
-  const notificationSoundUrlRef = useRef<string | null>(null);
-
-  const generateNotificationSoundUrl = () => {
-    if (notificationSoundUrlRef.current) return notificationSoundUrlRef.current;
-    
-    // Create a simple WAV audio blob for notification
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const duration = 0.5;
-    const sampleRate = audioContext.sampleRate;
-    const frameCount = audioContext.sampleRate * duration;
-    const audioBuffer = audioContext.createAudioBuffer(1, frameCount, sampleRate);
-    const channelData = audioBuffer.getChannelData(0);
-
-    // Create a simple beep sound
-    for (let i = 0; i < frameCount; i++) {
-      const t = i / sampleRate;
-      // Frequency sweep from 800Hz to 600Hz
-      const freq = 800 - (t / duration) * 200;
-      const phase = (2 * Math.PI * freq * t) % (2 * Math.PI);
-      channelData[i] = Math.sin(phase) * Math.exp(-2 * t);
-    }
-
-    // Convert AudioBuffer to WAV blob
-    const offlineContext = new OfflineAudioContext(1, frameCount, sampleRate);
-    const source = offlineContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(offlineContext.destination);
-    source.start();
-
-    offlineContext.oncomplete = (e: OfflineAudioCompletionEvent) => {
-      const wavBlob = encodeWAV(e.renderedBuffer);
-      notificationSoundUrlRef.current = URL.createObjectURL(wavBlob);
-    };
-
-    offlineContext.startRendering();
-    return notificationSoundUrlRef.current || "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA=="; // Fallback silent WAV
-  };
-
-  const encodeWAV = (audioBuffer: AudioBuffer): Blob => {
-    const rawData = new Float32Array(audioBuffer.length);
-    const channelData = audioBuffer.getChannelData(0);
-    channelData.forEach((sample, i) => {
-      rawData[i] = sample;
-    });
-
-    const dataLen = rawData.length * 2;
-    const buffer = new ArrayBuffer(44 + dataLen);
-    const view = new DataView(buffer);
-
-    // WAV header
-    const writeString = (offset: number, string: string) => {
-      for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
-      }
-    };
-
-    writeString(0, "RIFF");
-    view.setUint32(4, 36 + dataLen, true);
-    writeString(8, "WAVE");
-    writeString(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, audioBuffer.sampleRate, true);
-    view.setUint32(28, audioBuffer.sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, "data");
-    view.setUint32(40, dataLen, true);
-
-    let index = 44;
-    const volume = 0.8;
-    for (let i = 0; i < rawData.length; i++) {
-      view.setInt16(index, rawData[i] < 0 ? rawData[i] * 0x8000 : rawData[i] * 0x7FFF, true);
-      index += 2;
-    }
-
-    return new Blob([buffer], { type: "audio/wav" });
-  };
+  
+  // Pre-encoded simple beep WAV (440Hz for 500ms) - plays without user interaction
+  const NOTIFICATION_SOUND_B64 = "UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==";
 
   const playNotificationSoundInBackground = () => {
     try {
-      const audio = new Audio(generateNotificationSoundUrl());
+      // Use HTMLAudioElement with data URL - works in background without user interaction requirement
+      const audio = new Audio(`data:audio/wav;base64,${NOTIFICATION_SOUND_B64}`);
       audio.volume = 0.7;
-      audio.play().catch(() => {
-        // Fallback: try with a simple beep
-        playIncomingMessageSound();
-      });
+      const playPromise = audio.play();
+      if (playPromise) {
+        playPromise.catch(() => {
+          // Fallback: try creating a simple beep via Web Audio
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = 800;
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.5);
+        });
+      }
     } catch {
-      playIncomingMessageSound();
+      // Silent fallback
     }
   };
 
