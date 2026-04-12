@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, FolderTree, ExternalLink, ShieldCheck, Lock } from "lucide-react";
+import { Building2, FolderTree, ExternalLink, ShieldCheck, Lock, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,22 +17,27 @@ const folders = [
   {
     name: "Estrategia",
     description: "Visao da empresa, objetivos, decisoes importantes e roadmap.",
+    items: ["Visao da empresa", "Objetivos", "Decisoes importantes", "Roadmap"],
   },
   {
     name: "Equipe",
     description: "Gestao de pessoas, cargos, responsabilidades e planilha principal.",
+    items: ["Planilha principal da equipe", "Definicao de cargos", "Responsabilidades"],
   },
   {
     name: "Produto",
     description: "Funcionalidades, melhorias, feedbacks e bugs.",
+    items: ["Ideias de funcionalidades", "Melhorias", "Feedbacks", "Bugs"],
   },
   {
     name: "Operacoes",
     description: "Tarefas, processos e organizacao interna.",
+    items: ["Tarefas", "Processos", "Organizacao interna"],
   },
   {
     name: "Financeiro",
     description: "Custos, receitas e planejamento financeiro para crescimento.",
+    items: ["Custos", "Receitas", "Planejamento financeiro"],
   },
 ];
 
@@ -168,7 +173,18 @@ export default function Admin() {
             Pasta raiz THE RAIL com subpastas operacionais simples, claras e escalaveis.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
+        <CardContent className="space-y-4">
+          <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
+            <div className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-primary" />
+              <p className="font-semibold">THE RAIL</p>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Pasta raiz operacional da empresa dentro da aba Administracao.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
           {folders.map((folder) => (
             <div key={folder.name} className="rounded-xl border border-border/70 bg-card p-4">
               <div className="mb-1 flex items-center gap-2">
@@ -176,8 +192,19 @@ export default function Admin() {
                 <p className="font-semibold">{folder.name}</p>
               </div>
               <p className="text-sm text-muted-foreground">{folder.description}</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {folder.items.map((item) => (
+                  <span
+                    key={`${folder.name}-${item}`}
+                    className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-xs text-muted-foreground"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
             </div>
           ))}
+          </div>
         </CardContent>
       </Card>
     </div>
