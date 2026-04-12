@@ -5,7 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { eq } from "drizzle-orm";
 import { users } from "../drizzle/schema";
-import { db } from "./db";
+import { getDb } from "./db";
 import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest, removeFriendship, blockUser, resetFriendshipNetworkForUser, resetFriendshipNetworkGlobally, sendMessage, getConversation, getConversationList, markConversationRead, getUnreadCount, toggleMessageReaction } from "./db";
 import { z } from "zod";
 import {
@@ -1195,6 +1195,14 @@ export const appRouter = router({
         name: z.string().trim().min(1).max(64),
       }))
       .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados não disponível",
+          });
+        }
+
         const result = await db.update(users)
           .set({ name: input.name })
           .where(eq(users.id, ctx.user.id));
