@@ -15,55 +15,29 @@ const defaultDriveUrl = import.meta.env.VITE_THE_RAIL_DRIVE_URL || "https://driv
 
 const folders = [
   {
-    name: "00_DIRETORIA",
-    description: "So voce + COO. Acesso restrito.",
-    restricted: true,
-    items: ["Estrategia da empresa", "Decisoes importantes", "Planejamento financeiro", "Visao de crescimento"],
+    name: "Estrategia",
+    description: "Visao da empresa, objetivos, decisoes importantes e roadmap.",
+    items: ["Visao da empresa", "Objetivos", "Decisoes importantes", "Roadmap"],
   },
   {
-    name: "01_PRODUTO",
-    description: "Coracao do projeto. Onde o aplicativo evolui.",
-    items: ["Ideias do app", "Funcionalidades", "Roadmap", "Melhorias"],
+    name: "Equipe",
+    description: "Gestao de pessoas, cargos, responsabilidades e planilha principal.",
+    items: ["Planilha principal da equipe", "Definicao de cargos", "Responsabilidades"],
   },
   {
-    name: "02_DESENVOLVIMENTO",
-    description: "Execucao tecnica do sistema.",
-    items: ["Bugs", "Estrutura do sistema", "Scripts", "Integracoes"],
+    name: "Produto",
+    description: "Funcionalidades, melhorias, feedbacks e bugs.",
+    items: ["Ideias de funcionalidades", "Melhorias", "Feedbacks", "Bugs"],
   },
   {
-    name: "03_OPERACOES",
-    description: "Organizacao do dia a dia da empresa.",
-    items: ["Tarefas", "Processos", "Fluxos internos", "📊 Controle de Equipe"],
+    name: "Operacoes",
+    description: "Tarefas, processos e organizacao interna.",
+    items: ["Tarefas", "Processos", "Organizacao interna"],
   },
   {
-    name: "04_TESTES & VALIDACAO",
-    description: "Onde o produto evolui de verdade.",
-    items: ["Feedback dos usuarios", "Testes do app", "Ajustes"],
-  },
-  {
-    name: "05_POKER — INTELIGENCIA DO PRODUTO",
-    description: "Diferencial competitivo. Alimenta o produto.",
-    items: ["Analise de maos", "Estrategias", "Insights de jogadores", "Dados reais"],
-  },
-  {
-    name: "06_MARKETING & BRANDING",
-    description: "Identidade visual e presenca da marca.",
-    items: ["Logo oficial", "Paleta de cores", "Identidade visual", "Posts", "Ideias de conteudo", "📄 Brand Guidelines"],
-  },
-  {
-    name: "07_ADMINISTRATIVO",
-    description: "Parte essencial — documentos e contratos.",
-    items: ["Documentos da empresa (MEI)", "Contratos futuros", "Dados legais"],
-  },
-  {
-    name: "08_FINANCEIRO",
-    description: "Controle financeiro simples e objetivo.",
-    items: ["Custos", "Investimentos", "Projecoes"],
-  },
-  {
-    name: "09_LOJA (FUTURO)",
-    description: "Visao de monetizacao e produtos digitais.",
-    items: ["Produtos digitais", "Assinaturas", "Ideias de monetizacao", "Estrutura de planos"],
+    name: "Financeiro",
+    description: "Custos, receitas e planejamento financeiro para crescimento.",
+    items: ["Custos", "Receitas", "Planejamento financeiro"],
   },
 ];
 
@@ -210,30 +184,14 @@ export default function Admin() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
           {folders.map((folder) => (
-            <div
-              key={folder.name}
-              className={`rounded-xl border p-4 ${
-                folder.restricted
-                  ? "border-destructive/40 bg-destructive/5"
-                  : "border-border/70 bg-card"
-              }`}
-            >
+            <div key={folder.name} className="rounded-xl border border-border/70 bg-card p-4">
               <div className="mb-1 flex items-center gap-2">
-                {folder.restricted ? (
-                  <Lock className="h-4 w-4 text-destructive" />
-                ) : (
-                  <FolderTree className="h-4 w-4 text-primary" />
-                )}
-                <p className="font-semibold text-sm">{folder.name}</p>
-                {folder.restricted && (
-                  <Badge variant="destructive" className="ml-auto text-[10px] px-1.5 py-0">
-                    RESTRITO
-                  </Badge>
-                )}
+                <FolderTree className="h-4 w-4 text-primary" />
+                <p className="font-semibold">{folder.name}</p>
               </div>
-              <p className="text-xs text-muted-foreground">{folder.description}</p>
+              <p className="text-sm text-muted-foreground">{folder.description}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {folder.items.map((item) => (
                   <span
