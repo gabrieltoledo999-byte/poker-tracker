@@ -11,7 +11,7 @@ import { toast } from "sonner";
 
 const DRIVE_STORAGE_KEY = "the-rail-company-drive-url";
 
-const defaultDriveUrl = import.meta.env.VITE_THE_RAIL_DRIVE_URL || "https://drive.google.com/drive/home";
+const defaultDriveUrl = import.meta.env.VITE_THE_RAIL_DRIVE_URL || "https://drive.google.com/drive/folders/1F10cYfnFre-VoqzGiGbBZVZDamwOv5wb";
 
 const folders = [
   {
