@@ -60,11 +60,22 @@ function usdToBrl(usdCents) {
 
 const USERS = [
   {
+    openId: "ADM1N_T4_R41L_2026",
+    name: "The Rail Admin",
+    email: "admin@therailapp.company",
+    loginMethod: "email",
+    role: "admin",
+    inviteCode: null,
+    createdAt: "2026-04-11 00:00:00",
+    lastSignedIn: "2026-04-11 00:00:00",
+    bankroll: null,
+  },
+  {
     openId: "Tvc7DtzCsKuzpb4QtxRnMB",
-    name: "GabrielToledo",
+    name: "Gabriel Toledo",
     email: "gabriel.toledo999@gmail.com",
     loginMethod: "google",
-    role: "admin",
+    role: "user",
     inviteCode: "7nKnb3-t",
     createdAt: "2025-12-09 00:00:00",
     lastSignedIn: "2026-04-05 00:00:00",
