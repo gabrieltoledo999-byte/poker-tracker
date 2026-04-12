@@ -200,6 +200,8 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+  const [isBrandHovered, setIsBrandHovered] = useState(false);
+  const [hoveredMenuPath, setHoveredMenuPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -255,19 +257,72 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="logo flex items-center min-w-0 flex-1 cursor-pointer" onClick={() => setLocation("/")}>
-                  <img
-                    src="/therail-logo.png"
-                    alt="The Rail"
-                    className="h-12 w-auto object-contain transition-all hover:drop-shadow-[0_0_8px_rgba(229,9,20,0.8)] hover:scale-105"
-                  />
-                </div>
-              ) : (
-                <div className="logo flex justify-center cursor-pointer" onClick={() => setLocation("/")}>
+                <div
+                  className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer rounded-xl px-1.5 py-1"
+                  onMouseEnter={() => setIsBrandHovered(true)}
+                  onMouseLeave={() => setIsBrandHovered(false)}
+                  onClick={() => setLocation("/")}
+                  style={{
+                    transform: isBrandHovered ? "scale(1.04)" : "scale(1)",
+                    background: isBrandHovered
+                      ? "linear-gradient(90deg, color-mix(in oklab, var(--primary) 26%, transparent), color-mix(in oklab, var(--secondary) 16%, transparent), color-mix(in oklab, var(--primary) 26%, transparent))"
+                      : "transparent",
+                    boxShadow: isBrandHovered
+                      ? "0 0 0 1px rgba(255,255,255,0.10), 0 12px 26px rgba(0,0,0,0.22)"
+                      : "none",
+                    transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
+                  }}
+                >
                   <img
                     src="/therail-logo.png"
                     alt="The Rail"
                     className="h-10 w-auto object-contain"
+                    style={{
+                      transform: isBrandHovered ? "scale(1.12)" : "scale(1)",
+                      filter: isBrandHovered
+                        ? "drop-shadow(0 0 10px rgba(239,68,68,0.85)) drop-shadow(0 0 18px rgba(59,130,246,0.35))"
+                        : "none",
+                      transition: "transform 0.2s ease, filter 0.2s ease",
+                    }}
+                  />
+                  <span
+                    className="font-semibold tracking-wide text-sm md:text-base whitespace-nowrap"
+                    style={{
+                      transform: isBrandHovered ? "scale(1.06)" : "scale(1)",
+                      color: isBrandHovered ? "color-mix(in oklab, var(--foreground) 60%, var(--primary) 40%)" : "",
+                      textShadow: isBrandHovered ? "0 0 10px rgba(239,68,68,0.55)" : "none",
+                      transition: "transform 0.2s ease, color 0.2s ease, text-shadow 0.2s ease",
+                    }}
+                  >
+                    The Rail
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="flex justify-center cursor-pointer rounded-xl px-1 py-1"
+                  onMouseEnter={() => setIsBrandHovered(true)}
+                  onMouseLeave={() => setIsBrandHovered(false)}
+                  onClick={() => setLocation("/")}
+                  style={{
+                    transform: isBrandHovered ? "scale(1.04)" : "scale(1)",
+                    background: isBrandHovered
+                      ? "linear-gradient(90deg, color-mix(in oklab, var(--primary) 24%, transparent), color-mix(in oklab, var(--secondary) 14%, transparent))"
+                      : "transparent",
+                    boxShadow: isBrandHovered
+                      ? "0 0 0 1px rgba(255,255,255,0.10), 0 10px 24px rgba(0,0,0,0.20)"
+                      : "none",
+                    transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
+                  }}
+                >
+                  <img
+                    src="/therail-logo.png"
+                    alt="The Rail"
+                    className="h-10 w-auto object-contain"
+                    style={{
+                      transform: isBrandHovered ? "scale(1.12)" : "scale(1)",
+                      filter: isBrandHovered ? "drop-shadow(0 0 12px rgba(239,68,68,0.85))" : "none",
+                      transition: "transform 0.2s ease, filter 0.2s ease",
+                    }}
                   />
                 </div>
               )}
@@ -278,18 +333,43 @@ function DashboardLayoutContent({
             <SidebarMenu className="px-2 py-1">
               {menuItems.map(item => {
                 const isActive = location === item.path;
+                const isHovered = hoveredMenuPath === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
+                      onMouseEnter={() => setHoveredMenuPath(item.path)}
+                      onMouseLeave={() => setHoveredMenuPath(null)}
                       tooltip={item.label}
                       className={`h-10 transition-all font-normal`}
+                      style={{
+                        transform: isHovered ? "translateX(4px) scale(1.02)" : "translateX(0) scale(1)",
+                        background: isHovered
+                          ? "linear-gradient(90deg, color-mix(in oklab, var(--primary) 18%, transparent), color-mix(in oklab, var(--secondary) 10%, transparent))"
+                          : undefined,
+                        boxShadow: isHovered
+                          ? "inset 2px 0 0 color-mix(in oklab, var(--primary) 72%, transparent), 0 6px 14px rgba(0,0,0,0.14)"
+                          : undefined,
+                        transition: "transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease",
+                      }}
                     >
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                        style={{
+                          transform: isHovered ? "scale(1.12)" : "scale(1)",
+                          filter: isHovered ? "drop-shadow(0 0 8px rgba(239,68,68,0.55))" : "none",
+                          transition: "transform 0.18s ease, filter 0.18s ease",
+                        }}
                       />
-                      <span>{item.label}</span>
+                      <span
+                        style={{
+                          textShadow: isHovered ? "0 0 8px rgba(239,68,68,0.30)" : "none",
+                          transition: "text-shadow 0.18s ease",
+                        }}
+                      >
+                        {item.label}
+                      </span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

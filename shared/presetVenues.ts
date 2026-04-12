@@ -112,6 +112,13 @@ export const PRESET_VENUES: PresetVenue[] = [
     logoFit: "contain",
     website: "https://campinas.h2club.com.br",
   },
+  {
+    name: "BSOP",
+    type: "live",
+    logoUrl: `${CDN}/bsop.webp`,
+    logoFit: "contain",
+    website: "https://www.bsoppoker.com.br",
+  },
 ];
 
 export function getVenueEmoji(type: "online" | "live"): string {

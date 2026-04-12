@@ -15,6 +15,7 @@ import Ranking from "./pages/Ranking";
 import Feed from "./pages/Feed";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
+import Admin from "./pages/Admin";
 function Router() {
   return (
     <Switch>
@@ -32,6 +33,7 @@ function Router() {
             <Route path="/ranking" component={Ranking} />
             <Route path="/feed" component={Feed} />
             <Route path="/settings" component={Settings} />
+            <Route path="/admin" component={Admin} />
             <Route path="/404" component={NotFound} />
             <Route component={NotFound} />
           </Switch>

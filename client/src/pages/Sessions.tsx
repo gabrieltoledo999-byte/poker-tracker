@@ -33,7 +33,17 @@ const GAME_FORMATS = [
   { value: "home_game", label: "Home Game", emoji: "🏠" },
 ];
 
-type GameFormat = typeof GAME_FORMATS[number]["value"];
+type GameFormat =
+  | "tournament"
+  | "cash_game"
+  | "turbo"
+  | "hyper_turbo"
+  | "sit_and_go"
+  | "spin_and_go"
+  | "bounty"
+  | "satellite"
+  | "freeroll"
+  | "home_game";
 
 const ONBOARDING_FORMAT_OPTIONS = [
   ...GAME_FORMATS.map((f) => ({ value: f.value, label: f.label })),
@@ -56,11 +66,11 @@ const ONBOARDING_BUY_IN_RANGES = [
 ] as const;
 
 function formatUsdCents(valueCents: number): string {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", maximumFractionDigits: valueCents < 100 ? 2 : 0 }).format(valueCents / 100);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valueCents / 100);
 }
 
 function formatBrlCents(valueCents: number): string {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(valueCents / 100);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valueCents / 100);
 }
 
 function getRangeValueByType(rangeKey: string, playType: "online" | "live"): number {
@@ -109,7 +119,7 @@ function formatCurrency(value: number, currency: string) {
   const amount = value / 100;
   if (currency === "USD") return `$${amount.toFixed(2)}`;
   if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
-  if (currency === "JPY") return `¥${Math.round(amount)}`;
+  if (currency === "JPY") return `¥${amount.toFixed(2)}`;
   if (currency === "CNY") return `CN¥${amount.toFixed(2)}`;
   return `R$${amount.toFixed(2)}`;
 }
@@ -308,6 +318,7 @@ interface EditTableDialogProps {
     cashOut?: number | null;
     venueId?: number | null;
     clubName?: string | null;
+    tournamentName?: string | null;
     gameType?: string | null;
     stakes?: string | null;
     notes?: string | null;
@@ -315,7 +326,7 @@ interface EditTableDialogProps {
     endedAt?: string | Date | null;
   };
   venues: { id: number; name: string; logoUrl?: string | null }[];
-  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; clubName?: string; stakes?: string; notes?: string }) => void;
+  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; clubName?: string; tournamentName?: string; stakes?: string; notes?: string }) => void;
   onClose: () => void;
   isPending: boolean;
 }
@@ -327,6 +338,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
   const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY">(table.currency as any);
   const [venueId, setVenueId] = useState(table.venueId?.toString() ?? "");
   const [clubName, setClubName] = useState(table.clubName ?? "");
+  const [tournamentName, setTournamentName] = useState(table.tournamentName ?? "");
   const [buyIn, setBuyIn] = useState((table.buyIn / 100).toFixed(2));
   const [cashOut, setCashOut] = useState(table.cashOut != null ? (table.cashOut / 100).toFixed(2) : "");
   const [stakes, setStakes] = useState(table.stakes ?? "");
@@ -337,9 +349,8 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
   function handleSave() {
     const buyInCents = Math.round(parseFloat(buyIn) * 100);
     const cashOutCents = cashOut !== "" ? Math.round(parseFloat(cashOut) * 100) : null;
-    const minBuyInCents = gameFormat === "freeroll" ? 0 : type === "online" ? 50 : 1;
-    if (isNaN(buyInCents) || buyInCents < minBuyInCents) {
-      toast.error(gameFormat === "freeroll" ? "Buy-in inválido" : type === "online" ? "Buy-in mínimo para online é $0,50" : "Buy-in precisa ser maior que zero");
+    if (isNaN(buyInCents) || buyInCents < 0) {
+      toast.error("Buy-in inválido");
       return;
     }
     onSave({
@@ -350,6 +361,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
       buyIn: buyInCents,
       cashOut: cashOutCents,
       clubName: clubName || undefined,
+      tournamentName: tournamentName || undefined,
       stakes: stakes || undefined,
       notes: notes || undefined,
     });
@@ -433,10 +445,14 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
             <Label className="text-xs">Clube (opcional)</Label>
             <Input className="h-8 text-sm mt-1" placeholder="Ex: Alpha Club" value={clubName} onChange={e => setClubName(e.target.value)} />
           </div>
+          <div>
+            <Label className="text-xs">Nome do Torneio (opcional)</Label>
+            <Input className="h-8 text-sm mt-1" placeholder="Ex: Sunday Million" value={tournamentName} onChange={e => setTournamentName(e.target.value)} />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Buy-in ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" step="0.01" min={gameFormat === "freeroll" ? "0" : type === "online" ? "0.5" : "0.01"} value={buyIn} onChange={e => setBuyIn(e.target.value)} />
+              <Input className="h-8 text-sm mt-1" type="number" step="0.01" min="0" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">Cash-out ({currency})</Label>
@@ -491,7 +507,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY">(type === "online" ? "USD" : "BRL");
   const [venueId, setVenueId] = useState("");
   const [buyIn, setBuyIn] = useState(defaultBuyIn);
-  const [clubName, setClubName] = useState("");
+  const [tournamentName, setTournamentName] = useState("");
   const [gameType, setGameType] = useState("");
   const [stakes, setStakes] = useState("");
 
@@ -580,7 +596,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
     return Array.from(values).sort((a, b) => a - b).slice(0, 10);
   }, [getPreferredBuyIns, prefs, type]);
 
-  const minBuyInCents = gameFormat === "freeroll" ? 0 : type === "online" ? 50 : 1;
+  const minBuyInCents = 0; // Allow 0 for freerolls, credits, and any other format
 
   const formatBuyInButtonLabel = (valueCents: number, valueCurrency: string) => {
     if (valueCurrency === "JPY") {
@@ -622,8 +638,8 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const buyInCents = Math.round(parseFloat(buyIn) * 100);
-    if (isNaN(buyInCents) || buyInCents < minBuyInCents) {
-      toast.error(gameFormat === "freeroll" ? "Buy-in inválido" : type === "online" ? "Buy-in mínimo para online é $0,50" : "Buy-in precisa ser maior que zero");
+    if (isNaN(buyInCents) || buyInCents < 0) {
+      toast.error("Buy-in inválido");
       return;
     }
     addTableMutation.mutate({
@@ -633,7 +649,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
       gameFormat: gameFormat as any,
       currency,
       buyIn: buyInCents,
-      clubName: clubName || undefined,
+      tournamentName: tournamentName || undefined,
       gameType: gameType || undefined,
       stakes: stakes || undefined,
     });
@@ -758,7 +774,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
           <Input
             type="number"
             step="0.01"
-            min={gameFormat === "freeroll" ? "0" : type === "online" ? "0.5" : "0.01"}
+            min="0"
             placeholder="0,00"
             value={buyIn}
             onChange={(e) => setBuyIn(e.target.value)}
@@ -794,8 +810,8 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
       </div>
 
       <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Clube (opcional)</Label>
-        <Input placeholder="Ex: Alpha Club" value={clubName} onChange={(e) => setClubName(e.target.value)} />
+        <Label className="text-xs text-muted-foreground">Nome do Torneio (opcional)</Label>
+        <Input placeholder="Ex: Sunday Million" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} />
       </div>
 
       <DialogFooter>
@@ -1018,13 +1034,14 @@ interface ActiveSessionPanelProps {
     notes?: string | null;
     tables: Array<{
       id: number;
-      type: string;
-      gameFormat: string;
-      currency: string;
+      type: "online" | "live";
+      gameFormat: GameFormat;
+      currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY";
       buyIn: number;
       cashOut?: number | null;
       venueId?: number | null;
       clubName?: string | null;
+      tournamentName?: string | null;
       gameType?: string | null;
       stakes?: string | null;
       startedAt: string | Date;
@@ -1310,6 +1327,9 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                       {table.clubName && (
                         <span className="text-xs text-muted-foreground">Clube: {table.clubName}</span>
                       )}
+                      {table.tournamentName && (
+                        <span className="text-xs text-muted-foreground">Torneio: {table.tournamentName}</span>
+                      )}
                     {isFinished && profit !== null && (
                       <span className={`text-xs font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {profit >= 0 ? "+" : ""}{formatCurrency(Math.abs(profit), table.currency)}
@@ -1339,6 +1359,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                         currency: table.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY",
                         buyIn: table.buyIn,
                         clubName: table.clubName ?? undefined,
+                        tournamentName: table.tournamentName ?? undefined,
                         gameType: table.gameType ?? undefined,
                         stakes: table.stakes ?? undefined,
                         notes: undefined,
@@ -1677,8 +1698,10 @@ function SessionCard({ session }: { session: any }) {
   const date = new Date(session.sessionDate);
   const venueName = session.venueName;
   const venueLogoUrl = session.venueLogoUrl;
+  const tournamentTitle = (session.primaryTournamentName ?? session.tournamentName ?? "").trim();
   const isMultiVenue = (session.uniqueVenueCount ?? 0) > 1;
-  const venueBadgeText = isMultiVenue ? `${session.uniqueVenueCount} plataformas` : venueName;
+  const fallbackVenueText = isMultiVenue ? `${session.uniqueVenueCount} plataformas` : venueName;
+  const venueBadgeText = tournamentTitle || fallbackVenueText;
 
   function handleSaveEdit() {
     if (isLegacySession) {
@@ -1863,6 +1886,7 @@ function SessionCard({ session }: { session: any }) {
                     <div className="text-muted-foreground">
                       {tableVenue?.name ?? "Plataforma não informada"}
                       {t.clubName ? ` · Clube: ${t.clubName}` : ""}
+                      {t.tournamentName ? ` · Torneio: ${t.tournamentName}` : ""}
                     </div>
                     {tDuration > 0 && (
                       <div className="flex items-center gap-1 text-muted-foreground">
@@ -2117,6 +2141,8 @@ export default function Sessions() {
   const [activeSection, setActiveSection] = useState<"history" | "import">("history");
   const [importRawText, setImportRawText] = useState("");
   const [importCurrencyMode, setImportCurrencyMode] = useState<"auto" | "BRL" | "USD" | "CAD" | "JPY" | "CNY">("auto");
+  const [importTypeMode, setImportTypeMode] = useState<"auto" | "online" | "live">("auto");
+  const [showDeleteHistoryConfirm, setShowDeleteHistoryConfirm] = useState(false);
   const [showPlayStyleOnboarding, setShowPlayStyleOnboarding] = useState(false);
   const [selectedPlayStyle, setSelectedPlayStyle] = useState<"online" | "live">(primaryType);
   const [selectedFormats, setSelectedFormats] = useState<string[]>(["tournament"]);
@@ -2176,6 +2202,22 @@ export default function Sessions() {
       setActiveSection("history");
     },
     onError: (err) => toast.error("Falha ao importar", { description: err.message }),
+  });
+
+  const clearHistoryMutation = trpc.sessions.clearHistory.useMutation({
+    onSuccess: (result) => {
+      utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.history.invalidate();
+      setShowDeleteHistoryConfirm(false);
+      toast.success("Histórico excluído", {
+        description: `${result.sessionsDeleted} sessões e ${result.tablesDeleted} mesas removidas.`,
+      });
+    },
+    onError: (err) => toast.error("Falha ao excluir histórico", { description: err.message }),
   });
 
   useEffect(() => {
@@ -2576,6 +2618,27 @@ export default function Sessions() {
         </DialogContent>
       </Dialog>
 
+      <AlertDialog open={showDeleteHistoryConfirm} onOpenChange={setShowDeleteHistoryConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Você tem certeza que deseja excluir todo o seu histórico?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todas as sessões finalizadas e mesas do histórico serão removidas. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => clearHistoryMutation.mutate()}
+              disabled={clearHistoryMutation.isPending}
+            >
+              {clearHistoryMutation.isPending ? "Excluindo..." : "Excluir todo o histórico"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {activeSection === "history" ? (
         <>
           {/* Session history */}
@@ -2585,7 +2648,18 @@ export default function Sessions() {
             </div>
           ) : sessions && sessions.length > 0 ? (
             <div className="space-y-3">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Histórico</h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Histórico</h2>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setShowDeleteHistoryConfirm(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Excluir tudo
+                </Button>
+              </div>
               {sessions.map((session) => (
                 <SessionCard key={session.id} session={session} />
               ))}
@@ -2612,7 +2686,8 @@ export default function Sessions() {
               <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
               <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
               <p>5. Você pode fixar a moeda por clique (Auto, BRL, USD, CAD, JPY, CNY).</p>
-              <p>6. A IA não cria plataforma nova: ela só importa para plataformas já existentes (ex.: Suprema {"->"} Suprema Poker).</p>
+              <p>6. Você pode fixar o tipo por clique (Auto, Online, Live).</p>
+              <p>7. A IA usa apenas casas/plataformas já cadastradas no app; se não existir, a importação avisa erro.</p>
             </div>
 
             <div className="space-y-1">
@@ -2633,6 +2708,20 @@ export default function Sessions() {
             </div>
 
             <div className="space-y-1">
+              <Label>Tipo da sessão na importação</Label>
+              <Select value={importTypeMode} onValueChange={(v) => setImportTypeMode(v as any)}>
+                <SelectTrigger className="w-full sm:w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto (detectar do texto)</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="live">Live</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
               <Label>Texto para importar</Label>
               <Textarea
                 rows={8}
@@ -2647,14 +2736,22 @@ export default function Sessions() {
                 type="button"
                 variant="outline"
                 disabled={importRawText.trim().length < 10 || importPreviewMutation.isPending}
-                onClick={() => importPreviewMutation.mutate({ rawText: importRawText, currencyMode: importCurrencyMode })}
+                onClick={() => importPreviewMutation.mutate({
+                  rawText: importRawText,
+                  currencyMode: importCurrencyMode,
+                  typeMode: importTypeMode,
+                })}
               >
                 {importPreviewMutation.isPending ? "Analisando..." : "Analisar"}
               </Button>
               <Button
                 type="button"
                 disabled={!importPreviewMutation.data || importFromTextMutation.isPending}
-                onClick={() => importFromTextMutation.mutate({ rawText: importRawText, currencyMode: importCurrencyMode })}
+                onClick={() => importFromTextMutation.mutate({
+                  rawText: importRawText,
+                  currencyMode: importCurrencyMode,
+                  typeMode: importTypeMode,
+                })}
               >
                 {importFromTextMutation.isPending ? "Importando..." : "Importar para DB"}
               </Button>

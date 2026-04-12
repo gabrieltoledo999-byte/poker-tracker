@@ -54,12 +54,10 @@ import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
 function formatCurrency(centavos: number): string {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(centavos / 100);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(centavos / 100);
 }
 function formatCurrencyCompact(centavos: number): string {
-  const val = centavos / 100;
-  if (Math.abs(val) >= 1000)
-    return new Intl.NumberFormat("pt-BR", { notation: "compact", compactDisplay: "short", style: "currency", currency: "BRL" }).format(val);
+  // Keep same helper name, but do not compact values: always show centavos.
   return formatCurrency(centavos);
 }
 function formatPercent(v: number) { return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`; }
@@ -67,7 +65,7 @@ function formatByCurrency(centavos: number, currency: string) {
   const amount = centavos / 100;
   if (currency === "USD") return `$${amount.toFixed(2)}`;
   if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
-  if (currency === "JPY") return `¥${Math.round(amount)}`;
+  if (currency === "JPY") return `¥${amount.toFixed(2)}`;
   if (currency === "CNY") return `CN¥${amount.toFixed(2)}`;
   return `R$${amount.toFixed(2)}`;
 }
@@ -396,12 +394,18 @@ export default function Dashboard() {
         stats: statsMap.get(v.id) || null,
       }));
     const personalized = sortVenues(merged, (venue) => venue.id);
-    return [...personalized].sort((a: any, b: any) => {
-      const typeDelta = playTypeOrder.indexOf(a.type) - playTypeOrder.indexOf(b.type);
-      if (typeDelta !== 0) return typeDelta;
+    const playedVenues = personalized.filter((venue: any) => (venue.stats?.tables ?? venue.stats?.sessions ?? 0) > 0);
+    const source = playedVenues.length > 0 ? playedVenues : personalized;
+
+    return [...source].sort((a: any, b: any) => {
       const aTables = a.stats?.tables ?? a.stats?.sessions ?? 0;
       const bTables = b.stats?.tables ?? b.stats?.sessions ?? 0;
-      return bTables - aTables;
+      if (bTables !== aTables) return bTables - aTables;
+
+      const typeDelta = playTypeOrder.indexOf(a.type) - playTypeOrder.indexOf(b.type);
+      if (typeDelta !== 0) return typeDelta;
+
+      return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
     });
   }, [consolidated, playTypeOrder, sortVenues, venueStats]);
   const topVenueName = prioritizedVenues.find((venue: any) => venue.id === topVenueId)?.name ?? null;
@@ -885,7 +889,7 @@ export default function Dashboard() {
                           <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.01 240)" vertical={false} />
                           <XAxis dataKey="date" stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false} />
                           <YAxis stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false}
-                            tickFormatter={(v) => `R$${Math.abs(v) >= 1000 ? `${(v/1000).toFixed(1)}k` : v}`}
+                            tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)}
                             domain={chartYDomain} width={48} />
                           <RechartsTooltip
                             content={({ active, payload, label }: any) => {
@@ -932,7 +936,7 @@ export default function Dashboard() {
                         <XAxis type="number" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false}
                           tickFormatter={(v) => {
                             if (perfMetric === "sessions") return String(v);
-                            if (perfMetric === "profit") return new Intl.NumberFormat("pt-BR", { notation: "compact", style: "currency", currency: "BRL" }).format(v);
+                            if (perfMetric === "profit") return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
                             return `${v}%`;
                           }} />
                         <YAxis type="category" dataKey="name" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false} width={70} />
@@ -1016,7 +1020,7 @@ export default function Dashboard() {
                       <XAxis dataKey="date" stroke="oklch(0.55 0.01 240)" fontSize={11} tickLine={false} />
                       <YAxis stroke="oklch(0.55 0.01 240)" fontSize={11} tickLine={false} axisLine={false}
                         domain={chartYDomain}
-                        tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { notation: "compact", style: "currency", currency: "BRL" }).format(v)} />
+                        tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)} />
                       <ReferenceLine y={0} stroke="oklch(0.4 0.01 240)" strokeDasharray="4 4" />
                       <RechartsTooltip content={<CustomTooltip />} />
                       {(chartPeriod === "all" || chartPeriod === "online") && (
@@ -1266,7 +1270,7 @@ export default function Dashboard() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{t.venueName || "Mesa sem plataforma"}</p>
                       <p className="text-[11px] text-muted-foreground truncate">
-                        {new Date(t.sessionDate).toLocaleDateString("pt-BR")} · {t.gameFormat} · Sessão #{t.sessionId}
+                        {new Date(t.sessionDate).toLocaleDateString("pt-BR")} · {t.gameFormat}{t.tournamentName ? ` · ${t.tournamentName}` : ""} · Sessão #{t.sessionId}
                       </p>
                     </div>
                     <div className="text-right">

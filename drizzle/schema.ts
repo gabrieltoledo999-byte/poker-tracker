@@ -84,6 +84,7 @@ export const sessions = mysqlTable("sessions", {
   // Game details (optional)
   gameType: varchar("gameType", { length: 64 }), // e.g., "NL Hold'em", "PLO"
   stakes: varchar("stakes", { length: 32 }), // e.g., "1/2", "2/5"
+  tournamentName: varchar("tournamentName", { length: 160 }), // Nome do torneio jogado
   location: varchar("location", { length: 128 }), // casino/site name (legacy, use venueId)
   
   // Timestamps
@@ -494,6 +495,7 @@ export const sessionTables = mysqlTable("session_tables", {
   gameType: varchar("gameType", { length: 64 }), // NL Hold'em, PLO, etc.
   stakes: varchar("stakes", { length: 32 }), // 1/2, 2/5, etc.
   clubName: varchar("clubName", { length: 120 }), // Optional club label (ex: Clube XPTO)
+  tournamentName: varchar("tournamentName", { length: 160 }), // Nome do torneio jogado
   notes: text("notes"),
 
   // Timestamps

@@ -9,6 +9,7 @@ import {
   createSession,
   updateSession,
   deleteSession,
+  deleteAllSessionHistory,
   getSessionById,
   getUserSessions,
   getSessionStats,
@@ -108,6 +109,7 @@ type ImportType = "online" | "live";
 type ImportCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY";
 type ImportFormat = z.infer<typeof gameFormatEnum>;
 const importCurrencyModeEnum = z.enum(["auto", "BRL", "USD", "CAD", "JPY", "CNY"]);
+const importTypeModeEnum = z.enum(["auto", "online", "live"]);
 
 type ParsedImportItem = {
   sourceText: string;
@@ -121,6 +123,7 @@ type ParsedImportItem = {
   venueName?: string;
   gameType?: string;
   stakes?: string;
+  tournamentName?: string;
   clubName?: string;
   notes?: string;
   warnings: string[];
@@ -133,6 +136,22 @@ function normalizeVenueName(name?: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function venueMatchKey(name?: string): string {
+  return normalizeVenueName(name)
+    .replace(/\b(club|clube|poker|casino|cassino|site|app|plataforma|local|venue)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function venueTypedKey(type: ImportType, name?: string): string {
+  return `${type}:${normalizeVenueName(name)}`;
+}
+
+function venueTypedMatchKey(type: ImportType, name?: string): string {
+  return `${type}:${venueMatchKey(name)}`;
 }
 
 function parseDateFromText(text: string): Date | null {
@@ -166,7 +185,12 @@ function parseDurationMinutes(text: string): number {
 }
 
 function detectType(text: string): ImportType {
-  if (/\b(live|presencial|cassino|clube)\b/i.test(text)) return "live";
+  // Prefer online when text contains common online poker markers.
+  if (/\b(plataforma|site|app|room|online|pp\s*poker|pppoker|gg\s*poker|ggpoker|pokerstars|888poker|888|kkpoker|pokerbros|suprema|wpt\s*global|x-poker|xpoker|clubgg)\b/i.test(text)) {
+    return "online";
+  }
+  // Mark as live only for explicit presencial/live context.
+  if (/\b(live|presencial|cassino|casino|ao\s*vivo|evento\s*live|mesa\s*ao\s*vivo)\b/i.test(text)) return "live";
   return "online";
 }
 
@@ -204,14 +228,16 @@ function parseMoneyValue(raw: string): number | null {
 }
 
 function parseBuyInAndCashOut(text: string): { buyIn: number | null; cashOut: number | null } {
-  const buyInLabel = text.match(/(?:buy\s*-?in|entrada|inscri[cç][aã]o)\s*[:=]?\s*([\w$.,]+)/i);
+  const buyInLabel = text.match(/(?:buy\s*-?in|entrada|inscri[cç][aã]o|credito|cr[eé]dito)\s*[:=]?\s*([\w$.,]*)/i);
   const cashOutLabel = text.match(/(?:cash\s*-?out|saida|sa[ií]da|premio|pr[eê]mio|resultado)\s*[:=]?\s*([\w$.,-]+)/i);
 
-  const buyIn = buyInLabel ? parseMoneyValue(buyInLabel[1]) : null;
+  // Check for explicit values
+  const buyIn = buyInLabel && buyInLabel[1] ? parseMoneyValue(buyInLabel[1]) : null;
   const cashOut = cashOutLabel ? parseMoneyValue(cashOutLabel[1]) : null;
 
   if (buyIn !== null || cashOut !== null) return { buyIn, cashOut };
 
+  // Check for currency symbols (legacy fallback)
   const numbers = Array.from(text.matchAll(/(?:R\$|US\$|CA\$|CN¥|¥|\$)?\s*(\d+[\d.,]*)/g));
   const first = numbers[0]?.[1] ? parseMoneyValue(numbers[0][1]) : null;
   const second = numbers[1]?.[1] ? parseMoneyValue(numbers[1][1]) : null;
@@ -257,7 +283,27 @@ function parseVenueName(text: string): string | undefined {
   return canonicalize(hit);
 }
 
-function parseImportText(rawText: string, forcedCurrency?: ImportCurrency): ParsedImportItem[] {
+function parseTournamentName(text: string): string | undefined {
+  const cleanName = (raw?: string): string | undefined => {
+    if (!raw) return undefined;
+    const sanitized = raw
+      .replace(/^(?:nome\s+do\s+)?(?:torneio|tournament|evento|mtt)\s*[:=-]?\s*/i, "")
+      .replace(/\b(?:buy\s*-?in|entrada|inscri[cç][aã]o|cash\s*-?out|saida|sa[ií]da|premio|pr[eê]mio|resultado)\b.*$/i, "")
+      .trim()
+      .replace(/^[-|,;:\s]+|[-|,;:\s]+$/g, "");
+    return sanitized.length >= 2 ? sanitized : undefined;
+  };
+
+  const byLabel = text.match(/(?:nome\s+do\s+torneio|torneio|tournament|evento)\s*[:=]\s*([^;|,\n]+)/i);
+  if (byLabel?.[1]) return cleanName(byLabel[1]);
+
+  const inline = text.match(/(?:torneio|tournament|mtt)\s*[-:]?\s*([^|;\n,]{2,80})/i);
+  if (inline?.[1]) return cleanName(inline[1]);
+
+  return undefined;
+}
+
+function parseImportText(rawText: string, forcedCurrency?: ImportCurrency, forcedType?: ImportType): ParsedImportItem[] {
   const chunks = rawText
     .split(/\n\s*\n|\n(?=\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})|\n(?=\d{4}[\/\-]\d{2}[\/\-]\d{2})/)
     .map((part) => part.trim())
@@ -267,15 +313,23 @@ function parseImportText(rawText: string, forcedCurrency?: ImportCurrency): Pars
 
   return entries.map((entry) => {
     const warnings: string[] = [];
-    const type = detectType(entry);
+    const type = forcedType ?? detectType(entry);
     const gameFormat = detectFormat(entry);
     const currency = forcedCurrency ?? detectCurrency(entry);
     const durationMinutes = parseDurationMinutes(entry);
     const sessionDate = parseDateFromText(entry) ?? new Date();
     const venueName = parseVenueName(entry);
+    const tournamentName = parseTournamentName(entry);
     const values = parseBuyInAndCashOut(entry);
 
-    if (!values.buyIn || values.buyIn < 0) warnings.push("Buy-in não identificado com precisão. Revise antes de importar.");
+    // Check if text contains credit, freeroll, or explicit 0 (these allow buyIn=0 naturally)
+    const hasCredit = /\b(credito|crédito|freeroll|gratis|gratuito)\b/i.test(entry);
+    const hasExplicitZero = /\b0\b|zero/i.test(entry.match(/(?:buy\s*-?in|entrada|inscrição|credito).*$/i)?.[0] ?? "");
+
+    // Only warn about missing buyIn if not a freeroll/credit context
+    if (values.buyIn === null && !hasCredit && !hasExplicitZero) {
+      warnings.push("Buy-in não identificado com precisão. Revise antes de importar.");
+    }
     if (values.cashOut === null) warnings.push("Cash-out não identificado. Será usado 0 por padrão.");
     if (!venueName) warnings.push("Plataforma/local não identificado. Esta linha não será importada.");
 
@@ -289,6 +343,7 @@ function parseImportText(rawText: string, forcedCurrency?: ImportCurrency): Pars
       durationMinutes,
       sessionDate,
       venueName,
+      tournamentName,
       notes: entry.slice(0, 1200),
       warnings,
     };
@@ -398,6 +453,7 @@ export const appRouter = router({
         venueId: z.number().int().optional(),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
+        tournamentName: z.string().max(160).optional(),
         location: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -438,6 +494,7 @@ export const appRouter = router({
           venueId: input.venueId,
           gameType: input.gameType,
           stakes: input.stakes,
+          tournamentName: input.tournamentName,
           location: input.location,
         });
       }),
@@ -458,6 +515,7 @@ export const appRouter = router({
         venueId: z.number().int().optional(),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
+        tournamentName: z.string().max(160).optional(),
         location: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -491,6 +549,12 @@ export const appRouter = router({
       .input(z.object({ id: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
         return await deleteSession(input.id, ctx.user.id);
+      }),
+
+    // Delete all finalized session history for current user
+    clearHistory: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        return await deleteAllSessionHistory(ctx.user.id);
       }),
 
     // Get a single session
@@ -556,10 +620,15 @@ export const appRouter = router({
       }),
 
     importPreview: protectedProcedure
-      .input(z.object({ rawText: z.string().min(10).max(120000), currencyMode: importCurrencyModeEnum.optional() }))
+      .input(z.object({
+        rawText: z.string().min(10).max(120000),
+        currencyMode: importCurrencyModeEnum.optional(),
+        typeMode: importTypeModeEnum.optional(),
+      }))
       .mutation(async ({ input }) => {
         const forcedCurrency = input.currencyMode && input.currencyMode !== "auto" ? input.currencyMode : undefined;
-        const parsed = parseImportText(input.rawText, forcedCurrency);
+        const forcedType = input.typeMode && input.typeMode !== "auto" ? input.typeMode : undefined;
+        const parsed = parseImportText(input.rawText, forcedCurrency, forcedType);
         const warnings = parsed.flatMap((item, idx) => item.warnings.map((w) => `Linha ${idx + 1}: ${w}`));
         return {
           totalDetected: parsed.length,
@@ -575,24 +644,41 @@ export const appRouter = router({
             durationMinutes: item.durationMinutes,
             sessionDate: item.sessionDate,
             venueName: item.venueName ?? "Não mapeado",
+            tournamentName: item.tournamentName,
             warnings: item.warnings,
           })),
         };
       }),
 
     importFromText: protectedProcedure
-      .input(z.object({ rawText: z.string().min(10).max(120000), currencyMode: importCurrencyModeEnum.optional() }))
+      .input(z.object({
+        rawText: z.string().min(10).max(120000),
+        currencyMode: importCurrencyModeEnum.optional(),
+        typeMode: importTypeModeEnum.optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         await initializePresetVenues(ctx.user.id, PRESET_VENUES);
 
         const forcedCurrency = input.currencyMode && input.currencyMode !== "auto" ? input.currencyMode : undefined;
-        const parsed = parseImportText(input.rawText, forcedCurrency);
+        const forcedType = input.typeMode && input.typeMode !== "auto" ? input.typeMode : undefined;
+        const parsed = parseImportText(input.rawText, forcedCurrency, forcedType);
         if (parsed.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum dado identificável para importar." });
         }
 
         const allVenues = await getUserVenues(ctx.user.id);
         const venueMap = new Map(allVenues.map((v) => [normalizeVenueName(v.name), v]));
+        const venueMatchMap = new Map(allVenues.map((v) => [venueMatchKey(v.name), v]));
+        const venueTypedMap = new Map(
+          allVenues
+            .filter((v) => v.type === "online" || v.type === "live")
+            .map((v) => [venueTypedKey(v.type as ImportType, v.name), v])
+        );
+        const venueTypedMatchMap = new Map(
+          allVenues
+            .filter((v) => v.type === "online" || v.type === "live")
+            .map((v) => [venueTypedMatchKey(v.type as ImportType, v.name), v])
+        );
 
         const rates = await getAllRates();
         let imported = 0;
@@ -606,7 +692,17 @@ export const appRouter = router({
               throw new Error("plataforma/local não identificado. Ajuste o texto para uma plataforma existente");
             }
             const normalizedVenue = normalizeVenueName(venueName);
-            let venue = venueMap.get(normalizedVenue);
+            const inputMatchKey = venueMatchKey(venueName);
+            let venue = venueTypedMap.get(venueTypedKey(item.type, venueName));
+            if (!venue && inputMatchKey) {
+              venue = venueTypedMatchMap.get(venueTypedMatchKey(item.type, venueName));
+            }
+            if (!venue) {
+              venue = venueMap.get(normalizedVenue);
+            }
+            if (!venue && inputMatchKey) {
+              venue = venueMatchMap.get(inputMatchKey);
+            }
             if (!venue) {
               const fallback = Array.from(venueMap.entries()).find(([key]) =>
                 key.includes(normalizedVenue) || normalizedVenue.includes(key)
@@ -615,9 +711,22 @@ export const appRouter = router({
                 venue = fallback[1];
               }
             }
-            if (!venue) {
-              throw new Error(`plataforma '${venueName}' não existe. Cadastre/ative essa plataforma antes de importar`);
+            if (!venue && inputMatchKey) {
+              const fallbackByMatchKey = Array.from(venueMatchMap.entries()).find(([key]) =>
+                key.includes(inputMatchKey) || inputMatchKey.includes(key)
+              );
+              if (fallbackByMatchKey) {
+                venue = fallbackByMatchKey[1];
+              }
             }
+            if (!venue) {
+              throw new Error(`plataforma/local '${venueName}' não existe. Cadastre/ative essa plataforma antes de importar`);
+            }
+
+            // Final source of truth: if venue exists, session/table type follows venue type.
+            const resolvedType: ImportType = (venue.type === "online" || venue.type === "live")
+              ? (venue.type as ImportType)
+              : item.type;
 
             let buyInBrl = item.buyIn;
             let cashOutBrl = item.cashOut;
@@ -639,7 +748,7 @@ export const appRouter = router({
 
             const createdSession = await createSession({
               userId: ctx.user.id,
-              type: item.type,
+              type: resolvedType,
               gameFormat: item.gameFormat,
               currency: item.currency,
               buyIn: buyInBrl,
@@ -653,6 +762,7 @@ export const appRouter = router({
               venueId: venue.id,
               gameType: item.gameType,
               stakes: item.stakes,
+              tournamentName: item.tournamentName ?? null,
               location: null,
               doubts: null,
             } as any);
@@ -664,7 +774,7 @@ export const appRouter = router({
               sessionId: createdSession.id,
               activeSessionId: null,
               venueId: venue.id,
-              type: item.type,
+              type: resolvedType,
               gameFormat: item.gameFormat,
               currency: item.currency,
               buyIn: item.buyIn,
@@ -672,6 +782,7 @@ export const appRouter = router({
               clubName: item.clubName,
               gameType: item.gameType,
               stakes: item.stakes,
+              tournamentName: item.tournamentName ?? null,
               notes: item.notes,
               startedAt,
               endedAt,
@@ -722,6 +833,7 @@ export const appRouter = router({
         gameType: z.string().optional(),
         stakes: z.string().optional(),
         clubName: z.string().max(120).optional(),
+        tournamentName: z.string().max(160).optional(),
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -753,6 +865,7 @@ export const appRouter = router({
         gameType: z.string().optional(),
         stakes: z.string().optional(),
         clubName: z.string().max(120).optional(),
+        tournamentName: z.string().max(160).optional(),
         notes: z.string().optional(),
         endedAt: z.date().optional().nullable(),
         incrementRebuy: z.boolean().optional(),

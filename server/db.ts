@@ -235,6 +235,23 @@ export async function deleteSession(id: number, userId: number): Promise<boolean
   return (result[0] as any).affectedRows > 0;
 }
 
+export async function deleteAllSessionHistory(userId: number): Promise<{ sessionsDeleted: number; tablesDeleted: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Only finalized history is deleted. Active session remains untouched.
+  const tablesResult = await db.delete(sessionTables)
+    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`));
+
+  const sessionsResult = await db.delete(sessions)
+    .where(eq(sessions.userId, userId));
+
+  return {
+    sessionsDeleted: (sessionsResult[0] as any).affectedRows ?? 0,
+    tablesDeleted: (tablesResult[0] as any).affectedRows ?? 0,
+  };
+}
+
 export async function getHandPatternStats(userId: number): Promise<{
   kk: { hands: number; wins: number; losses: number; winRate: number };
   jj: { hands: number; wins: number; losses: number; winRate: number };
@@ -710,6 +727,7 @@ export async function getUserSessions(
       venueId: sessions.venueId,
       gameType: sessions.gameType,
       stakes: sessions.stakes,
+      tournamentName: sessions.tournamentName,
       location: sessions.location,
       createdAt: sessions.createdAt,
       updatedAt: sessions.updatedAt,
@@ -736,6 +754,7 @@ export async function getUserSessions(
       currency: sessionTables.currency,
       venueId: sessionTables.venueId,
       gameFormat: sessionTables.gameFormat,
+      tournamentName: sessionTables.tournamentName,
     })
     .from(sessionTables)
     .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`));
@@ -757,6 +776,7 @@ export async function getUserSessions(
     worstTableProfit: number | null;
     venueIds: Set<number>;
     gameFormats: Set<string>;
+    primaryTournamentName: string | null;
   }>();
 
   for (const row of tableRows) {
@@ -771,6 +791,7 @@ export async function getUserSessions(
         worstTableProfit: null,
         venueIds: new Set<number>(),
         gameFormats: new Set<string>(),
+        primaryTournamentName: null,
       });
     }
 
@@ -786,6 +807,9 @@ export async function getUserSessions(
     agg.worstTableProfit = agg.worstTableProfit === null ? profit : Math.min(agg.worstTableProfit, profit);
     if (row.venueId != null) agg.venueIds.add(row.venueId);
     agg.gameFormats.add(row.gameFormat);
+    if (!agg.primaryTournamentName && row.tournamentName && row.tournamentName.trim()) {
+      agg.primaryTournamentName = row.tournamentName.trim();
+    }
   }
 
   const enriched = sessionRows.map((s) => {
@@ -806,6 +830,7 @@ export async function getUserSessions(
       hourlyRate,
       bestTableProfit: agg?.bestTableProfit ?? null,
       worstTableProfit: agg?.worstTableProfit ?? null,
+      primaryTournamentName: agg?.primaryTournamentName ?? null,
       uniqueVenueCount: agg?.venueIds.size ?? 0,
       uniqueGameFormatCount: agg?.gameFormats.size ?? 0,
       isMultiTable: (agg?.tableCount ?? 0) > 1,
@@ -833,6 +858,7 @@ export async function getRecentPlayedTables(userId: number, limit = 12) {
       buyIn: sessionTables.buyIn,
       cashOut: sessionTables.cashOut,
       stakes: sessionTables.stakes,
+      tournamentName: sessionTables.tournamentName,
       venueId: sessionTables.venueId,
       venueName: venues.name,
       venueLogoUrl: venues.logoUrl,
