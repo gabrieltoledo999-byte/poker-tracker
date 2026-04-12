@@ -6,6 +6,8 @@ import { getAllRates } from "./currency";
 import { authCompatUserSelect } from "./userCompat";
 import { shouldReplaceAvatar } from "./avatarPersistence";
 
+const SYSTEM_ADMIN_EMAILS = new Set(["admin@therailapp.company"]);
+
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
@@ -76,10 +78,15 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.lastSignedIn = user.lastSignedIn;
       updateSet.lastSignedIn = user.lastSignedIn;
     }
+    const normalizedEmail = String(user.email ?? values.email ?? "").trim().toLowerCase();
+    const shouldForceAdminRole = user.openId === ENV.ownerOpenId || SYSTEM_ADMIN_EMAILS.has(normalizedEmail);
+
     if (user.role !== undefined) {
       values.role = user.role;
       updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
+    }
+
+    if (shouldForceAdminRole) {
       values.role = 'admin';
       updateSet.role = 'admin';
     }
