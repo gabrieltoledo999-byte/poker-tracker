@@ -40,9 +40,15 @@ const menuItems = [
   { icon: Trophy, label: "Ranking", path: "/ranking" },
   { icon: MapPin, label: "Locais", path: "/venues" },
   { icon: Sparkles, label: "Comunidade", path: "/feed" },
-  { icon: ShieldCheck, label: "Administracao", path: "/admin" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
+
+const getAdminMenuItems = (userRole?: string | null) => {
+  if (userRole === "admin") {
+    return [{ icon: ShieldCheck, label: "Administracao", path: "/admin" }];
+  }
+  return [];
+};
 
 function getAvatarSrc(params: { id?: number | null; name?: string | null; email?: string | null; avatarUrl?: string | null }): string | undefined {
   const avatarUrl = params.avatarUrl?.trim();
@@ -115,6 +121,9 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const previousUnreadChatCountRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const notificationPermissionRef = useRef(false);
+
+  // Combine regular menu items with admin items (only if user is admin)
+  const visibleMenuItems = [...menuItems, ...getAdminMenuItems(user?.role)];
   
   // Pre-encoded simple beep WAV (440Hz for 500ms) - plays without user interaction
   const NOTIFICATION_SOUND_B64 = "UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==";
@@ -331,7 +340,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
 
         {/* Nav Items */}
         <nav className="flex flex-col gap-1 px-3 py-4 flex-1">
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path;
             return (
@@ -449,7 +458,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
               </Button>
             </div>
             <nav className="flex flex-col gap-1 px-3 py-4 flex-1">
-              {menuItems.map((item) => {
+              {visibleMenuItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location === item.path;
                 return (

@@ -3,6 +3,9 @@ import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { eq } from "drizzle-orm";
+import { users } from "../drizzle/schema";
+import { db } from "./db";
 import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest, removeFriendship, blockUser, resetFriendshipNetworkForUser, resetFriendshipNetworkGlobally, sendMessage, getConversation, getConversationList, markConversationRead, getUnreadCount, toggleMessageReaction } from "./db";
 import { z } from "zod";
 import {
@@ -1184,6 +1187,26 @@ export const appRouter = router({
         const inlineUrl = `data:${input.mimeType};base64,${base64Data}`;
         await updateUserAvatar(ctx.user.id, inlineUrl);
         return { success: true, url: inlineUrl };
+      }),
+
+    // Update user name/nickname
+    updateName: protectedProcedure
+      .input(z.object({
+        name: z.string().trim().min(1).max(64),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const result = await db.update(users)
+          .set({ name: input.name })
+          .where(eq(users.id, ctx.user.id));
+        
+        if (result[0].affectedRows === 0) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Usuário não encontrado",
+          });
+        }
+        
+        return { success: true, name: input.name };
       }),
 
     // Get user by invite code (for invite page)

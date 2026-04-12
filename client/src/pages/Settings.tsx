@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy, RotateCw } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy, RotateCw, Edit2 } from "lucide-react";
 import { useTheme, ACCENT_COLORS, type AccentColor } from "@/contexts/ThemeContext";
 
 // Helper to format currency
@@ -310,6 +310,8 @@ export default function Settings() {
   const [showInGlobalRanking, setShowInGlobalRanking] = useState(false);
   const [showInFriendsRanking, setShowInFriendsRanking] = useState(false);
   const [hasProfileChanges, setHasProfileChanges] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingName, setEditingName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: settings, isLoading } = trpc.bankroll.getSettings.useQuery();
@@ -370,6 +372,17 @@ export default function Settings() {
     },
   });
 
+  const updateNameMutation = trpc.profile.updateName.useMutation({
+    onSuccess: async () => {
+      toast.success("Nome atualizado com sucesso!");
+      await utils.auth.me.invalidate();
+      setIsEditingName(false);
+    },
+    onError: (error) => {
+      toast.error("Erro ao atualizar nome: " + error.message);
+    },
+  });
+
   useEffect(() => {
     if (settings) {
       setOnlineBankroll(String(settings.initialOnline / 100));
@@ -382,6 +395,12 @@ export default function Settings() {
       setAvatarUrl((user as any).avatarUrl);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user?.name) {
+      setEditingName(user.name);
+    }
+  }, [user?.name]);
 
   useEffect(() => {
     if (!onboardingProfile) return;
@@ -480,6 +499,19 @@ export default function Settings() {
       handleFileSelect(files[0]);
     }
   }, [handleFileSelect]);
+
+  const handleSaveName = () => {
+    const trimmedName = editingName.trim();
+    if (!trimmedName) {
+      toast.error("O nome não pode estar vazio");
+      return;
+    }
+    if (trimmedName === user?.name) {
+      setIsEditingName(false);
+      return;
+    }
+    updateNameMutation.mutate({ name: trimmedName });
+  };
 
   // Handle file input change
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -662,9 +694,60 @@ export default function Settings() {
             </div>
 
             <div className="flex-1 w-full space-y-4">
-              <div>
-                <p className="font-medium">{user?.name || "Usuário"}</p>
-                <p className="text-sm text-muted-foreground">{user?.email || ""}</p>
+              <div className="space-y-3">
+                {!isEditingName ? (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-lg">{user?.name || "Usuário"}</p>
+                      <p className="text-sm text-muted-foreground">{user?.email || ""}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsEditingName(true)}
+                      className="gap-2"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                      Editar nome
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="nickname">Seu Nickname</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="nickname"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        placeholder="Digite seu novo nome"
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter") {
+                            handleSaveName();
+                          }
+                        }}
+                        maxLength={64}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveName}
+                        disabled={updateNameMutation.isPending}
+                      >
+                        {updateNameMutation.isPending ? "Salvando..." : "Salvar"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditingName(false);
+                          setEditingName(user?.name || "");
+                        }}
+                        disabled={updateNameMutation.isPending}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <Tabs defaultValue="upload" className="w-full">
