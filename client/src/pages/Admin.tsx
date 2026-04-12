@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Building2, FolderTree, ExternalLink, ShieldCheck } from "lucide-react";
+import { Building2, FolderTree, ExternalLink, ShieldCheck, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 const DRIVE_STORAGE_KEY = "the-rail-company-drive-url";
@@ -35,8 +37,24 @@ const folders = [
 ];
 
 export default function Admin() {
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
   const [driveUrl, setDriveUrl] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
+
+  // Redirect if not admin
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      setLocation("/login");
+      return;
+    }
+    if (user.role !== "admin") {
+      toast.error("Acesso negado. Apenas administradores podem acessar esta aba.");
+      setLocation("/");
+      return;
+    }
+  }, [user, loading, setLocation]);
 
   useEffect(() => {
     const saved = localStorage.getItem(DRIVE_STORAGE_KEY) || defaultDriveUrl;
@@ -58,6 +76,42 @@ export default function Admin() {
     }
     window.open(driveUrl, "_blank", "noopener,noreferrer");
   };
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-3">
+          <ShieldCheck className="h-12 w-12 mx-auto text-muted-foreground" />
+          <p className="text-muted-foreground">Verificando permissões...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show access denied if not admin
+  if (!user || user.role !== "admin") {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md border-destructive/50">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-3">
+              <Lock className="h-12 w-12 text-destructive" />
+            </div>
+            <CardTitle>Acesso Negado</CardTitle>
+            <CardDescription className="mt-2 text-base font-semibold text-destructive">
+              Apenas administradores podem acessar esta aba.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => setLocation("/")} className="w-full">
+              Voltar ao Início
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
