@@ -10,6 +10,30 @@ import { getUserByEmail, getUserByNickname, getUserByOpenId, linkUserToGoogle, u
 const GOOGLE_STATE_COOKIE = "oauth_state_google";
 const OAUTH_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
 
+function normalizeEnvValue(value: string | undefined) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function getGoogleOAuthCredentials() {
+  const clientId = normalizeEnvValue(
+    process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID
+  );
+  const clientSecret = normalizeEnvValue(
+    process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  );
+
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
+}
+
 function getBaseUrl(req: Request) {
   const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() || req.protocol;
   const host = req.get("host");
@@ -49,13 +73,14 @@ function createOAuthState() {
 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/google", (req, res) => {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const credentials = getGoogleOAuthCredentials();
 
-    if (!clientId || !clientSecret) {
+    if (!credentials) {
       redirectWithError(res, "Login com Google nao configurado no servidor.");
       return;
     }
+
+    const { clientId } = credentials;
 
     const state = createOAuthState();
     res.cookie(GOOGLE_STATE_COOKIE, state, oauthStateCookieOptions(req));
@@ -92,12 +117,13 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-      if (!clientId || !clientSecret) {
+      const credentials = getGoogleOAuthCredentials();
+      if (!credentials) {
         redirectWithError(res, "Login com Google nao configurado no servidor.");
         return;
       }
+
+      const { clientId, clientSecret } = credentials;
 
       const redirectUri = getGoogleRedirectUri(req);
       const tokenResponse = await axios.post(
@@ -198,6 +224,18 @@ export function registerOAuthRoutes(app: Express) {
       res.clearCookie(GOOGLE_STATE_COOKIE, cookieOptions);
       res.redirect("/");
     } catch (error) {
+      const oauthProviderError =
+        axios.isAxiosError(error) && typeof error.response?.data === "object"
+          ? String((error.response?.data as { error?: string }).error || "")
+          : "";
+
+      if (oauthProviderError === "invalid_client") {
+        console.error("[OAuth] Google callback failed: invalid_client");
+        res.clearCookie(GOOGLE_STATE_COOKIE, cookieOptions);
+        redirectWithError(res, "Configuracao OAuth invalida no servidor. Contate o suporte.");
+        return;
+      }
+
       console.error("[OAuth] Google callback failed:", error);
       res.clearCookie(GOOGLE_STATE_COOKIE, cookieOptions);
       redirectWithError(res, "Falha ao entrar com Google. Tente novamente.");

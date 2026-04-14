@@ -132,12 +132,18 @@ export default function DashboardLayout({
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="flex flex-col items-center gap-10 p-8 max-w-sm w-full">
+      <div
+        className="flex items-center justify-center min-h-screen bg-background bg-cover bg-center"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.58)), url('/TheRail_Primary_WITH-FX_SplashScreen_2000x2000.png')",
+        }}
+      >
+        <div className="flex flex-col items-center gap-10 p-8 max-w-sm w-full rounded-2xl border border-white/10 bg-black/35 backdrop-blur-sm">
           {/* Logo grande */}
           <div className="flex flex-col items-center gap-4">
             <img
-              src="/favicon-symbol-large.png"
+              src="/TheRail_Primary_WITH-FX_SplashScreen_2000x2000.png"
               alt="The Rail"
               className="h-44 md:h-48 w-auto object-contain drop-shadow-xl"
             />
@@ -274,7 +280,7 @@ function DashboardLayoutContent({
                   }}
                 >
                   <img
-                    src="/therail-logo.png"
+                    src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
                     alt="The Rail"
                     className="h-10 w-auto object-contain"
                     style={{
@@ -315,7 +321,7 @@ function DashboardLayoutContent({
                   }}
                 >
                   <img
-                    src="/therail-logo.png"
+                    src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
                     alt="The Rail"
                     className="h-10 w-auto object-contain"
                     style={{

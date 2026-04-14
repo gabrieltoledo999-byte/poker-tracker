@@ -48,6 +48,11 @@ import {
   Crown,
   Trophy,
   PencilLine,
+  Star,
+  Eye,
+  EyeOff,
+  X,
+  PlusCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useMemo } from "react";
@@ -202,7 +207,22 @@ export default function Dashboard() {
   const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("roi");
   const [showOnlineModal, setShowOnlineModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
+  const [expandedTournament, setExpandedTournament] = useState<string | null>(null);
   const [showHandsEditModal, setShowHandsEditModal] = useState(false);
+  const [showHandsConfigModal, setShowHandsConfigModal] = useState(false);
+  const [newCustomHandName, setNewCustomHandName] = useState("");
+  const [handPrefs, setHandPrefs] = useState<{
+    hidden: string[];
+    favorites: string[];
+    customHands: { name: string; wins: number; losses: number }[];
+  }>(() => {
+    try {
+      const stored = localStorage.getItem("hand-counter-prefs");
+      return stored ? JSON.parse(stored) : { hidden: [], favorites: [], customHands: [] };
+    } catch {
+      return { hidden: [], favorites: [], customHands: [] };
+    }
+  });
   const [onlineInputValue, setOnlineInputValue] = useState("");
   const [liveInputValue, setLiveInputValue] = useState("");
   const [handEdit, setHandEdit] = useState({
@@ -215,6 +235,7 @@ export default function Dashboard() {
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
+  const { data: allSessions } = trpc.sessions.list.useQuery({});
   const { data: handPatternStats } = trpc.sessions.handPatternStats.useQuery();
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
@@ -273,14 +294,74 @@ export default function Dashboard() {
     setShowHandsEditModal(true);
   };
 
+  const saveHandPrefs = (prefs: typeof handPrefs) => {
+    setHandPrefs(prefs);
+    localStorage.setItem("hand-counter-prefs", JSON.stringify(prefs));
+  };
+
+  const registerCustomHandResult = (handName: string, outcome: "win" | "loss") => {
+    saveHandPrefs({
+      ...handPrefs,
+      customHands: handPrefs.customHands.map((hand) =>
+        hand.name === handName
+          ? {
+              ...hand,
+              wins: hand.wins + (outcome === "win" ? 1 : 0),
+              losses: hand.losses + (outcome === "loss" ? 1 : 0),
+            }
+          : hand,
+      ),
+    });
+  };
+
+  const addCustomHand = () => {
+    const name = newCustomHandName.trim().toUpperCase();
+    if (!name) return;
+
+    const existing = ["KK", "JJ", "AA", "AK", ...handPrefs.customHands.map((hand) => hand.name.toUpperCase())];
+    if (existing.includes(name)) {
+      toast.error("Essa mão já existe.");
+      return;
+    }
+
+    saveHandPrefs({
+      ...handPrefs,
+      customHands: [...handPrefs.customHands, { name, wins: 0, losses: 0 }],
+    });
+    setNewCustomHandName("");
+  };
+
   const chartData = useMemo(() => {
     if (!history) return [];
-    return history.map((p) => ({
-      date: new Date(p.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-      online: p.online / 100,
-      live: p.live / 100,
-      total: p.total / 100,
-    }));
+
+    const groupedByDay = new Map<string, {
+      date: string;
+      fullDate: string;
+      timestamp: number;
+      online: number;
+      live: number;
+      total: number;
+    }>();
+
+    for (const point of history) {
+      const pointDate = new Date(point.date);
+      const dayKey = `${pointDate.getFullYear()}-${String(pointDate.getMonth() + 1).padStart(2, "0")}-${String(pointDate.getDate()).padStart(2, "0")}`;
+      const nextPoint = {
+        date: pointDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        fullDate: pointDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }),
+        timestamp: pointDate.getTime(),
+        online: point.online / 100,
+        live: point.live / 100,
+        total: point.total / 100,
+      };
+
+      const currentPoint = groupedByDay.get(dayKey);
+      if (!currentPoint || nextPoint.timestamp >= currentPoint.timestamp) {
+        groupedByDay.set(dayKey, nextPoint);
+      }
+    }
+
+    return Array.from(groupedByDay.values()).sort((a, b) => a.timestamp - b.timestamp);
   }, [history]);
 
   // Domínio dinâmico do eixo Y
@@ -408,6 +489,58 @@ export default function Dashboard() {
       return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
     });
   }, [consolidated, playTypeOrder, sortVenues, venueStats]);
+
+  const tournamentStats = useMemo(() => {
+    if (!allSessions) return [];
+
+    const grouped = new Map<string, {
+      name: string;
+      sessions: number;
+      tables: number;
+      profit: number;
+      wins: number;
+      losses: number;
+    }>();
+
+    for (const session of allSessions as any[]) {
+      const name = ((session.primaryTournamentName ?? session.tournamentName ?? "") as string).trim();
+      if (!name) continue;
+
+      const profit = typeof session.totalTableProfit === "number"
+        ? session.totalTableProfit
+        : (session.cashOut ?? 0) - (session.buyIn ?? 0);
+      const tables = session.tableCount ?? session.tables?.length ?? 0;
+      const current = grouped.get(name) ?? {
+        name,
+        sessions: 0,
+        tables: 0,
+        profit: 0,
+        wins: 0,
+        losses: 0,
+      };
+
+      current.sessions += 1;
+      current.tables += tables;
+      current.profit += profit;
+      if (profit > 0) current.wins += 1;
+      if (profit < 0) current.losses += 1;
+
+      grouped.set(name, current);
+    }
+
+    return Array.from(grouped.values())
+      .map((item) => ({
+        ...item,
+        avgProfit: item.sessions > 0 ? Math.round(item.profit / item.sessions) : 0,
+        winRate: item.sessions > 0 ? Math.round((item.wins / item.sessions) * 100) : 0,
+      }))
+      .sort((a, b) => {
+        if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+        return b.profit - a.profit;
+      })
+      .slice(0, 8);
+  }, [allSessions]);
+
   const topVenueName = prioritizedVenues.find((venue: any) => venue.id === topVenueId)?.name ?? null;
 
   const isLoading = loadingStats || loadingHistory || loadingConsolidated;
@@ -437,7 +570,31 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="relative mx-auto max-w-[1600px] overflow-hidden space-y-5 rounded-2xl border border-cyan-500/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_32%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_38%),linear-gradient(180deg,rgba(3,8,22,0.98),rgba(5,10,24,0.96))] p-3 sm:p-4 lg:p-5">
+      <div className="pointer-events-none absolute inset-0 z-0">
+        <div className="absolute -left-16 top-24 h-40 w-40 rounded-full border border-violet-300/25 bg-[radial-gradient(circle_at_35%_30%,#8b5cf6_0%,#6d28d9_45%,#14082a_100%)] opacity-50">
+          <div className="absolute inset-[9px] rounded-full border border-amber-200/45" />
+          <div className="absolute inset-[22px] rounded-full border border-fuchsia-300/40 bg-[#12081f]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-6 w-6 rounded-full border border-fuchsia-200/50 bg-fuchsia-300/20 shadow-[0_0_14px_rgba(244,114,182,0.45)]" />
+          </div>
+        </div>
+        <div className="absolute -right-20 top-[28%] h-52 w-52 rounded-full border border-cyan-200/20 bg-[radial-gradient(circle_at_35%_30%,#22d3ee_0%,#0e7490_48%,#041827_100%)] opacity-40">
+          <div className="absolute inset-[10px] rounded-full border border-amber-200/35" />
+          <div className="absolute inset-[25px] rounded-full border border-cyan-200/30 bg-[#081726]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-7 w-7 rounded-full border border-cyan-200/50 bg-cyan-300/20 shadow-[0_0_16px_rgba(34,211,238,0.5)]" />
+          </div>
+        </div>
+        <div className="absolute -bottom-16 left-[32%] h-44 w-44 rounded-full border border-emerald-200/20 bg-[radial-gradient(circle_at_35%_30%,#34d399_0%,#047857_46%,#06261d_100%)] opacity-35">
+          <div className="absolute inset-[10px] rounded-full border border-amber-200/35" />
+          <div className="absolute inset-[24px] rounded-full border border-emerald-200/30 bg-[#06261d]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-6 w-6 rounded-full border border-emerald-200/50 bg-emerald-300/20 shadow-[0_0_14px_rgba(16,185,129,0.45)]" />
+          </div>
+        </div>
+      </div>
+      <div className="relative z-10 space-y-5">
       {rateItems.length > 0 && (
         <div className="fx-ticker -mx-4 -mt-4">
           <div className="fx-track">
@@ -453,13 +610,20 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Bankroll</h1>
-          <p className="text-sm text-muted-foreground">Visão consolidada do seu stack</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Bankroll</h1>
+          <p className="text-sm text-slate-400">Visão consolidada do seu stack</p>
         </div>
         <Link href="/sessions">
-          <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nova Sessão</Button>
+          <button
+            className="group relative w-full overflow-hidden rounded-3xl bg-gradient-to-r from-purple-600 via-violet-600 to-fuchsia-600 px-7 py-3 text-base font-semibold text-white shadow-xl shadow-purple-600/50 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/70 active:scale-95 sm:w-auto"
+          >
+            <span className="relative z-10 inline-flex items-center gap-3">
+              <Plus className="h-4 w-4" /> Nova Sessão
+            </span>
+            <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+          </button>
         </Link>
       </div>
 
@@ -644,144 +808,199 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
-        {/* LEFT COLUMN */}
-        <div className="xl:col-span-3 space-y-5">
-          {/* Patrimônio card */}
-          <Card className="bg-card/60 border-border/40">
-            <CardContent className="p-5">
-              {/* Stack Total + Donut lado a lado */}
-              <div className="flex flex-col sm:flex-row gap-4 mb-5">
-                {/* Lado esquerdo: info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Stack Total</p>
-                  <p className={`text-4xl font-bold tracking-tight ${!hasAnyBalance ? "text-muted-foreground" : ""}`}>
-                    {formatCurrencyCompact(consolidatedTotal)}
-                  </p>
-                  {hasAnyBalance && (
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <Badge variant={consolidatedPct >= 0 ? "default" : "destructive"} className="text-xs gap-1">
-                        {consolidatedPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                        {formatPercent(consolidatedPct)}
-                      </Badge>
-                      <span className={`text-xs ${roiProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {roiProfit >= 0 ? "+" : ""}{formatCurrencyCompact(roiProfit)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="mt-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 shrink-0" />
-                        <span className="text-xs text-muted-foreground">Online</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-cyan-400">{formatCurrencyCompact(consolidated?.online.current || 0)}</span>
-                        <button
-                          onClick={() => setShowOnlineModal(true)}
-                          className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 transition-colors"
-                          title="Definir bankroll online"
-                        >
-                          {(consolidated?.online.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-full bg-violet-400 shrink-0" />
-                        <span className="text-xs text-muted-foreground">Live</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-violet-400">{formatCurrencyCompact(consolidated?.live.current || 0)}</span>
-                        <button
-                          onClick={() => setShowLiveModal(true)}
-                          className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5 transition-colors"
-                          title="Definir bankroll live"
-                        >
-                          {(consolidated?.live.current || 0) > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
-                        </button>
-                      </div>
-                    </div>
-                    {hasRoiData && (
-                      <div className="text-xs pt-1">
-                        <span className="text-muted-foreground">ROI: </span>
-                        <span className={`font-semibold ${consolidatedPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {formatPercent(consolidatedPct)}
-                        </span>
-                      </div>
-                    )}
+      <Dialog open={showHandsConfigModal} onOpenChange={setShowHandsConfigModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="h-4 w-4 text-yellow-400" /> Personalizar Mãos
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Favoritas e visibilidade</p>
+            {(["kk", "jj", "aa", "ak"] as const).map((hand) => {
+              const isFavorite = handPrefs.favorites.includes(hand);
+              const isHidden = handPrefs.hidden.includes(hand);
+              return (
+                <div key={hand} className="flex items-center justify-between rounded-lg border border-border/40 px-3 py-2">
+                  <span className="text-sm font-semibold uppercase">{hand}</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      title={isFavorite ? "Remover favorito" : "Favoritar"}
+                      onClick={() => saveHandPrefs({
+                        ...handPrefs,
+                        favorites: isFavorite
+                          ? handPrefs.favorites.filter((item) => item !== hand)
+                          : [...handPrefs.favorites, hand],
+                      })}
+                    >
+                      <Star className={`h-4 w-4 ${isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-yellow-400"}`} />
+                    </button>
+                    <button
+                      type="button"
+                      title={isHidden ? "Mostrar" : "Ocultar"}
+                      onClick={() => saveHandPrefs({
+                        ...handPrefs,
+                        hidden: isHidden
+                          ? handPrefs.hidden.filter((item) => item !== hand)
+                          : [...handPrefs.hidden, hand],
+                      })}
+                    >
+                      {isHidden ? <Eye className="h-4 w-4 text-muted-foreground" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                    </button>
                   </div>
                 </div>
-                {/* Lado direito: Donut */}
-                <div className="flex flex-col items-center justify-center shrink-0">
-                  {donutData.length > 0 ? (
-                    <>
-                      <div className="relative h-44 w-44">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={donutData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={52}
-                              outerRadius={75}
-                              paddingAngle={3}
-                              dataKey="value"
-                              strokeWidth={0}
-                            >
-                              {donutData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <RechartsTooltip
-                              position={{ x: 10, y: 10 }}
-                              wrapperStyle={{ zIndex: 1 }}
-                              content={({ active, payload }: any) => {
-                                if (!active || !payload?.length) return null;
-                                const d = payload[0].payload;
-                                return (
-                                  <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
-                                    <p className="font-semibold mb-1">{d.fullName}</p>
-                                    <p style={{ color: d.color }}>
-                                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.value)} ({d.pct}%)
-                                    </p>
-                                  </div>
-                                );
-                              }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
-                          <p className="text-sm font-bold">{formatCurrencyCompact(consolidatedTotal)}</p>
-                          <p className="text-[10px] text-muted-foreground">Total</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-3 justify-center mt-1">
-                        {donutData.map((d) => (
-                          <div key={d.name} className="flex items-center gap-1.5">
-                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                            <span className="text-xs text-muted-foreground">{d.name}</span>
-                            <span className="text-xs font-semibold">{d.pct}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="h-44 flex flex-col items-center justify-center gap-2 text-center w-44">
-                      <p className="text-xs text-muted-foreground px-2">Defina seu bankroll para ver a distribuição</p>
-                      <div className="flex flex-col gap-2 mt-1">
-                        <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => setShowOnlineModal(true)}>
-                          <Wifi className="h-3 w-3 text-cyan-400" /> Online
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => setShowLiveModal(true)}>
-                          <MapPin className="h-3 w-3 text-violet-400" /> Live
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+              );
+            })}
 
+            {handPrefs.customHands.map((hand) => {
+              const isFavorite = handPrefs.favorites.includes(hand.name);
+              const isHidden = handPrefs.hidden.includes(hand.name);
+              return (
+                <div key={hand.name} className="flex items-center justify-between rounded-lg border border-border/40 px-3 py-2">
+                  <span className="text-sm font-semibold uppercase">{hand.name}</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      title={isFavorite ? "Remover favorito" : "Favoritar"}
+                      onClick={() => saveHandPrefs({
+                        ...handPrefs,
+                        favorites: isFavorite
+                          ? handPrefs.favorites.filter((item) => item !== hand.name)
+                          : [...handPrefs.favorites, hand.name],
+                      })}
+                    >
+                      <Star className={`h-4 w-4 ${isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-yellow-400"}`} />
+                    </button>
+                    <button
+                      type="button"
+                      title={isHidden ? "Mostrar" : "Ocultar"}
+                      onClick={() => saveHandPrefs({
+                        ...handPrefs,
+                        hidden: isHidden
+                          ? handPrefs.hidden.filter((item) => item !== hand.name)
+                          : [...handPrefs.hidden, hand.name],
+                      })}
+                    >
+                      {isHidden ? <Eye className="h-4 w-4 text-muted-foreground" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                    </button>
+                    <button
+                      type="button"
+                      title="Remover mão"
+                      onClick={() => saveHandPrefs({
+                        hidden: handPrefs.hidden.filter((item) => item !== hand.name),
+                        favorites: handPrefs.favorites.filter((item) => item !== hand.name),
+                        customHands: handPrefs.customHands.filter((item) => item.name !== hand.name),
+                      })}
+                    >
+                      <X className="h-4 w-4 text-red-400 hover:text-red-300" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="border-t border-border/40 pt-3 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Adicionar mão</p>
+              <div className="flex gap-2">
+                <Input
+                  value={newCustomHandName}
+                  onChange={(e) => setNewCustomHandName(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addCustomHand();
+                  }}
+                  placeholder="Ex: QQ, TT, AQs"
+                  maxLength={6}
+                  className="h-8"
+                />
+                <Button size="sm" className="h-8" onClick={addCustomHand}>Adicionar</Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
+        {/* LEFT COLUMN */}
+        <div className="xl:col-span-3 space-y-5">
+          {/* ==================== HERO PRINCIPAL - GRÁFICO DE FUNDO ==================== */}
+          <div className="bg-gradient-to-br from-zinc-950 to-black border border-zinc-700 rounded-3xl p-5 md:p-7 relative overflow-hidden mb-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60 min-h-[340px] md:min-h-[390px]">
+            <div className="absolute inset-0 bg-[radial-gradient(#1f2937_1px,transparent_1px)] [background-size:28px_28px] opacity-16 pointer-events-none"></div>
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(16,185,129,0.12),transparent_48%)]" />
+
+            {(() => {
+              const heroPlotData = chartData.map((point, index) => ({ index, value: point.total }));
+              const firstValue = heroPlotData.length > 0 ? heroPlotData[0].value : 0;
+              const lastValue = heroPlotData.length > 0 ? heroPlotData[heroPlotData.length - 1].value : 0;
+              const isPositive = lastValue >= firstValue;
+              const onlineShare = donutData.find((d) => d.type === "online")?.pct ?? 0;
+              const liveShare = donutData.find((d) => d.type === "live")?.pct ?? 0;
+
+              return (
+                <>
+                  <div className="pointer-events-none absolute right-4 top-4 z-20 flex items-center gap-2 text-[11px]">
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-black/55 px-2.5 py-1 text-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                      Online {onlineShare}%
+                    </div>
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/35 bg-black/55 px-2.5 py-1 text-violet-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
+                      Live {liveShare}%
+                    </div>
+                  </div>
+
+                  <div className="pointer-events-none absolute inset-x-3 bottom-3 top-[34%] rounded-2xl bg-black/18 z-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={heroPlotData} margin={{ top: 6, right: 6, left: 6, bottom: 6 }}>
+                        <defs>
+                          <linearGradient id="heroBackdropFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={isPositive ? "#10b981" : "#ef4444"} stopOpacity={0.26} />
+                            <stop offset="100%" stopColor={isPositive ? "#10b981" : "#ef4444"} stopOpacity={0.01} />
+                          </linearGradient>
+                          <linearGradient id="heroBackdropLine" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor={isPositive ? "#34d399" : "#f87171"} stopOpacity={0.5} />
+                            <stop offset="55%" stopColor={isPositive ? "#10b981" : "#ef4444"} stopOpacity={0.88} />
+                            <stop offset="100%" stopColor={isPositive ? "#6ee7b7" : "#fca5a5"} stopOpacity={1} />
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="index" hide />
+                        <YAxis hide domain={["dataMin", "dataMax"]} />
+                        <ReferenceLine y={firstValue + (lastValue - firstValue) * 0.33} stroke="#334155" strokeDasharray="4 7" ifOverflow="extendDomain" />
+                        <ReferenceLine y={firstValue + (lastValue - firstValue) * 0.66} stroke="#334155" strokeDasharray="4 7" ifOverflow="extendDomain" />
+                        <Area type="monotone" dataKey="value" stroke="none" fill="url(#heroBackdropFill)" isAnimationActive={false} />
+                        <Line
+                          type="monotone"
+                          dataKey="value"
+                          stroke="url(#heroBackdropLine)"
+                          strokeWidth={3.2}
+                          dot={false}
+                          activeDot={false}
+                          animationDuration={1300}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="relative z-10 flex h-full min-h-[290px] flex-col items-center justify-start pt-8 text-center md:pt-10">
+                    <div className="text-4xl md:text-5xl xl:text-6xl font-bold tracking-tight md:tracking-[-1px] bg-gradient-to-r from-emerald-300 via-cyan-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(16,185,129,0.35)]">
+                      {formatCurrencyCompact(consolidatedTotal)}
+                    </div>
+
+                    <div className="mt-2 text-3xl md:text-4xl font-extrabold leading-none text-emerald-400 drop-shadow-[0_0_16px_rgba(16,185,129,0.28)]">
+                      {formatPercent(consolidatedPct)}
+                    </div>
+
+                    <div className={`mt-2 text-xl md:text-2xl font-semibold ${roiProfit >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                      {roiProfit >= 0 ? "+" : ""}{formatCurrencyCompact(roiProfit)}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.96),rgba(7,13,28,0.92))] shadow-[0_0_26px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+            <CardContent className="p-4 sm:p-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
                   <p className="text-xs text-muted-foreground mb-1">ABI Médio Online</p>
@@ -804,25 +1023,25 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 mb-4">
+                <div className="mb-4 rounded-xl border border-cyan-500/20 bg-slate-950/40 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   <div>
-                    <span className="text-muted-foreground">Foco:</span>{" "}
+                      <span className="text-slate-400">Foco:</span>{" "}
                     <span className="font-semibold">{primaryType === "online" ? "Online" : "Live"}</span>{" "}
                     <span className="text-muted-foreground">
                       ({primaryTypeShare > 0 ? `${primaryTypeShare.toFixed(0)}%` : "sem amostra"})
                     </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Plataforma:</span>{" "}
+                      <span className="text-slate-400">Plataforma:</span>{" "}
                     <span className="font-semibold">{topVenueName ?? "indefinida"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Formato:</span>{" "}
+                      <span className="text-slate-400">Formato:</span>{" "}
                     <span className="font-semibold">{topFormatLabel ?? "indefinido"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">BI base:</span>{" "}
+                      <span className="text-slate-400">BI base:</span>{" "}
                     <span className="font-semibold">
                       {topBuyInValue > 0
                         ? (primaryType === "online" ? formatByCurrency(topBuyInValue, "USD") : formatCurrency(topBuyInValue))
@@ -831,13 +1050,13 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4 text-xs border-t border-border/30 pt-3 flex-wrap">
+              <div className="flex items-center gap-4 text-xs border-t border-cyan-500/15 pt-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Mesas jogadas:</span>
+                  <span className="text-slate-400">Mesas jogadas:</span>
                   <span className="font-semibold">{totalPlayedTables}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">ITM Rate:</span>
+                  <span className="text-slate-400">ITM Rate:</span>
                   <span className={`font-semibold ${(stats?.winRate || 0) >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
                     {(stats?.winRate || 0).toFixed(1)}%
                   </span>
@@ -846,13 +1065,13 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Média/sessão:</span>
+                  <span className="text-slate-400">Média/sessão:</span>
                   <span className={`font-semibold ${(stats?.avgProfit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {formatCurrencyCompact(stats?.avgProfit || 0)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Hourly:</span>
+                  <span className="text-slate-400">Hourly:</span>
                   <span className={`font-semibold ${(stats?.avgHourlyRate || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {formatCurrencyCompact(stats?.avgHourlyRate || 0)}/h
                   </span>
@@ -864,7 +1083,7 @@ export default function Dashboard() {
           {/* Donut + Desempenho */}
           <div>
             {/* Desempenho por plataforma */}
-            <Card className="bg-card/60 border-border/40">
+            <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.96),rgba(7,13,28,0.92))] shadow-[0_0_26px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-semibold">Desempenho</CardTitle>
@@ -885,18 +1104,27 @@ export default function Dashboard() {
                     <p className="text-xs text-muted-foreground mb-2 font-medium">Evolução do Bankroll</p>
                     <div className="h-36">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.01 240)" vertical={false} />
-                          <XAxis dataKey="date" stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false} />
+                        <LineChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: -6 }}>
+                          <CartesianGrid strokeDasharray="2 2" stroke="oklch(0.3 0.01 240 / 0.45)" vertical={false} />
+                          <XAxis
+                            dataKey="date"
+                            stroke="oklch(0.55 0.01 240)"
+                            fontSize={9}
+                            tickLine={false}
+                            axisLine={false}
+                            minTickGap={24}
+                            interval="preserveStartEnd"
+                          />
                           <YAxis stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false}
                             tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)}
-                            domain={chartYDomain} width={48} />
+                            domain={chartYDomain} width={52} />
                           <RechartsTooltip
-                            content={({ active, payload, label }: any) => {
+                            content={({ active, payload }: any) => {
                               if (!active || !payload?.length) return null;
+                              const point = payload[0]?.payload;
                               return (
-                                <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
-                                  <p className="font-semibold mb-1">{label}</p>
+                                <div className="bg-card/95 border border-border rounded-lg p-2 shadow-xl text-xs">
+                                  <p className="font-semibold mb-1">{point?.fullDate ?? point?.date}</p>
                                   {payload.map((p: any) => (
                                     <p key={p.dataKey} style={{ color: p.color }}>
                                       {p.dataKey === "total" ? "Total" : p.dataKey === "online" ? "Online" : "Live"}: R$ {Number(p.value).toFixed(2)}
@@ -906,17 +1134,21 @@ export default function Dashboard() {
                               );
                             }}
                           />
-                          <Line type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} name="Total" />
-                          <Line type="monotone" dataKey="online" stroke="#06b6d4" strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="Online" />
+                          <Line type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} name="Total" />
+                          <Line type="monotone" dataKey="online" stroke="#06b6d4" strokeWidth={1.75} dot={false} strokeDasharray="4 2" name="Online" />
+                          <Line type="monotone" dataKey="live" stroke="#f59e0b" strokeWidth={1.75} dot={false} strokeDasharray="3 3" name="Live" />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
-                    <div className="flex gap-3 mt-1">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
                       <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         <span className="h-2 w-4 rounded-full inline-block" style={{ background: "var(--primary)" }} /> Total
                       </span>
                       <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-cyan-400" /> Online
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-amber-400" /> Live
                       </span>
                     </div>
                   </div>
@@ -975,7 +1207,7 @@ export default function Dashboard() {
           </div>
 
           {/* Evolução do Bankroll */}
-          <Card className="bg-card/60 border-border/40">
+            <Card className="border-violet-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.96),rgba(8,12,30,0.94))] shadow-[0_0_26px_rgba(168,85,247,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
@@ -1008,8 +1240,8 @@ export default function Dashboard() {
                           <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="gradLive" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
@@ -1027,7 +1259,7 @@ export default function Dashboard() {
                         <Area type="monotone" dataKey="online" name="Online" stroke="#06b6d4" strokeWidth={2} fill="url(#gradOnline)" dot={false} activeDot={{ r: 4 }} />
                       )}
                       {(chartPeriod === "all" || chartPeriod === "live") && (
-                        <Area type="monotone" dataKey="live" name="Live" stroke="#8b5cf6" strokeWidth={2} fill="url(#gradLive)" dot={false} activeDot={{ r: 4 }} />
+                        <Area type="monotone" dataKey="live" name="Live" stroke="#f59e0b" strokeWidth={2} fill="url(#gradLive)" dot={false} activeDot={{ r: 4 }} />
                       )}
                       {chartPeriod === "all" && (
                         <Area type="monotone" dataKey="total" name="Total" stroke="#3b82f6" strokeWidth={2.5} fill="url(#gradTotal)" dot={false} activeDot={{ r: 5 }} />
@@ -1046,16 +1278,152 @@ export default function Dashboard() {
               )}
             </CardContent>
           </Card>
+
+          <Card className="overflow-hidden border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.18),_transparent_36%),linear-gradient(180deg,_rgba(7,10,24,0.99),_rgba(10,14,30,0.95))] shadow-[0_0_35px_rgba(34,211,238,0.1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-100">
+                    <Swords className="h-4 w-4 text-cyan-400" /> Contador de Mãos
+                  </CardTitle>
+                  <p className="text-xs text-slate-400">Perfil visual aplicado em todas as mãos e favoritas em destaque.</p>
+                </div>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-300 hover:text-white" onClick={openHandsEditModal}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-300 hover:text-white" onClick={() => setShowHandsConfigModal(true)}>
+                    <Settings2 className="h-3.5 w-3.5 mr-1" /> Personalizar
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-1">
+              {(() => {
+                const builtInHands = ["kk", "jj", "aa", "ak"] as const;
+                const customColors = [
+                  { border: "border-emerald-500/60", glow: "shadow-[0_0_30px_rgba(16,185,129,0.18)]", text: "text-emerald-300" },
+                  { border: "border-pink-500/60", glow: "shadow-[0_0_30px_rgba(236,72,153,0.18)]", text: "text-pink-300" },
+                  { border: "border-amber-500/60", glow: "shadow-[0_0_30px_rgba(245,158,11,0.18)]", text: "text-amber-300" },
+                  { border: "border-blue-500/60", glow: "shadow-[0_0_30px_rgba(59,130,246,0.18)]", text: "text-blue-300" },
+                ];
+                const builtInTheme: Record<string, { border: string; glow: string; text: string }> = {
+                  kk: { border: "border-cyan-500/70", glow: "shadow-[0_0_30px_rgba(34,211,238,0.18)]", text: "text-cyan-300" },
+                  jj: { border: "border-violet-500/70", glow: "shadow-[0_0_30px_rgba(168,85,247,0.18)]", text: "text-violet-300" },
+                  aa: { border: "border-cyan-400/70", glow: "shadow-[0_0_30px_rgba(34,211,238,0.22)]", text: "text-cyan-200" },
+                  ak: { border: "border-blue-500/70", glow: "shadow-[0_0_30px_rgba(59,130,246,0.18)]", text: "text-blue-300" },
+                };
+
+                const builtInEntries = builtInHands
+                  .filter((hand) => !handPrefs.hidden.includes(hand))
+                  .map((hand) => ({
+                    key: hand,
+                    label: hand.toUpperCase(),
+                    stats: handPatternStats?.[hand] ?? { hands: 0, wins: 0, losses: 0, winRate: 0 },
+                    isCustom: false,
+                    isFavorite: handPrefs.favorites.includes(hand),
+                  }));
+
+                const customEntries = handPrefs.customHands
+                  .filter((hand) => !handPrefs.hidden.includes(hand.name))
+                  .map((hand) => {
+                    const total = hand.wins + hand.losses;
+                    return {
+                      key: hand.name,
+                      label: hand.name.toUpperCase(),
+                      stats: {
+                        hands: total,
+                        wins: hand.wins,
+                        losses: hand.losses,
+                        winRate: total > 0 ? Math.round((hand.wins / total) * 100) : 0,
+                      },
+                      isCustom: true,
+                      isFavorite: handPrefs.favorites.includes(hand.name),
+                    };
+                  });
+
+                const orderedHands = [...builtInEntries, ...customEntries].sort((a, b) => {
+                  if (Number(b.isFavorite) !== Number(a.isFavorite)) return Number(b.isFavorite) - Number(a.isFavorite);
+                  return a.label.localeCompare(b.label, "pt-BR");
+                });
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {orderedHands.map((hand, index) => {
+                      const theme = hand.isCustom ? customColors[index % customColors.length] : builtInTheme[hand.key];
+                      return (
+                        <div key={hand.key} className={`relative rounded-[24px] border ${theme.border} ${theme.glow} bg-[linear-gradient(180deg,_rgba(16,24,40,0.92),_rgba(18,25,46,0.82))] p-4 text-center overflow-hidden`}>
+                          <div className="absolute inset-[10px] rounded-[18px] border border-white/8 pointer-events-none" />
+                          <button
+                            type="button"
+                            className="absolute right-3 top-3 z-10"
+                            onClick={() => saveHandPrefs({
+                              ...handPrefs,
+                              favorites: hand.isFavorite
+                                ? handPrefs.favorites.filter((item) => item !== hand.key)
+                                : [...handPrefs.favorites, hand.key],
+                            })}
+                          >
+                            <Star className={`h-4 w-4 ${hand.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-slate-500 hover:text-yellow-300"}`} />
+                          </button>
+                          <div className="relative z-10 space-y-2">
+                            <p className={`text-4xl font-black tracking-widest ${theme.text}`}>{hand.label}</p>
+                            <p className="text-sm text-slate-300">{hand.stats.hands} {hand.stats.hands === 1 ? "mão" : "mãos"}</p>
+                            <div className="space-y-1">
+                              <p className="text-4xl font-bold text-emerald-400">{hand.stats.wins}W</p>
+                              <p className="text-4xl font-bold text-red-400">{hand.stats.losses}L</p>
+                              <p className="text-2xl font-semibold text-white">{hand.stats.winRate}%</p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 pt-2">
+                              <Button
+                                size="sm"
+                                className="h-9 rounded-full bg-emerald-600 hover:bg-emerald-500 font-bold"
+                                disabled={registerHandResultMutation.isPending}
+                                onClick={() => hand.isCustom
+                                  ? registerCustomHandResult(hand.key, "win")
+                                  : registerHandResultMutation.mutate({ hand: hand.key as "kk" | "jj" | "aa" | "ak", outcome: "win" })}
+                              >
+                                W
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-9 rounded-full bg-red-600 hover:bg-red-500 font-bold"
+                                disabled={registerHandResultMutation.isPending}
+                                onClick={() => hand.isCustom
+                                  ? registerCustomHandResult(hand.key, "loss")
+                                  : registerHandResultMutation.mutate({ hand: hand.key as "kk" | "jj" | "aa" | "ak", outcome: "loss" })}
+                              >
+                                L
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowHandsConfigModal(true)}
+                      className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/40 p-4 min-h-[264px] flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
+                    >
+                      <PlusCircle className="h-7 w-7" />
+                      <span className="text-sm font-medium">Adicionar mão</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
         </div>
 
         {/* RIGHT COLUMN */}
         <div className="xl:col-span-2 space-y-5">
           {/* Cards Online + Live lado a lado no topo */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {typeSummaryCards.map((card) => {
               const Icon = card.icon;
               return (
-                <Card key={card.key} className={`border ${card.badgeClass.split(" ")[1]} bg-card/60 overflow-hidden`}>
+                <Card key={card.key} className={`overflow-hidden border ${card.badgeClass.split(" ")[1]} bg-[linear-gradient(180deg,rgba(9,16,34,0.95),rgba(8,13,30,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60`}>
                   <div className={`h-1 w-full bg-gradient-to-r ${card.gradientClass}`} />
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-2">
@@ -1082,7 +1450,7 @@ export default function Dashboard() {
           </div>
 
           {/* Minhas Plataformas (apenas stats) */}
-          <Card className="bg-card/60 border-border/40">
+          <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(8,14,31,0.95),rgba(6,11,25,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold">Plataformas Prioritárias</CardTitle>
@@ -1115,136 +1483,74 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-zinc-50/90 via-amber-50/40 to-red-50/40 border-amber-200/60 overflow-hidden">
+          <Card className="border-violet-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.95),rgba(6,10,23,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <div>
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Trophy className="h-4 w-4 text-amber-500" /> Contador de Mãos <span className="text-amber-500">Premium</span>
+                    <Trophy className="h-4 w-4 text-amber-500" /> Análise por Torneio
                   </CardTitle>
-                  <p className="text-xs text-muted-foreground">Seu desempenho com mãos fortes e perigosas.</p>
+                  <p className="text-xs text-muted-foreground">Sessões agrupadas pelo nome principal do torneio.</p>
                 </div>
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={openHandsEditModal}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
-                </Button>
+                <Badge variant="outline" className="text-[10px]">Top {tournamentStats.length}</Badge>
               </div>
             </CardHeader>
-
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-amber-300/50 overflow-hidden bg-gradient-to-br from-zinc-950 via-zinc-900 to-amber-900 text-white">
-                  <div className="p-3 border-b border-amber-300/20 flex items-center justify-between">
-                    <p className="text-2xl font-black tracking-tight text-amber-300">KK <span className="text-white text-base">(Rei Rei)</span></p>
-                    <Crown className="h-5 w-5 text-amber-300" />
-                  </div>
-                  <div className="p-3 space-y-1.5 text-sm">
-                    <p><Flame className="h-4 w-4 inline mr-1 text-orange-300" /> Total: <span className="font-bold">{handPatternStats?.kk?.hands ?? 0}</span></p>
-                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.kk?.wins ?? 0}</span></p>
-                    <p className="text-red-300">Derrotas: <span className="font-bold">{handPatternStats?.kk?.losses ?? 0}</span></p>
-                    <p className="text-zinc-200">Win rate: <span className="font-bold">{handPatternStats?.kk?.winRate ?? 0}%</span></p>
-                    <div className="pt-2 grid grid-cols-2 gap-2">
-                      <Button
-                        size="sm"
-                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "kk", outcome: "win" })}
-                      >+ Vitória</Button>
-                      <Button
-                        size="sm"
-                        className="h-8 bg-red-600 hover:bg-red-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "kk", outcome: "loss" })}
-                      >+ Derrota</Button>
+            <CardContent className="pt-0 space-y-2">
+              {tournamentStats.length > 0 ? (
+                tournamentStats.map((tournament) => {
+                  const expanded = expandedTournament === tournament.name;
+                  return (
+                    <div key={tournament.name} className="rounded-lg border border-border/40 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedTournament(expanded ? null : tournament.name)}
+                        className="w-full flex items-center justify-between px-3 py-3 text-left hover:bg-muted/20 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{tournament.name}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {tournament.sessions} sessõ{tournament.sessions === 1 ? "e" : "es"} · {tournament.tables} mesas
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {tournament.profit >= 0 ? "+" : ""}{formatCurrencyCompact(tournament.profit)}
+                          </p>
+                          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                        </div>
+                      </button>
+                      {expanded && (
+                        <div className="grid grid-cols-3 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
+                          <div className="rounded-md bg-background/40 px-2 py-2">
+                            <p className="text-[10px] text-muted-foreground">Média</p>
+                            <p className={`text-xs font-semibold ${tournament.avgProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {formatCurrencyCompact(tournament.avgProfit)}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-background/40 px-2 py-2">
+                            <p className="text-[10px] text-muted-foreground">Win rate</p>
+                            <p className="text-xs font-semibold text-cyan-400">{tournament.winRate}%</p>
+                          </div>
+                          <div className="rounded-md bg-background/40 px-2 py-2">
+                            <p className="text-[10px] text-muted-foreground">Saldo</p>
+                            <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {formatCurrencyCompact(tournament.profit)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  Nenhum torneio nomeado ainda.
                 </div>
-
-                <div className="rounded-2xl border border-red-300/50 overflow-hidden bg-gradient-to-br from-red-950 via-red-900 to-orange-700 text-white">
-                  <div className="p-3 border-b border-red-300/20 flex items-center justify-between">
-                    <p className="text-2xl font-black tracking-tight text-orange-200">JJ <span className="text-white text-base">(Vala Vala)</span></p>
-                    <Swords className="h-5 w-5 text-orange-200" />
-                  </div>
-                  <div className="p-3 space-y-1.5 text-sm">
-                    <p><Flame className="h-4 w-4 inline mr-1 text-orange-200" /> Total: <span className="font-bold">{handPatternStats?.jj?.hands ?? 0}</span></p>
-                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.jj?.wins ?? 0}</span></p>
-                    <p className="text-red-200">Derrotas: <span className="font-bold">{handPatternStats?.jj?.losses ?? 0}</span></p>
-                    <p className="text-zinc-100">Win rate: <span className="font-bold">{handPatternStats?.jj?.winRate ?? 0}%</span></p>
-                    <div className="pt-2 grid grid-cols-2 gap-2">
-                      <Button
-                        size="sm"
-                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "jj", outcome: "win" })}
-                      >+ Vitória</Button>
-                      <Button
-                        size="sm"
-                        className="h-8 bg-red-600 hover:bg-red-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "jj", outcome: "loss" })}
-                      >+ Derrota</Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-emerald-300/50 overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-800 text-white">
-                  <div className="p-3 border-b border-emerald-300/20 flex items-center justify-between">
-                    <p className="text-2xl font-black tracking-tight text-emerald-200">AA <span className="text-white text-base">(As As)</span></p>
-                    <Trophy className="h-5 w-5 text-emerald-200" />
-                  </div>
-                  <div className="p-3 space-y-1.5 text-sm">
-                    <p><Flame className="h-4 w-4 inline mr-1 text-emerald-200" /> Total: <span className="font-bold">{handPatternStats?.aa?.hands ?? 0}</span></p>
-                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.aa?.wins ?? 0}</span></p>
-                    <p className="text-red-200">Derrotas: <span className="font-bold">{handPatternStats?.aa?.losses ?? 0}</span></p>
-                    <p className="text-zinc-100">Win rate: <span className="font-bold">{handPatternStats?.aa?.winRate ?? 0}%</span></p>
-                    <div className="pt-2 grid grid-cols-2 gap-2">
-                      <Button
-                        size="sm"
-                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "aa", outcome: "win" })}
-                      >+ Vitória</Button>
-                      <Button
-                        size="sm"
-                        className="h-8 bg-red-600 hover:bg-red-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "aa", outcome: "loss" })}
-                      >+ Derrota</Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-cyan-300/50 overflow-hidden bg-gradient-to-br from-cyan-950 via-blue-900 to-indigo-800 text-white">
-                  <div className="p-3 border-b border-cyan-300/20 flex items-center justify-between">
-                    <p className="text-2xl font-black tracking-tight text-cyan-200">AK <span className="text-white text-base">(As e Rei)</span></p>
-                    <Flame className="h-5 w-5 text-cyan-200" />
-                  </div>
-                  <div className="p-3 space-y-1.5 text-sm">
-                    <p><Flame className="h-4 w-4 inline mr-1 text-cyan-200" /> Total: <span className="font-bold">{handPatternStats?.ak?.hands ?? 0}</span></p>
-                    <p className="text-emerald-300">Vitórias: <span className="font-bold">{handPatternStats?.ak?.wins ?? 0}</span></p>
-                    <p className="text-red-200">Derrotas: <span className="font-bold">{handPatternStats?.ak?.losses ?? 0}</span></p>
-                    <p className="text-zinc-100">Win rate: <span className="font-bold">{handPatternStats?.ak?.winRate ?? 0}%</span></p>
-                    <div className="pt-2 grid grid-cols-2 gap-2">
-                      <Button
-                        size="sm"
-                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "ak", outcome: "win" })}
-                      >+ Vitória</Button>
-                      <Button
-                        size="sm"
-                        className="h-8 bg-red-600 hover:bg-red-700"
-                        disabled={registerHandResultMutation.isPending}
-                        onClick={() => registerHandResultMutation.mutate({ hand: "ak", outcome: "loss" })}
-                      >+ Derrota</Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
+              )}
             </CardContent>
           </Card>
 
-          <Card className="bg-card/60 border-border/40">
+          <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(8,14,31,0.95),rgba(6,11,25,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1289,6 +1595,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
       </div>
     </div>
   );

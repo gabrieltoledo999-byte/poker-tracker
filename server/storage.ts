@@ -83,6 +83,15 @@ export async function storagePut(
 
   if (!response.ok) {
     const message = await response.text().catch(() => response.statusText);
+    const normalized = String(message || "").toLowerCase();
+    if (
+      response.status === 401 &&
+      (normalized.includes("unknown api key") || normalized.includes("seu_valor"))
+    ) {
+      throw new Error(
+        "Upload de imagem indisponível: CLOUDINARY_API_KEY inválida (valor placeholder detectado). Atualize as variáveis CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET no ambiente do Railway."
+      );
+    }
     throw new Error(
       `Storage upload failed (${response.status} ${response.statusText}): ${message}`
     );

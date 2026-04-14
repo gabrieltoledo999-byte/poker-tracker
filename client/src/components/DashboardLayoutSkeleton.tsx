@@ -8,7 +8,7 @@ export function DashboardLayoutSkeleton() {
         {/* Logo area */}
         <div className="flex items-center gap-3 px-2">
           <img
-            src="/therail-logo.png"
+            src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
             alt="The Rail"
             className="h-9 w-auto object-contain"
           />

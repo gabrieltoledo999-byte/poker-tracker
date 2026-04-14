@@ -13,10 +13,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import {
   Plus, Timer, Trophy, TrendingUp, TrendingDown, Trash2,
   Edit2, CheckCircle, XCircle, Wifi, MapPin, Sparkles,
-  ChevronDown, ChevronUp, Clock, DollarSign, BarChart2, Building2, RotateCcw
+  ChevronDown, ChevronUp, Clock, DollarSign, BarChart2, Building2, RotateCcw, ImagePlus, Send
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -51,6 +52,9 @@ const ONBOARDING_FORMAT_OPTIONS = [
 ];
 
 const ONLINE_TO_BRL_RATE = 5.75;
+const SIGNIFICANT_FEED_PROFIT_CENTS = 30000; // R$ 300+ abre sugestão de post no feed
+const SIGNIFICANT_MIN_PROFIT_CENTS = 15000; // R$ 150 mínimo para considerar sugestão por ROI
+const SIGNIFICANT_MIN_ROI = 0.6; // 60% sobre o buy-in
 
 const ONBOARDING_BUY_IN_RANGES = [
   { key: "r1", minUsdCents: 50, maxUsdCents: 200, valueUsdCents: 100 },
@@ -132,6 +136,15 @@ function convertToBrlCents(value: number, currency: string, rates?: any) {
   return value;
 }
 
+function isSignificantGain(profitBrlCents: number, buyInBrlCents: number): boolean {
+  if (profitBrlCents <= 0) return false;
+  if (profitBrlCents >= SIGNIFICANT_FEED_PROFIT_CENTS) return true;
+  if (buyInBrlCents <= 0) return profitBrlCents >= SIGNIFICANT_MIN_PROFIT_CENTS;
+
+  const roi = profitBrlCents / buyInBrlCents;
+  return profitBrlCents >= SIGNIFICANT_MIN_PROFIT_CENTS && roi >= SIGNIFICANT_MIN_ROI;
+}
+
 /** Format minutes as "Xh Ym" */
 function formatMinutes(minutes: number): string {
   if (minutes <= 0) return "0m";
@@ -164,6 +177,18 @@ function formatDuration(startedAt: string | Date) {
   const m = Math.floor((diff % 3600) / 60);
   const s = diff % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function toDateTimeLocalValue(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function playPositiveCashOutCelebration() {
@@ -321,12 +346,14 @@ interface EditTableDialogProps {
     tournamentName?: string | null;
     gameType?: string | null;
     stakes?: string | null;
+    finalPosition?: number | null;
+    fieldSize?: number | null;
     notes?: string | null;
     startedAt: string | Date;
     endedAt?: string | Date | null;
   };
   venues: { id: number; name: string; logoUrl?: string | null }[];
-  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; clubName?: string; tournamentName?: string; stakes?: string; notes?: string }) => void;
+  onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY"; buyIn?: number; cashOut?: number | null; clubName?: string; tournamentName?: string; stakes?: string; finalPosition?: number; fieldSize?: number; notes?: string }) => void;
   onClose: () => void;
   isPending: boolean;
 }
@@ -342,15 +369,31 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
   const [buyIn, setBuyIn] = useState((table.buyIn / 100).toFixed(2));
   const [cashOut, setCashOut] = useState(table.cashOut != null ? (table.cashOut / 100).toFixed(2) : "");
   const [stakes, setStakes] = useState(table.stakes ?? "");
+  const [finalPosition, setFinalPosition] = useState(
+    typeof table.finalPosition === "number" && table.finalPosition > 0 ? String(table.finalPosition) : ""
+  );
+  const [fieldSize, setFieldSize] = useState(
+    typeof table.fieldSize === "number" && table.fieldSize > 0 ? String(table.fieldSize) : ""
+  );
   const [notes, setNotes] = useState(table.notes ?? "");
 
   const duration = calcTableDuration(table.startedAt, table.endedAt);
 
   function handleSave() {
-    const buyInCents = Math.round(parseFloat(buyIn) * 100);
-    const cashOutCents = cashOut !== "" ? Math.round(parseFloat(cashOut) * 100) : null;
+    const buyInCents = Math.round(parseFloat(buyIn.replace(",", ".")) * 100);
+    const cashOutCents = cashOut !== "" ? Math.round(parseFloat(cashOut.replace(",", ".")) * 100) : null;
+    const parsedFinalPosition = finalPosition.trim() ? parseInt(finalPosition, 10) : undefined;
+    const parsedFieldSize = fieldSize.trim() ? parseInt(fieldSize, 10) : undefined;
     if (isNaN(buyInCents) || buyInCents < 0) {
       toast.error("Buy-in inválido");
+      return;
+    }
+    if (parsedFinalPosition !== undefined && (!Number.isFinite(parsedFinalPosition) || parsedFinalPosition <= 0)) {
+      toast.error("Posição final inválida");
+      return;
+    }
+    if (parsedFieldSize !== undefined && (!Number.isFinite(parsedFieldSize) || parsedFieldSize <= 0)) {
+      toast.error("Total de jogadores inválido");
       return;
     }
     onSave({
@@ -363,6 +406,8 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
       clubName: clubName || undefined,
       tournamentName: tournamentName || undefined,
       stakes: stakes || undefined,
+      finalPosition: parsedFinalPosition,
+      fieldSize: parsedFieldSize,
       notes: notes || undefined,
     });
   }
@@ -452,12 +497,34 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Buy-in ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" step="0.01" min="0" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
+              <Input className="h-8 text-sm mt-1" type="number" step="0.5" min="0" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">Cash-out ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" step="0.01" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
+              <Input className="h-8 text-sm mt-1" type="number" step="0.5" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
             </div>
+          </div>
+          <div>
+            <Label className="text-xs">Posição final (opcional)</Label>
+            <Input
+              className="h-8 text-sm mt-1"
+              type="number"
+              min="1"
+              placeholder="Ex: 1"
+              value={finalPosition}
+              onChange={e => setFinalPosition(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Total de jogadores (opcional)</Label>
+            <Input
+              className="h-8 text-sm mt-1"
+              type="number"
+              min="1"
+              placeholder="Ex: 248"
+              value={fieldSize}
+              onChange={e => setFieldSize(e.target.value)}
+            />
           </div>
           <div>
             <Label className="text-xs">Stakes (ex: 1/2)</Label>
@@ -508,6 +575,8 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const [venueId, setVenueId] = useState("");
   const [buyIn, setBuyIn] = useState(defaultBuyIn);
   const [tournamentName, setTournamentName] = useState("");
+  const [finalPosition, setFinalPosition] = useState("");
+  const [fieldSize, setFieldSize] = useState("");
   const [gameType, setGameType] = useState("");
   const [stakes, setStakes] = useState("");
 
@@ -637,9 +706,19 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const buyInCents = Math.round(parseFloat(buyIn) * 100);
+    const buyInCents = Math.round(parseFloat(buyIn.replace(",", ".")) * 100);
+    const parsedFinalPosition = finalPosition.trim() ? parseInt(finalPosition, 10) : undefined;
+    const parsedFieldSize = fieldSize.trim() ? parseInt(fieldSize, 10) : undefined;
     if (isNaN(buyInCents) || buyInCents < 0) {
       toast.error("Buy-in inválido");
+      return;
+    }
+    if (parsedFinalPosition !== undefined && (!Number.isFinite(parsedFinalPosition) || parsedFinalPosition <= 0)) {
+      toast.error("Posição final inválida");
+      return;
+    }
+    if (parsedFieldSize !== undefined && (!Number.isFinite(parsedFieldSize) || parsedFieldSize <= 0)) {
+      toast.error("Total de jogadores inválido");
       return;
     }
     addTableMutation.mutate({
@@ -650,6 +729,8 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
       currency,
       buyIn: buyInCents,
       tournamentName: tournamentName || undefined,
+      finalPosition: parsedFinalPosition,
+      fieldSize: parsedFieldSize,
       gameType: gameType || undefined,
       stakes: stakes || undefined,
     });
@@ -773,7 +854,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
           <Label>Buy-in ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
           <Input
             type="number"
-            step="0.01"
+            step="0.5"
             min="0"
             placeholder="0,00"
             value={buyIn}
@@ -814,6 +895,28 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
         <Input placeholder="Ex: Sunday Million" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} />
       </div>
 
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Posição Final (opcional)</Label>
+        <Input
+          type="number"
+          min="1"
+          placeholder="Ex: 1"
+          value={finalPosition}
+          onChange={(e) => setFinalPosition(e.target.value)}
+        />
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Total de jogadores (opcional)</Label>
+        <Input
+          type="number"
+          min="1"
+          placeholder="Ex: 248"
+          value={fieldSize}
+          onChange={(e) => setFieldSize(e.target.value)}
+        />
+      </div>
+
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" disabled={addTableMutation.isPending}>
@@ -830,12 +933,22 @@ interface CashOutDialogProps {
   currency: string;
   buyIn: number;
   onClose: () => void;
+  onCashOutSaved?: (payload: {
+    tableId: number;
+    currency: string;
+    buyIn: number;
+    cashOut: number;
+    profit: number;
+  }) => void;
 }
 
-function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps) {
+function CashOutDialog({ tableId, currency, buyIn, onClose, onCashOutSaved }: CashOutDialogProps) {
   const utils = trpc.useUtils();
   const [cashOut, setCashOut] = useState("0");
+  const [finalPosition, setFinalPosition] = useState("");
+  const [fieldSize, setFieldSize] = useState("");
   const lastSubmittedProfitRef = useRef<number | null>(null);
+  const lastSubmittedCashOutRef = useRef<number | null>(null);
 
   const updateMutation = trpc.sessions.updateTable.useMutation({
     onSuccess: () => {
@@ -843,17 +956,28 @@ function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps
       if ((lastSubmittedProfitRef.current ?? 0) > 0) {
         playPositiveCashOutCelebration();
       }
+      if (typeof lastSubmittedCashOutRef.current === "number" && typeof lastSubmittedProfitRef.current === "number") {
+        onCashOutSaved?.({
+          tableId,
+          currency,
+          buyIn,
+          cashOut: lastSubmittedCashOutRef.current,
+          profit: lastSubmittedProfitRef.current,
+        });
+      }
+      lastSubmittedCashOutRef.current = null;
       lastSubmittedProfitRef.current = null;
       toast("Cash-out registrado!");
       onClose();
     },
     onError: (err) => {
+      lastSubmittedCashOutRef.current = null;
       lastSubmittedProfitRef.current = null;
       toast.error("Erro", { description: err.message });
     },
   });
 
-  const profit = Math.round(parseFloat(cashOut) * 100) - buyIn;
+  const profit = Math.round(parseFloat(cashOut.replace(",", ".")) * 100) - buyIn;
   const profitDisplay = formatCurrency(Math.abs(profit), currency);
 
   return (
@@ -862,11 +986,31 @@ function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps
         <Label>Cash-out ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
         <Input
           type="number"
-          step="0.01"
+          step="0.5"
           min="0"
           value={cashOut}
           onChange={(e) => setCashOut(e.target.value)}
           autoFocus
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>Posição final (opcional)</Label>
+        <Input
+          type="number"
+          min="1"
+          placeholder="Ex: 1"
+          value={finalPosition}
+          onChange={(e) => setFinalPosition(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>Total de jogadores (opcional)</Label>
+        <Input
+          type="number"
+          min="1"
+          placeholder="Ex: 248"
+          value={fieldSize}
+          onChange={(e) => setFieldSize(e.target.value)}
         />
       </div>
       {!isNaN(profit) && (
@@ -879,10 +1023,21 @@ function CashOutDialog({ tableId, currency, buyIn, onClose }: CashOutDialogProps
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
         <Button
           onClick={() => {
-            const cents = Math.round(parseFloat(cashOut) * 100);
+            const cents = Math.round(parseFloat(cashOut.replace(",", ".")) * 100);
+            const parsedFinalPosition = finalPosition.trim() ? parseInt(finalPosition, 10) : undefined;
+            const parsedFieldSize = fieldSize.trim() ? parseInt(fieldSize, 10) : undefined;
             if (isNaN(cents) || cents < 0) return;
+            if (parsedFinalPosition !== undefined && (!Number.isFinite(parsedFinalPosition) || parsedFinalPosition <= 0)) {
+              toast.error("Posição final inválida");
+              return;
+            }
+            if (parsedFieldSize !== undefined && (!Number.isFinite(parsedFieldSize) || parsedFieldSize <= 0)) {
+              toast.error("Total de jogadores inválido");
+              return;
+            }
+            lastSubmittedCashOutRef.current = cents;
             lastSubmittedProfitRef.current = cents - buyIn;
-            updateMutation.mutate({ id: tableId, cashOut: cents, endedAt: new Date() });
+            updateMutation.mutate({ id: tableId, cashOut: cents, finalPosition: parsedFinalPosition, fieldSize: parsedFieldSize, endedAt: new Date() });
           }}
           disabled={updateMutation.isPending}
         >
@@ -914,7 +1069,7 @@ function RebuyDialog({ tableId, currency, currentBuyIn, suggestedRebuy, onClose 
     onError: (err) => toast.error("Erro", { description: err.message }),
   });
 
-  const rebuyCents = Math.round(parseFloat(rebuy) * 100);
+  const rebuyCents = Math.round(parseFloat(rebuy.replace(",", ".")) * 100);
   const nextBuyIn = Number.isFinite(rebuyCents) && rebuyCents > 0 ? currentBuyIn + rebuyCents : currentBuyIn;
 
   return (
@@ -923,7 +1078,7 @@ function RebuyDialog({ tableId, currency, currentBuyIn, suggestedRebuy, onClose 
         <Label>Valor do Rebuy ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
         <Input
           type="number"
-          step="0.01"
+          step="0.5"
           min="0.01"
           value={rebuy}
           onChange={(e) => setRebuy(e.target.value)}
@@ -980,7 +1135,7 @@ function AddOnDialog({ tableId, currency, currentBuyIn, onClose }: AddOnDialogPr
     onError: (err) => toast.error("Erro", { description: err.message }),
   });
 
-  const addOnCents = Math.round(parseFloat(addOn) * 100);
+  const addOnCents = Math.round(parseFloat(addOn.replace(",", ".")) * 100);
   const nextBuyIn = Number.isFinite(addOnCents) && addOnCents > 0 ? currentBuyIn + addOnCents : currentBuyIn;
 
   return (
@@ -989,7 +1144,7 @@ function AddOnDialog({ tableId, currency, currentBuyIn, onClose }: AddOnDialogPr
         <Label>Valor do Add-on ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : "R$"})</Label>
         <Input
           type="number"
-          step="0.01"
+          step="0.5"
           min="0.01"
           value={addOn}
           onChange={(e) => setAddOn(e.target.value)}
@@ -1048,10 +1203,24 @@ interface ActiveSessionPanelProps {
       endedAt?: string | Date | null;
     }>;
   };
-  onFinalized: () => void;
+  onFinalized: (payload?: {
+    sessionId: number;
+    totalProfitCents: number;
+    completedTables: number;
+    shouldSuggestFeedPost: boolean;
+    notes?: string;
+  }) => void;
+  onSignificantTableCashOut?: (payload: {
+    sessionId: number;
+    tableId: number;
+    profitBrlCents: number;
+    platformName?: string;
+    profitText: string;
+    cashOutText: string;
+  }) => void;
 }
 
-function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
+function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }: ActiveSessionPanelProps) {
   const utils = trpc.useUtils();
   const [elapsed, setElapsed] = useState(formatDuration(session.startedAt));
   const [showAddTable, setShowAddTable] = useState(false);
@@ -1106,12 +1275,23 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
   });
 
   const finalizeMutation = trpc.sessions.finalize.useMutation({
-    onSuccess: () => {
+    onSuccess: (finalizedSession) => {
       utils.sessions.getActive.invalidate();
       utils.sessions.list.invalidate();
       utils.bankroll.getConsolidated.invalidate();
       toast("Sessão finalizada!", { description: "Resultado salvo com sucesso." });
-      onFinalized();
+      const profitCents = finalizedSession
+        ? (finalizedSession.cashOut - finalizedSession.buyIn)
+        : (typeof totalProfit === "number" ? totalProfit : 0);
+      const completedCount = completedTables.length > 0 ? completedTables.length : session.tables.length;
+      const shouldSuggestFeedPost = profitCents >= SIGNIFICANT_FEED_PROFIT_CENTS;
+      onFinalized({
+        sessionId: session.id,
+        totalProfitCents: profitCents,
+        completedTables: completedCount,
+        shouldSuggestFeedPost,
+        notes: finalNotes?.trim() || undefined,
+      });
     },
     onError: (err) => toast.error("Erro ao finalizar", { description: err.message }),
   });
@@ -1192,19 +1372,19 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
     <div className="space-y-4">
       {/* Session header */}
       <div className="bg-gradient-to-r from-primary/20 to-primary/5 border border-primary/30 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
             <span className="font-semibold text-sm">Sessão em andamento</span>
           </div>
-          <div className="flex items-center gap-2 font-mono text-lg font-bold text-primary">
+          <div className="flex items-center gap-2 font-mono text-base font-bold text-primary sm:text-lg">
             <Timer className="h-5 w-5" />
             {elapsed}
           </div>
         </div>
 
         {/* Totals */}
-        <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3 sm:gap-3">
           <div>
             <p className="text-xs text-muted-foreground">Buy-in total</p>
             <p className="font-semibold text-sm">R${(totalBuyIn / 100).toFixed(2)}</p>
@@ -1224,14 +1404,14 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
 
       {/* Premium hand counters */}
       <div className="rounded-xl border border-border/60 bg-card/40 p-3 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold">Contador de Mãos Premium</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
             <span className="text-xs text-muted-foreground">Marque direto na sessão</span>
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-xs"
+              className="h-8 px-3 text-xs w-full sm:w-auto"
               onClick={handleUndoLastHandAction}
               disabled={!lastHandStatsSnapshot || registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
             >
@@ -1251,11 +1431,11 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                 <p className="text-xs font-semibold">{item.label}</p>
                 <p className="text-[11px] text-muted-foreground">Total: {item.hands}</p>
               </div>
-              <div className="flex items-center gap-2 mt-2">
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:flex sm:items-center">
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 px-2 text-xs text-emerald-600 border-emerald-500/40 hover:bg-emerald-500/10"
+                  className="h-8 px-3 text-xs text-emerald-600 border-emerald-500/40 hover:bg-emerald-500/10 w-full sm:w-auto"
                   onClick={() => handleRegisterHandResult(item.key, "win")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
@@ -1264,7 +1444,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 px-2 text-xs text-red-600 border-red-500/40 hover:bg-red-500/10"
+                  className="h-8 px-3 text-xs text-red-600 border-red-500/40 hover:bg-red-500/10 w-full sm:w-auto"
                   onClick={() => handleRegisterHandResult(item.key, "loss")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
@@ -1278,9 +1458,9 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
 
       {/* Tables list */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold">Mesas ({session.tables.length})</h3>
-          <Button size="sm" variant="outline" onClick={() => setShowAddTable(true)}>
+          <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setShowAddTable(true)}>
             <Plus className="h-4 w-4 mr-1" /> Adicionar Mesa
           </Button>
         </div>
@@ -1299,7 +1479,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
             const profit = isFinished ? (table.cashOut ?? 0) - table.buyIn : null;
 
             return (
-              <div key={table.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isFinished ? "border-border bg-muted/20" : "border-primary/20 bg-primary/5"}`}>
+              <div key={table.id} className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg border ${isFinished ? "border-border bg-muted/20" : "border-primary/20 bg-primary/5"}`}>
                 {/* Venue logo */}
                 <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {venue?.logoUrl ? (
@@ -1310,8 +1490,8 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                 </div>
 
                 {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0 w-full">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium truncate">{venue?.name ?? (table.type === "online" ? "Online" : "Live")}</span>
                     <Badge variant="outline" className="text-xs shrink-0">{fmt?.label ?? table.gameFormat}</Badge>
                     {table.type === "online" ? (
@@ -1320,7 +1500,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                       <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
                     )}
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
                     <span className="text-xs text-muted-foreground">
                       Buy-in: {formatCurrency(table.buyIn, table.currency)}
                     </span>
@@ -1345,12 +1525,13 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="w-full sm:w-auto shrink-0 space-y-2">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
                   {isFinished && (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-xs h-7 px-2"
+                      className="text-[13px] h-9 px-3 w-full whitespace-normal sm:w-auto sm:whitespace-nowrap"
                       onClick={() => replayTableMutation.mutate({
                         activeSessionId: session.id,
                         venueId: table.venueId ?? undefined,
@@ -1373,7 +1554,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-xs h-7 px-2"
+                      className="text-[13px] h-9 px-3 w-full whitespace-normal sm:w-auto sm:whitespace-nowrap"
                       onClick={() => setRebuyTableId(table.id)}
                     >
                       <Plus className="h-3 w-3 mr-1" /> Rebuy
@@ -1383,7 +1564,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-xs h-7 px-2"
+                      className="text-[13px] h-9 px-3 w-full whitespace-normal sm:w-auto sm:whitespace-nowrap"
                       onClick={() => setAddOnTableId(table.id)}
                     >
                       <Sparkles className="h-3 w-3 mr-1" /> Add-on
@@ -1393,28 +1574,31 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-xs h-7 px-2"
+                      className="text-[13px] h-9 px-3 w-full whitespace-normal sm:w-auto sm:whitespace-nowrap"
                       onClick={() => setCashOutTableId(table.id)}
                     >
                       <CheckCircle className="h-3 w-3 mr-1" /> Cash-out
                     </Button>
                   )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                    className="h-9 w-9 p-0 text-muted-foreground hover:text-primary"
                     onClick={() => setEditTableId(table.id)}
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit2 className="h-4 w-4" />
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                    className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
                     onClick={() => removeMutation.mutate({ id: table.id })}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
+                  </div>
                 </div>
               </div>
             );
@@ -1423,7 +1607,7 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
       </div>
 
       {/* Session actions */}
-      <div className="flex gap-2 pt-2">
+      <div className="flex flex-col gap-2 pt-2 sm:flex-row">
         <Button
           variant="outline"
           className="flex-1 text-destructive border-destructive/30 hover:bg-destructive/10"
@@ -1515,6 +1699,29 @@ function ActiveSessionPanel({ session, onFinalized }: ActiveSessionPanelProps) {
               tableId={cashOutTable.id}
               currency={cashOutTable.currency}
               buyIn={cashOutTable.buyIn}
+              onCashOutSaved={({ tableId, profit, cashOut, currency }) => {
+                const profitBrlCents = convertToBrlCents(profit, currency, fxRates);
+                const sourceTable = session.tables.find((t) => t.id === tableId);
+                const buyInBrlCents = sourceTable
+                  ? convertToBrlCents(sourceTable.buyIn, sourceTable.currency, fxRates)
+                  : 0;
+
+                if (isSignificantGain(profitBrlCents, buyInBrlCents)) {
+                  const sourceTable = session.tables.find((t) => t.id === tableId);
+                  const venueName = sourceTable?.venueId
+                    ? venues?.find((v) => v.id === sourceTable.venueId)?.name
+                    : undefined;
+                  const platformName = venueName || sourceTable?.clubName?.trim();
+                  onSignificantTableCashOut?.({
+                    sessionId: session.id,
+                    tableId,
+                    profitBrlCents,
+                    platformName,
+                    profitText: formatCurrency(profit, currency),
+                    cashOutText: formatCurrency(cashOut, currency),
+                  });
+                }
+              }}
               onClose={() => setCashOutTableId(null)}
             />
           )}
@@ -1635,6 +1842,16 @@ function SessionCard({ session }: { session: any }) {
   const [editVenueId, setEditVenueId] = useState(session.venueId?.toString() ?? "");
   const [editBuyIn, setEditBuyIn] = useState(session.buyIn != null ? (session.buyIn / 100).toFixed(2) : "");
   const [editCashOut, setEditCashOut] = useState(session.cashOut != null ? (session.cashOut / 100).toFixed(2) : "");
+  const [editTournamentName, setEditTournamentName] = useState((session.primaryTournamentName ?? session.tournamentName ?? "").trim());
+  const [editSessionDate, setEditSessionDate] = useState(toDateTimeLocalValue(session.sessionDate));
+  const [editFinalPosition, setEditFinalPosition] = useState(
+    typeof session.finalPosition === "number" && session.finalPosition > 0
+      ? String(session.finalPosition)
+      : ""
+  );
+  const [editFieldSize, setEditFieldSize] = useState(
+    typeof session.fieldSize === "number" && session.fieldSize > 0 ? String(session.fieldSize) : ""
+  );
 
   const isLegacySession = (session.tableCount ?? 0) === 0;
 
@@ -1704,34 +1921,50 @@ function SessionCard({ session }: { session: any }) {
   const venueBadgeText = tournamentTitle || fallbackVenueText;
 
   function handleSaveEdit() {
-    if (isLegacySession) {
-      const buyInCents = editBuyIn ? Math.round(parseFloat(editBuyIn) * 100) : undefined;
-      const cashOutCents = editCashOut !== "" ? Math.round(parseFloat(editCashOut) * 100) : undefined;
-      updateMutation.mutate({
-        id: session.id,
-        notes: editNotes || undefined,
-        type: editType,
-        gameFormat: editGameFormat as any,
-        currency: editCurrency as any,
-        venueId: editVenueId ? parseInt(editVenueId) : undefined,
-        buyIn: buyInCents,
-        cashOut: cashOutCents,
-      });
-    } else {
-      updateMutation.mutate({
-        id: session.id,
-        notes: editNotes || undefined,
-      });
+    const parsedSessionDate = editSessionDate ? new Date(editSessionDate) : undefined;
+    const parsedFinalPosition = editFinalPosition.trim() ? parseInt(editFinalPosition, 10) : undefined;
+    const parsedFieldSize = editFieldSize.trim() ? parseInt(editFieldSize, 10) : undefined;
+
+    if (editSessionDate && (!parsedSessionDate || Number.isNaN(parsedSessionDate.getTime()))) {
+      toast.error("Data da sessão inválida.");
+      return;
     }
+
+    if (parsedFinalPosition !== undefined && (!Number.isFinite(parsedFinalPosition) || parsedFinalPosition <= 0)) {
+      toast.error("Posição final inválida.");
+      return;
+    }
+    if (parsedFieldSize !== undefined && (!Number.isFinite(parsedFieldSize) || parsedFieldSize <= 0)) {
+      toast.error("Total de jogadores inválido.");
+      return;
+    }
+
+    const buyInCents = editBuyIn ? Math.round(parseFloat(editBuyIn.replace(",", ".")) * 100) : undefined;
+    const cashOutCents = editCashOut !== "" ? Math.round(parseFloat(editCashOut.replace(",", ".")) * 100) : undefined;
+    updateMutation.mutate({
+      id: session.id,
+      notes: editNotes || undefined,
+      type: editType,
+      gameFormat: editGameFormat as any,
+      currency: editCurrency as any,
+      venueId: editVenueId ? parseInt(editVenueId) : undefined,
+      buyIn: buyInCents,
+      cashOut: cashOutCents,
+      tournamentName: editTournamentName.trim() || undefined,
+      sessionDate: parsedSessionDate,
+      finalPosition: parsedFinalPosition,
+      fieldSize: parsedFieldSize,
+    });
   }
 
   return (
     <>
     <Card className="overflow-hidden">
       <div
-        className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/20 transition-colors"
+        className="p-4 cursor-pointer hover:bg-muted/20 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
+        <div className="flex items-start gap-3">
         <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-lg shrink-0 ${profit >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
           {venueLogoUrl ? (
             <img src={venueLogoUrl} alt={venueName ?? ""} className="h-8 w-8 rounded object-contain" />
@@ -1778,40 +2011,44 @@ function SessionCard({ session }: { session: any }) {
             )}
           </div>
         </div>
-        <div className="text-right shrink-0">
-          <p className={`font-semibold text-sm ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
-            {profit >= 0 ? "+" : ""}R${(profit / 100).toFixed(2)}
-          </p>
-          <p className="text-xs text-muted-foreground">{profitPct}% ROI</p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0"
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing(true);
-            }}
-            title="Editar sessão"
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDeleteConfirm(true);
-            }}
-            disabled={deleteMutation.isPending}
-            title="Excluir sessão"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/40 pt-3 sm:mt-0 sm:border-t-0 sm:pt-0">
+          <div className="text-left sm:ml-auto sm:text-right shrink-0">
+            <p className={`font-semibold text-sm ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {profit >= 0 ? "+" : ""}R${(profit / 100).toFixed(2)}
+            </p>
+            <p className="text-xs text-muted-foreground">{profitPct}% ROI</p>
+          </div>
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+              title="Editar sessão"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDeleteConfirm(true);
+              }}
+              disabled={deleteMutation.isPending}
+              title="Excluir sessão"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+            {expanded ? <ChevronUp className="ml-1 h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="ml-1 h-4 w-4 text-muted-foreground shrink-0" />}
+          </div>
         </div>
-        {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
       </div>
 
       {expanded && (
@@ -2003,8 +2240,8 @@ function SessionCard({ session }: { session: any }) {
             </div>
           )}
 
-          {/* Sessões legadas (sem mesas): edição completa dos campos da sessão */}
-          {isLegacySession && (
+          {/* Edição completa dos campos da sessão */}
+          {(
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -2075,7 +2312,7 @@ function SessionCard({ session }: { session: any }) {
                   <Input
                     className="h-8 text-sm mt-1"
                     type="number"
-                    step="0.01"
+                    step="0.5"
                     min="0"
                     value={editBuyIn}
                     onChange={e => setEditBuyIn(e.target.value)}
@@ -2086,15 +2323,58 @@ function SessionCard({ session }: { session: any }) {
                   <Input
                     className="h-8 text-sm mt-1"
                     type="number"
-                    step="0.01"
+                    step="0.5"
                     min="0"
                     value={editCashOut}
                     onChange={e => setEditCashOut(e.target.value)}
                   />
                 </div>
               </div>
+              <div>
+                <Label className="text-xs">Nome do Torneio</Label>
+                <Input
+                  className="h-8 text-sm mt-1"
+                  value={editTournamentName}
+                  onChange={e => setEditTournamentName(e.target.value)}
+                  placeholder="Ex: Sunday Million"
+                />
+              </div>
             </>
           )}
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs">Data do torneio</Label>
+              <Input
+                className="h-8 text-sm mt-1"
+                type="datetime-local"
+                value={editSessionDate}
+                onChange={e => setEditSessionDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Posição final</Label>
+              <Input
+                className="h-8 text-sm mt-1"
+                type="number"
+                min="1"
+                placeholder="Ex: 1"
+                value={editFinalPosition}
+                onChange={e => setEditFinalPosition(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Total jogadores</Label>
+              <Input
+                className="h-8 text-sm mt-1"
+                type="number"
+                min="1"
+                placeholder="Ex: 248"
+                value={editFieldSize}
+                onChange={e => setEditFieldSize(e.target.value)}
+              />
+            </div>
+          </div>
 
           <div>
             <Label className="text-xs">Notas</Label>
@@ -2136,12 +2416,16 @@ function SessionCard({ session }: { session: any }) {
 // ─── Main Sessions Page ────────────────────────────────────────────────────────
 export default function Sessions() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { preferences: prefs, playTypeOrder, sortFormats, sortVenues, primaryType } = useBehaviorProfile();
   const [activeSection, setActiveSection] = useState<"history" | "import">("history");
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<"all" | "online" | "live">("all");
+  const [historyTournamentFilter, setHistoryTournamentFilter] = useState("");
   const [importRawText, setImportRawText] = useState("");
   const [importCurrencyMode, setImportCurrencyMode] = useState<"auto" | "BRL" | "USD" | "CAD" | "JPY" | "CNY">("auto");
   const [importTypeMode, setImportTypeMode] = useState<"auto" | "online" | "live">("auto");
+  const [importResult, setImportResult] = useState<{ imported: number; failures: string[] } | null>(null);
   const [showDeleteHistoryConfirm, setShowDeleteHistoryConfirm] = useState(false);
   const [showPlayStyleOnboarding, setShowPlayStyleOnboarding] = useState(false);
   const [selectedPlayStyle, setSelectedPlayStyle] = useState<"online" | "live">(primaryType);
@@ -2154,6 +2438,14 @@ export default function Sessions() {
   const [showInFriendsRanking, setShowInFriendsRanking] = useState<boolean>(false);
   const [rankingConsentTouched, setRankingConsentTouched] = useState<boolean>(false);
   const [moneyRainVisible, setMoneyRainVisible] = useState(false);
+  const [showFeedPublishDialog, setShowFeedPublishDialog] = useState(false);
+  const [feedPublishContent, setFeedPublishContent] = useState("");
+  const [feedPublishVisibility, setFeedPublishVisibility] = useState<"public" | "friends">("public");
+  const [feedPublishSessionId, setFeedPublishSessionId] = useState<number | null>(null);
+  const [feedImagePreview, setFeedImagePreview] = useState<string | null>(null);
+  const [feedImageBase64, setFeedImageBase64] = useState<string | null>(null);
+  const [feedImageMime, setFeedImageMime] = useState("image/jpeg");
+  const feedImageInputRef = useRef<HTMLInputElement>(null);
 
   const { data: activeSession, isLoading: loadingActive } = trpc.sessions.getActive.useQuery(undefined, {
     refetchInterval: 5000, // poll every 5s to keep timer in sync
@@ -2188,6 +2480,23 @@ export default function Sessions() {
     onError: (err) => toast.error("Falha ao analisar texto", { description: err.message }),
   });
 
+  const uploadFeedImageMutation = trpc.upload.postImage.useMutation();
+  const createFeedPostMutation = trpc.feed.create.useMutation({
+    onSuccess: () => {
+      utils.feed.list.invalidate();
+      toast.success("Post publicado no feed!");
+      setShowFeedPublishDialog(false);
+      setFeedPublishContent("");
+      setFeedPublishSessionId(null);
+      setFeedImagePreview(null);
+      setFeedImageBase64(null);
+      setFeedImageMime("image/jpeg");
+    },
+    onError: (err) => {
+      toast.error("Erro ao publicar no feed", { description: err.message });
+    },
+  });
+
   const importFromTextMutation = trpc.sessions.importFromText.useMutation({
     onSuccess: (result) => {
       utils.sessions.list.invalidate();
@@ -2196,10 +2505,17 @@ export default function Sessions() {
       utils.venues.statsByVenue.invalidate();
       utils.bankroll.getConsolidated.invalidate();
       utils.bankroll.getCurrent.invalidate();
-      toast.success("Importação concluída", { description: result.message });
-      setImportRawText("");
-      importPreviewMutation.reset();
-      setActiveSection("history");
+      setImportResult({ imported: result.imported, failures: result.failures ?? [] });
+      if ((result.failures ?? []).length === 0) {
+        toast.success("Importação concluída", { description: result.message });
+        setImportRawText("");
+        importPreviewMutation.reset();
+        setActiveSection("history");
+      } else {
+        toast.warning("Importação parcial", { description: result.message });
+        setImportRawText("");
+        importPreviewMutation.reset();
+      }
     },
     onError: (err) => toast.error("Falha ao importar", { description: err.message }),
   });
@@ -2324,13 +2640,127 @@ export default function Sessions() {
     });
   }, [selectedFormats, sortFormats]);
 
-  const totalProfit = sessions?.reduce((s, sess) => {
+  const processFeedImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Somente imagens são suportadas.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Imagem muito grande (máx. 5MB).");
+      return;
+    }
+    setFeedImageMime(file.type);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      setFeedImagePreview(result);
+      setFeedImageBase64(result.split(",")[1]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openFeedPromptFromWin = (payload: {
+    sessionId: number;
+    totalProfitCents: number;
+    completedTables: number;
+    notes?: string;
+  }) => {
+    const gainText = formatCurrency(payload.totalProfitCents, "BRL");
+    const tableText = `${payload.completedTables} mesa${payload.completedTables === 1 ? "" : "s"}`;
+    const base = `Acabei de fechar uma sessão com lucro de +${gainText} em ${tableText}! 🔥`;
+    const notes = payload.notes?.trim();
+    const draft = notes ? `${base}\n\n${notes}` : base;
+
+    setFeedPublishSessionId(payload.sessionId);
+    setFeedPublishContent(draft);
+    setFeedPublishVisibility("public");
+    setFeedImagePreview(null);
+    setFeedImageBase64(null);
+    setFeedImageMime("image/jpeg");
+    setShowFeedPublishDialog(true);
+  };
+
+  const openFeedPromptFromTableCashOut = (payload: {
+    sessionId: number;
+    tableId: number;
+    profitBrlCents: number;
+    platformName?: string;
+    profitText: string;
+    cashOutText: string;
+  }) => {
+    const platform = payload.platformName?.trim() || "plataforma não identificada";
+    const draft = `Acabei de fechar uma mesa na ${platform} com lucro de +${payload.profitText}. Cash-out: ${payload.cashOutText}.`;
+
+    setFeedPublishSessionId(payload.sessionId);
+    setFeedPublishContent(draft);
+    setFeedPublishVisibility("public");
+    setFeedImagePreview(null);
+    setFeedImageBase64(null);
+    setFeedImageMime("image/jpeg");
+    setShowFeedPublishDialog(true);
+  };
+
+  const handlePublishWinToFeed = async () => {
+    const trimmedContent = feedPublishContent.trim();
+    if (!trimmedContent && !feedImageBase64) {
+      toast.error("Escreva algo ou anexe uma foto para publicar.");
+      return;
+    }
+
+    let imageUrl: string | undefined;
+    let imageKey: string | undefined;
+
+    if (feedImageBase64) {
+      try {
+        const uploaded = await uploadFeedImageMutation.mutateAsync({
+          base64: feedImageBase64,
+          mimeType: feedImageMime,
+        });
+        imageUrl = uploaded.url;
+        imageKey = uploaded.key;
+      } catch (error: any) {
+        const message = error?.message || "Falha ao enviar imagem.";
+        if (trimmedContent) {
+          toast.warning(`${message} Publicando somente o texto.`);
+          setFeedImagePreview(null);
+          setFeedImageBase64(null);
+          if (feedImageInputRef.current) feedImageInputRef.current.value = "";
+        } else {
+          toast.error(message);
+          return;
+        }
+      }
+    }
+
+    createFeedPostMutation.mutate({
+      content: trimmedContent,
+      visibility: feedPublishVisibility,
+      imageUrl,
+      imageKey,
+      sessionId: feedPublishSessionId ?? undefined,
+    });
+  };
+
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return [];
+    return sessions.filter((s) => {
+      if (historyTypeFilter !== "all" && s.type !== historyTypeFilter) return false;
+      if (historyTournamentFilter.trim()) {
+        const q = historyTournamentFilter.trim().toLowerCase();
+        const name = ((s as any).primaryTournamentName || s.tournamentName || "").toLowerCase();
+        if (!name.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [sessions, historyTypeFilter, historyTournamentFilter]);
+
+  const totalProfit = filteredSessions.reduce((s, sess) => {
     const tableProfit = (sess as any).totalTableProfit;
     return s + (typeof tableProfit === "number" ? tableProfit : (sess.cashOut - sess.buyIn));
   }, 0) ?? 0;
-  const totalSessions = sessions?.length ?? 0;
+  const totalSessions = filteredSessions.length;
   const winRate = totalSessions > 0
-    ? ((sessions?.filter((s) => {
+    ? ((filteredSessions.filter((s) => {
         const tableProfit = (s as any).totalTableProfit;
         const profit = typeof tableProfit === "number" ? tableProfit : (s.cashOut - s.buyIn);
         return profit > 0;
@@ -2340,24 +2770,24 @@ export default function Sessions() {
   const shouldBlockSessionStart = needsPlayStyleOnboarding || needsRankingConsentOnboarding;
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl mx-auto">
+    <div className="p-3 sm:p-6 space-y-6 max-w-2xl mx-auto">
       {moneyRainVisible && <MoneyRainOverlay onDone={() => setMoneyRainVisible(false)} />}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Sessões</h1>
           <p className="text-sm text-muted-foreground">Gerencie suas sessões de poker</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => setShowPlayStyleOnboarding(true)}>
+        <div className="grid grid-cols-1 sm:flex items-stretch sm:items-center gap-2 w-full sm:w-auto">
+          <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setShowPlayStyleOnboarding(true)}>
             Configurar ABI
           </Button>
           {!activeSession && (
             <Button
               onClick={() => startMutation.mutate({})}
               disabled={startMutation.isPending}
-              className="gap-2"
+              className="gap-2 w-full sm:w-auto"
             >
               <Timer className="h-4 w-4" />
               {startMutation.isPending ? "Iniciando..." : "Nova Sessão"}
@@ -2366,12 +2796,12 @@ export default function Sessions() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
         <Button
           type="button"
           variant={activeSection === "history" ? "default" : "outline"}
           onClick={() => setActiveSection("history")}
-          className="gap-2"
+          className="gap-2 w-full sm:w-auto"
         >
           <BarChart2 className="h-4 w-4" /> Histórico
         </Button>
@@ -2379,7 +2809,7 @@ export default function Sessions() {
           type="button"
           variant={activeSection === "import" ? "default" : "outline"}
           onClick={() => setActiveSection("import")}
-          className="gap-2"
+          className="gap-2 w-full sm:w-auto"
         >
           <Sparkles className="h-4 w-4" /> Importação IA
         </Button>
@@ -2387,7 +2817,7 @@ export default function Sessions() {
 
       {/* Stats bar */}
       {totalSessions > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Card>
             <CardContent className="p-3 text-center">
               <p className="text-xs text-muted-foreground">Resultado Total</p>
@@ -2425,7 +2855,10 @@ export default function Sessions() {
           <CardContent>
             <ActiveSessionPanel
               session={activeSession as any}
-              onFinalized={() => utils.sessions.list.invalidate()}
+              onFinalized={(payload) => {
+                utils.sessions.list.invalidate();
+              }}
+              onSignificantTableCashOut={openFeedPromptFromTableCashOut}
             />
           </CardContent>
         </Card>
@@ -2442,6 +2875,97 @@ export default function Sessions() {
           </Button>
         </div>
       )}
+
+      <Dialog open={showFeedPublishDialog} onOpenChange={setShowFeedPublishDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-amber-500" /> Ganho significativo! Publicar no feed?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Seu lucro foi considerado relevante com base no valor ganho e no ROI da mesa. Você pode postar agora para alimentar o feed.
+            </p>
+
+            <Textarea
+              value={feedPublishContent}
+              onChange={(e) => setFeedPublishContent(e.target.value)}
+              placeholder="Conte como foi a sessão..."
+              rows={4}
+              className="text-sm"
+              maxLength={1000}
+            />
+
+            {feedImagePreview && (
+              <div className="relative inline-block">
+                <img src={feedImagePreview} alt="Pré-visualização" className="max-h-48 rounded-lg object-cover" />
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="absolute top-1 right-1 h-6 w-6"
+                  onClick={() => {
+                    setFeedImagePreview(null);
+                    setFeedImageBase64(null);
+                    if (feedImageInputRef.current) feedImageInputRef.current.value = "";
+                  }}
+                >
+                  <XCircle className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={feedImageInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) processFeedImageFile(file);
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => feedImageInputRef.current?.click()}
+              >
+                <ImagePlus className="h-4 w-4" /> Tirar/Anexar foto
+              </Button>
+
+              <Select value={feedPublishVisibility} onValueChange={(v) => setFeedPublishVisibility(v as "public" | "friends") }>
+                <SelectTrigger className="h-9 w-[130px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Público</SelectItem>
+                  <SelectItem value="friends">Amigos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button variant="ghost" onClick={() => setShowFeedPublishDialog(false)}>Agora não</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => { setShowFeedPublishDialog(false); setLocation("/feed"); }}>
+                Ir para Feed
+              </Button>
+              <Button
+                onClick={handlePublishWinToFeed}
+                disabled={createFeedPostMutation.isPending || uploadFeedImageMutation.isPending || (!feedPublishContent.trim() && !feedImageBase64)}
+                className="gap-1.5"
+              >
+                <Send className="h-4 w-4" />
+                {createFeedPostMutation.isPending || uploadFeedImageMutation.isPending ? "Publicando..." : "Publicar"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showPlayStyleOnboarding} onOpenChange={setShowPlayStyleOnboarding}>
         <DialogContent className="max-w-xl">
@@ -2648,6 +3172,48 @@ export default function Sessions() {
             </div>
           ) : sessions && sessions.length > 0 ? (
             <div className="space-y-3">
+              {/* Filter bar */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {(["all", "online", "live"] as const).map((t) => (
+                    <Button
+                      key={t}
+                      type="button"
+                      size="sm"
+                      variant={historyTypeFilter === t ? "default" : "outline"}
+                      className="h-7 px-2.5 text-xs gap-1"
+                      onClick={() => setHistoryTypeFilter(t)}
+                    >
+                      {t === "online" ? <Wifi className="h-3 w-3" /> : t === "live" ? <MapPin className="h-3 w-3" /> : null}
+                      {t === "all" ? "Todos" : t === "online" ? "Online" : "Live"}
+                    </Button>
+                  ))}
+                  <div className="relative flex-1 min-w-[160px]">
+                    <Input
+                      type="text"
+                      placeholder="Filtrar por torneio..."
+                      value={historyTournamentFilter}
+                      onChange={(e) => setHistoryTournamentFilter(e.target.value)}
+                      className="h-7 text-xs pl-2 pr-7"
+                    />
+                    {historyTournamentFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setHistoryTournamentFilter("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {(historyTypeFilter !== "all" || historyTournamentFilter) && (
+                  <p className="text-xs text-muted-foreground">
+                    Mostrando {filteredSessions.length} de {sessions.length} sessão(ões)
+                    {historyTournamentFilter ? ` • torneio: "${historyTournamentFilter}"` : ""}
+                  </p>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Histórico</h2>
                 <Button
@@ -2660,9 +3226,23 @@ export default function Sessions() {
                   <Trash2 className="h-3.5 w-3.5" /> Excluir tudo
                 </Button>
               </div>
-              {sessions.map((session) => (
-                <SessionCard key={session.id} session={session} />
-              ))}
+              {filteredSessions.length > 0 ? (
+                filteredSessions.map((session) => (
+                  <SessionCard key={session.id} session={session} />
+                ))
+              ) : (
+                <div className="text-center py-6 text-muted-foreground text-sm border border-dashed border-border rounded-xl">
+                  <Trophy className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  <p>Nenhuma sessão encontrada para este filtro.</p>
+                  <button
+                    type="button"
+                    className="mt-2 text-xs text-primary underline"
+                    onClick={() => { setHistoryTypeFilter("all"); setHistoryTournamentFilter(""); }}
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
+              )}
             </div>
           ) : !activeSession ? (
             <div className="text-center py-6 text-muted-foreground text-sm">
@@ -2736,52 +3316,127 @@ export default function Sessions() {
                 type="button"
                 variant="outline"
                 disabled={importRawText.trim().length < 10 || importPreviewMutation.isPending}
-                onClick={() => importPreviewMutation.mutate({
-                  rawText: importRawText,
-                  currencyMode: importCurrencyMode,
-                  typeMode: importTypeMode,
-                })}
+                onClick={() => {
+                  setImportResult(null);
+                  importPreviewMutation.mutate({
+                    rawText: importRawText,
+                    currencyMode: importCurrencyMode,
+                    typeMode: importTypeMode,
+                  });
+                }}
               >
                 {importPreviewMutation.isPending ? "Analisando..." : "Analisar"}
               </Button>
               <Button
                 type="button"
-                disabled={!importPreviewMutation.data || importFromTextMutation.isPending}
+                disabled={!importPreviewMutation.data || importFromTextMutation.isPending || (importPreviewMutation.data as any)?.readyToImport === 0}
                 onClick={() => importFromTextMutation.mutate({
                   rawText: importRawText,
                   currencyMode: importCurrencyMode,
                   typeMode: importTypeMode,
                 })}
               >
-                {importFromTextMutation.isPending ? "Importando..." : "Importar para DB"}
+                {importFromTextMutation.isPending ? "Importando..." : `Importar${importPreviewMutation.data ? ` (${(importPreviewMutation.data as any).readyToImport} ok)` : ""}`}
               </Button>
             </div>
 
+            {/* Post-import failure report */}
+            {importResult && importResult.failures.length > 0 && (
+              <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+                  <p className="text-sm font-semibold text-red-400">
+                    {importResult.imported} importado(s) · {importResult.failures.length} não salvos
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">As entradas abaixo não foram salvas. Corrija e reimporte se necessário.</p>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {importResult.failures.map((f, i) => (
+                    <p key={i} className="text-xs text-red-300 font-mono bg-red-500/10 rounded px-2 py-1">• {f}</p>
+                  ))}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs h-6"
+                  onClick={() => setImportResult(null)}
+                >
+                  Dispensar
+                </Button>
+              </div>
+            )}
+
             {importPreviewMutation.data && (
               <div className="space-y-3">
-                <div className="text-sm">
-                  <p><span className="font-medium">Detectados:</span> {importPreviewMutation.data.totalDetected}</p>
-                  <p><span className="font-medium">Prontos para importar:</span> {importPreviewMutation.data.readyToImport}</p>
+                {/* Summary counts */}
+                <div className="flex gap-3 flex-wrap text-sm">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                    <span className="font-medium text-emerald-400">{(importPreviewMutation.data as any).readyToImport}</span>
+                    <span className="text-muted-foreground">prontos</span>
+                  </span>
+                  {(importPreviewMutation.data as any).willFailCount > 0 && (
+                    <span className="flex items-center gap-1">
+                      <XCircle className="h-3.5 w-3.5 text-red-400" />
+                      <span className="font-medium text-red-400">{(importPreviewMutation.data as any).willFailCount}</span>
+                      <span className="text-muted-foreground">com erro (não serão importados)</span>
+                    </span>
+                  )}
                 </div>
 
-                {importPreviewMutation.data.warnings.length > 0 && (
-                  <div className="rounded-md border border-amber-500/40 bg-amber-50/40 p-3 text-xs space-y-1">
-                    <p className="font-medium text-amber-900">Avisos de validação</p>
-                    {importPreviewMutation.data.warnings.slice(0, 8).map((warning, idx) => (
-                      <p key={idx} className="text-amber-900">• {warning}</p>
+                {/* Critical errors (venue not found etc.) */}
+                {(importPreviewMutation.data as any).errors?.length > 0 && (
+                  <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+                      <p className="text-xs font-semibold text-red-400">Erros — entradas que NÃO serão importadas</p>
+                    </div>
+                    {(importPreviewMutation.data as any).errors.map((e: string, idx: number) => (
+                      <p key={idx} className="text-xs text-red-300">• {e}</p>
                     ))}
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  {importPreviewMutation.data.items.slice(0, 8).map((item, idx) => (
-                    <div key={idx} className="text-xs rounded-md border bg-muted/20 p-2 space-y-0.5">
-                      <p className="font-medium">{new Date(item.sessionDate).toLocaleDateString("pt-BR")} · {item.venueName}</p>
-                      <p className="text-muted-foreground">
+                {/* Non-critical warnings */}
+                {(importPreviewMutation.data as any).warnings?.length > 0 && (
+                  <div className="rounded-md border border-amber-500/40 bg-amber-50/10 p-3 space-y-1">
+                    <p className="text-xs font-semibold text-amber-400 mb-1">Avisos (serão importados mesmo assim)</p>
+                    {(importPreviewMutation.data as any).warnings.slice(0, 8).map((w: string, idx: number) => (
+                      <p key={idx} className="text-xs text-amber-300">• {w}</p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Item list */}
+                <div className="space-y-1.5">
+                  {importPreviewMutation.data.items.slice(0, 12).map((item: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className={`text-xs rounded-md border p-2 space-y-0.5 ${item.willFail ? "border-red-500/40 bg-red-500/10" : "border-border bg-muted/20"}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {item.willFail
+                          ? <XCircle className="h-3 w-3 text-red-400 shrink-0" />
+                          : <CheckCircle className="h-3 w-3 text-emerald-400 shrink-0" />
+                        }
+                        <p className={`font-medium truncate ${item.willFail ? "text-red-300 line-through" : ""}`}>
+                          {new Date(item.sessionDate).toLocaleDateString("pt-BR")} · {item.venueName}
+                        </p>
+                      </div>
+                      <p className="text-muted-foreground pl-5">
                         {item.type === "online" ? "Online" : "Live"} · {item.gameFormat} · {formatCurrency(item.buyIn, item.currency)} / {formatCurrency(item.cashOut, item.currency)} · {formatMinutes(item.durationMinutes)}
                       </p>
+                      {item.errors?.map((e: string, i: number) => (
+                        <p key={i} className="text-red-300 pl-5">⚠ {e}</p>
+                      ))}
                     </div>
                   ))}
+                  {importPreviewMutation.data.items.length > 12 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      +{importPreviewMutation.data.items.length - 12} entradas não exibidas
+                    </p>
+                  )}
                 </div>
               </div>
             )}

@@ -457,6 +457,8 @@ export const appRouter = router({
         gameType: z.string().optional(),
         stakes: z.string().optional(),
         tournamentName: z.string().max(160).optional(),
+        finalPosition: z.number().int().positive().max(999999).optional(),
+        fieldSize: z.number().int().positive().max(999999).optional(),
         location: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -498,6 +500,8 @@ export const appRouter = router({
           gameType: input.gameType,
           stakes: input.stakes,
           tournamentName: input.tournamentName,
+          finalPosition: input.finalPosition,
+          fieldSize: input.fieldSize,
           location: input.location,
         });
       }),
@@ -519,6 +523,8 @@ export const appRouter = router({
         gameType: z.string().optional(),
         stakes: z.string().optional(),
         tournamentName: z.string().max(160).optional(),
+        finalPosition: z.number().int().positive().max(999999).optional(),
+        fieldSize: z.number().int().positive().max(999999).optional(),
         location: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -628,16 +634,67 @@ export const appRouter = router({
         currencyMode: importCurrencyModeEnum.optional(),
         typeMode: importTypeModeEnum.optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const forcedCurrency = input.currencyMode && input.currencyMode !== "auto" ? input.currencyMode : undefined;
         const forcedType = input.typeMode && input.typeMode !== "auto" ? input.typeMode : undefined;
         const parsed = parseImportText(input.rawText, forcedCurrency, forcedType);
-        const warnings = parsed.flatMap((item, idx) => item.warnings.map((w) => `Linha ${idx + 1}: ${w}`));
+
+        // Resolve venues at preview time so user sees errors before committing
+        const allVenues = await getUserVenues(ctx.user.id);
+        const venueMap = new Map(allVenues.map((v) => [normalizeVenueName(v.name), v]));
+        const venueMatchMap = new Map(allVenues.map((v) => [venueMatchKey(v.name), v]));
+        const venueTypedMap = new Map(
+          allVenues
+            .filter((v) => v.type === "online" || v.type === "live")
+            .map((v) => [venueTypedKey(v.type as ImportType, v.name), v])
+        );
+        const venueTypedMatchMap = new Map(
+          allVenues
+            .filter((v) => v.type === "online" || v.type === "live")
+            .map((v) => [venueTypedMatchKey(v.type as ImportType, v.name), v])
+        );
+
+        function resolveVenue(item: ParsedImportItem) {
+          const venueName = item.venueName?.trim();
+          if (!venueName) return null;
+          const normalizedVenue = normalizeVenueName(venueName);
+          const inputMatchKey = venueMatchKey(venueName);
+          let venue = venueTypedMap.get(venueTypedKey(item.type, venueName));
+          if (!venue && inputMatchKey) venue = venueTypedMatchMap.get(venueTypedMatchKey(item.type, venueName));
+          if (!venue) venue = venueMap.get(normalizedVenue);
+          if (!venue && inputMatchKey) venue = venueMatchMap.get(inputMatchKey);
+          if (!venue) {
+            const fallback = Array.from(venueMap.entries()).find(([k]) => k.includes(normalizedVenue) || normalizedVenue.includes(k));
+            if (fallback) venue = fallback[1];
+          }
+          if (!venue && inputMatchKey) {
+            const fallback = Array.from(venueMatchMap.entries()).find(([k]) => k.includes(inputMatchKey) || inputMatchKey.includes(k));
+            if (fallback) venue = fallback[1];
+          }
+          return venue ?? null;
+        }
+
+        const enriched = parsed.map((item) => {
+          const errors: string[] = [];
+          const venueName = item.venueName?.trim();
+          if (!venueName) {
+            errors.push("Plataforma/local não identificado no texto. Informe a plataforma para esta entrada.");
+          } else if (!resolveVenue(item)) {
+            errors.push(`"${venueName}" não está cadastrado. Cadastre esta plataforma antes de importar.`);
+          }
+          return { ...item, errors, willFail: errors.length > 0 };
+        });
+
+        const warnings = enriched.flatMap((item, idx) => item.warnings.map((w) => `Linha ${idx + 1}: ${w}`));
+        const errors = enriched.flatMap((item, idx) => item.errors.map((e) => `Linha ${idx + 1}: ${e}`));
+
         return {
           totalDetected: parsed.length,
-          readyToImport: parsed.filter((p) => p.buyIn >= 0).length,
+          readyToImport: enriched.filter((p) => !p.willFail && p.buyIn >= 0).length,
+          willFailCount: enriched.filter((p) => p.willFail).length,
           warnings,
-          items: parsed.map((item) => ({
+          errors,
+          items: enriched.map((item) => ({
             sourceText: item.sourceText,
             type: item.type,
             gameFormat: item.gameFormat,
@@ -649,6 +706,8 @@ export const appRouter = router({
             venueName: item.venueName ?? "Não mapeado",
             tournamentName: item.tournamentName,
             warnings: item.warnings,
+            errors: item.errors,
+            willFail: item.willFail,
           })),
         };
       }),
@@ -837,6 +896,8 @@ export const appRouter = router({
         stakes: z.string().optional(),
         clubName: z.string().max(120).optional(),
         tournamentName: z.string().max(160).optional(),
+        finalPosition: z.number().int().positive().max(999999).optional(),
+        fieldSize: z.number().int().positive().max(999999).optional(),
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -869,6 +930,8 @@ export const appRouter = router({
         stakes: z.string().optional(),
         clubName: z.string().max(120).optional(),
         tournamentName: z.string().max(160).optional(),
+        finalPosition: z.number().int().positive().max(999999).optional(),
+        fieldSize: z.number().int().positive().max(999999).optional(),
         notes: z.string().optional(),
         endedAt: z.date().optional().nullable(),
         incrementRebuy: z.boolean().optional(),

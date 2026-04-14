@@ -30,6 +30,9 @@ import { SplashScreen } from "./SplashScreen";
 import { trpc } from "@/lib/trpc";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { MessageNotificationPopup } from "./MessageNotificationPopup";
+import { useMessageNotifications } from "@/hooks/useMessageNotifications";
+import type { MessageNotification } from "./MessageNotificationPopup";
 
 const FEED_LAST_SEEN_KEY_PREFIX = "feed-last-seen-ms";
 
@@ -65,6 +68,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedLastSeenMs, setFeedLastSeenMs] = useState(0);
   const { theme, toggleTheme } = useTheme();
+  const { activeNotification, showNotification, dismissNotification } = useMessageNotifications();
 
   const { data: latestFeedPosts = [] } = trpc.feed.list.useQuery(
     { limit: 30, offset: 0 },
@@ -261,8 +265,8 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
         const delta = current - previous;
         const latestConv = conversations[0];
         const friendName = latestConv?.friend?.name ?? "Jogador";
-        const friendId = latestConv?.friend?.id;
-        const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName });
+        const friendId = latestConv?.friend?.id ?? 0;
+        const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName }) || "";
 
         // Show system notification with sound (works in background)
         if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
@@ -274,8 +278,25 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
           });
         }
 
-        
-        // Also show in-app toast for visibility
+        // Show new popup notification
+        const lastMessage = latestConv?.lastMessage;
+        const messagePreview = lastMessage?.type === "image"
+          ? `📷 ${lastMessage.caption?.trim() || "Foto enviada"}`
+          : lastMessage?.content?.trim() || "Nova mensagem";
+
+        const notification: MessageNotification = {
+          id: `${friendId}-${Date.now()}`,
+          friendName,
+          friendAvatar,
+          friendId,
+          message: messagePreview,
+          timestamp: Date.now(),
+          unreadCount: current,
+        };
+
+        showNotification(notification);
+
+        // Also show in-app toast for visibility as backup
         toast.info(
           delta > 1 ? `${delta} novas mensagens` : "Mensagem nova",
           {
@@ -300,7 +321,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     }
 
     previousUnreadChatCountRef.current = current;
-  }, [location, unreadChatCount, user?.id, conversations]);
+  }, [location, unreadChatCount, user?.id, conversations, showNotification]);
 
   useEffect(() => {
     if (!user?.id || location !== "/feed") return;
@@ -326,20 +347,33 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
       {/* ── Sidebar Desktop ── */}
       <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border/50 bg-card/30 sticky top-0 h-screen overflow-y-auto">
         {/* Logo */}
-        <div
-          className="flex items-center gap-3 px-5 py-5 cursor-pointer border-b border-border/30"
-          onClick={() => setLocation("/")}
-        >
-          <img
-            src="/favicon-symbol-large.png"
-            alt="The Rail"
-            className="h-14 w-14 object-contain"
-          />
-          <span className="text-xl font-bold tracking-tight gradient-text">The Rail</span>
+        <div className="border-b border-border/30 px-3 py-3">
+          <div
+            onClick={() => window.location.assign("/")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                window.location.assign("/");
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Voltar para tela inicial"
+            className="group flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-3 transition-all duration-300 hover:bg-zinc-900/80 hover:shadow-[0_0_20px_#a855f7] active:scale-[0.97]"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 via-violet-600 to-fuchsia-600 text-2xl font-bold text-white shadow-lg transition-all group-hover:rotate-6">
+              T
+            </div>
+            <div>
+              <span className="bg-gradient-to-r from-purple-200 via-cyan-200 to-purple-200 bg-clip-text text-3xl font-bold tracking-[3px] text-transparent transition-all group-hover:brightness-125">
+                THERAiL
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Nav Items */}
-        <nav className="flex flex-col gap-1 px-3 py-4 flex-1">
+        <nav className="flex-1 space-y-2 px-3 py-4">
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path;
@@ -347,15 +381,25 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
               <button
                 key={item.path}
                 onClick={() => setLocation(item.path)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 w-full text-left
+                className={`
+                  group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl px-5 py-4 text-left text-base font-medium
+                  transition-all duration-300
                   ${isActive
-                    ? "bg-primary/15 text-primary border border-primary/20"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
+                    ? "bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow-lg"
+                    : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+                  }
+                `}
               >
-                <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
-                <span className="text-base">{item.label}</span>
-                <span className="ml-auto flex items-center gap-1.5">
+                <div
+                  className={`absolute left-0 top-1/2 w-1 -translate-y-1/2 origin-center rounded-r-full bg-purple-400 transition-all duration-500 ease-out ${
+                    isActive
+                      ? "h-10 scale-y-125"
+                      : "h-0 scale-y-0 group-hover:h-9 group-hover:scale-y-110"
+                  }`}
+                />
+                <Icon className="relative z-10 h-5 w-5 shrink-0 text-2xl transition-transform duration-300 group-hover:scale-110" />
+                <span className="relative z-10 transition-colors duration-300">{item.label}</span>
+                <span className="relative z-10 ml-auto flex items-center gap-1.5">
                   {item.path === "/chat" && unreadChatCount > 0 && (
                     <span
                       className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
@@ -380,8 +424,9 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                       {feedUpdatesLabel}
                     </span>
                   )}
-                  {isActive && <ChevronRight className="h-4 w-4 text-primary/60" />}
+                  {isActive && <ChevronRight className="h-4 w-4 text-white/70" />}
                 </span>
+                <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-500/0 via-purple-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
               </button>
             );
           })}
@@ -421,13 +466,27 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
 
       {/* ── Mobile Header ── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 h-14 bg-card/90 backdrop-blur border-b border-border/50">
-        <div className="flex items-center gap-2" onClick={() => setLocation("/")}>
-          <img
-            src="/favicon-symbol-large.png"
-            alt="The Rail"
-            className="h-10 w-10 object-contain"
-          />
-          <span className="font-bold gradient-text">The Rail</span>
+        <div
+          className="group flex h-full items-center cursor-pointer"
+          onClick={() => window.location.assign("/")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              window.location.assign("/");
+            }
+          }}
+          aria-label="Voltar para tela inicial"
+        >
+          <div className="flex items-center gap-2 rounded-xl px-2 py-1 transition-all duration-300 group-hover:bg-zinc-900/80">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 via-violet-600 to-fuchsia-600 text-lg font-bold text-white shadow-lg">
+              T
+            </div>
+            <span className="bg-gradient-to-r from-purple-200 via-cyan-200 to-purple-200 bg-clip-text text-lg font-bold tracking-[2px] text-transparent">
+              THERAiL
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" onClick={toggleTheme}>
@@ -444,14 +503,32 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
         <div className="md:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
           <div className="relative w-72 bg-card h-full flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
-              <div className="flex items-center gap-2">
-                <img
-                  src="/favicon-symbol-large.png"
-                  alt="The Rail"
-                  className="h-11 w-11 object-contain"
-                />
-                <span className="font-bold text-lg gradient-text">The Rail</span>
+            <div className="flex h-16 items-center justify-between px-5 border-b border-border/30">
+              <div
+                className="group flex h-full cursor-pointer items-center"
+                onClick={() => {
+                  setMobileOpen(false);
+                  window.location.assign("/");
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMobileOpen(false);
+                    window.location.assign("/");
+                  }
+                }}
+                aria-label="Voltar para tela inicial"
+              >
+                <div className="flex items-center gap-2 rounded-xl px-2 py-1 transition-all duration-300 group-hover:bg-zinc-900/80">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 via-violet-600 to-fuchsia-600 text-xl font-bold text-white shadow-lg">
+                    T
+                  </div>
+                  <span className="bg-gradient-to-r from-purple-200 via-cyan-200 to-purple-200 bg-clip-text text-xl font-bold tracking-[2px] text-transparent">
+                    THERAiL
+                  </span>
+                </div>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}>
                 <X className="h-5 w-5" />
@@ -465,14 +542,22 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                   <button
                     key={item.path}
                     onClick={() => { setLocation(item.path); setMobileOpen(false); }}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all w-full text-left
+                    className={`
+                      group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl px-5 py-4 text-left text-base font-medium
+                      transition-all duration-300
                       ${isActive
-                        ? "bg-primary/15 text-primary border border-primary/20"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                      }`}
+                        ? "bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow-lg"
+                        : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+                      }
+                    `}
                   >
-                    <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
-                    <span className="text-base">{item.label}</span>
+                    <div
+                      className={`absolute left-0 top-1/2 h-9 w-1 -translate-y-1/2 origin-center rounded-r-full bg-purple-400 transition-all duration-300 ${
+                        isActive ? "scale-y-125" : "scale-y-0 group-hover:scale-y-110"
+                      }`}
+                    />
+                    <Icon className="h-5 w-5 shrink-0 text-2xl transition-transform duration-300 group-hover:scale-110" />
+                    <span>{item.label}</span>
                     <span className="ml-auto flex items-center gap-1.5">
                       {item.path === "/chat" && unreadChatCount > 0 && (
                         <span
@@ -531,6 +616,13 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
           {children}
         </div>
       </main>
+
+      {/* ── Message Notification Popup ── */}
+      <MessageNotificationPopup
+        notification={activeNotification}
+        onDismiss={dismissNotification}
+        onNavigate={(friendId) => setLocation(`/chat?friend=${friendId}`)}
+      />
     </div>
   );
 }

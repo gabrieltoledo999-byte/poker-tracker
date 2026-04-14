@@ -19,7 +19,30 @@ async function runSafeMigrations() {
 
   let conn: mysql2.Connection | null = null;
   try {
-    conn = await mysql2.createConnection(dbUrl);
+    const connectWithRetry = async (attempts = 3): Promise<mysql2.Connection> => {
+      let lastError: unknown;
+
+      for (let i = 0; i < attempts; i++) {
+        try {
+          return await mysql2.createConnection(dbUrl);
+        } catch (error) {
+          lastError = error;
+          const code = String((error as any)?.code ?? "").toUpperCase();
+          const message = String((error as any)?.message ?? "").toLowerCase();
+          const isConnectionLost = code === "PROTOCOL_CONNECTION_LOST" || message.includes("connection lost");
+
+          if (!isConnectionLost || i === attempts - 1) {
+            throw error;
+          }
+
+          console.warn(`[migrations] Database connection lost on startup. Retrying (${i + 1}/${attempts})...`);
+        }
+      }
+
+      throw lastError;
+    };
+
+    conn = await connectWithRetry();
 
     const alterStatements = [
       // 0017 – initial play style
@@ -42,7 +65,9 @@ async function runSafeMigrations() {
       "ALTER TABLE `users` ADD COLUMN `passwordHash` varchar(255)",
       "ALTER TABLE `session_tables` ADD COLUMN `clubName` varchar(120)",
       "ALTER TABLE `session_tables` ADD COLUMN `tournamentName` varchar(160)",
+      "ALTER TABLE `session_tables` ADD COLUMN `fieldSize` int",
       "ALTER TABLE `sessions` ADD COLUMN `tournamentName` varchar(160)",
+      "ALTER TABLE `sessions` ADD COLUMN `fieldSize` int",
       // premium hand counters
       "ALTER TABLE `hand_pattern_counters` ADD COLUMN `aaHands` int NOT NULL DEFAULT 0",
       "ALTER TABLE `hand_pattern_counters` ADD COLUMN `aaWins` int NOT NULL DEFAULT 0",

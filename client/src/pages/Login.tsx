@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2, Mail, Lock, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
@@ -160,13 +160,20 @@ export default function Login() {
   const strengthLabels = ["", "Fraca", "Regular", "Boa", "Forte"];
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div
+      className="min-h-screen flex items-start justify-center p-4 pt-14 md:pt-20 bg-cover"
+      style={{
+        backgroundImage:
+          "linear-gradient(rgba(0,0,0,0.62), rgba(0,0,0,0.62)), url('/Tela-de-Login.PNG')",
+              backgroundPosition: "center 13%",
+      }}
+    >
       <div className="w-full max-w-sm space-y-8">
 
         {/* Logo */}
-        <div className="flex justify-center">
+        <div className="flex justify-center mt-14 md:mt-16">
           <img
-            src="/favicon-symbol-large.png"
+            src="/TheRail_Login_front.png"
             alt="The Rail"
             className="h-44 md:h-48 w-auto object-contain drop-shadow-xl"
           />
@@ -181,16 +188,6 @@ export default function Login() {
               {mode === "register" && "Criar nova conta"}
               {mode === "setup_password" && "Criar sua senha"}
             </CardTitle>
-            <CardDescription className="text-sm">
-              {mode === "login" && "Acesse seu bankroll e sessões."}
-              {mode === "register" && "Comece a rastrear seu bankroll agora."}
-              {mode === "setup_password" && (
-                <span>
-                  Conta encontrada para <strong className="text-foreground">{email}</strong>.
-                  {" "}Crie uma senha para acessar seu histórico completo.
-                </span>
-              )}
-            </CardDescription>
           </CardHeader>
 
           <CardContent className="px-6 pb-6 pt-4">
@@ -344,35 +341,34 @@ export default function Login() {
                 )}
               </Button>
 
-              <div className="mt-3 space-y-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full justify-start rounded-xl !border-[#dadce0] !bg-white !text-[#5f6368] hover:!bg-[#f8f9fa] hover:!text-[#3c4043]"
-                  style={{ backgroundColor: "#ffffff", color: "#5f6368" }}
-                  disabled={isLoading}
-                  onClick={() => handleSocialLogin("Google")}
-                >
-                  <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
-                    <GoogleIcon />
-                  </span>
-                  Continuar com Google
-                </Button>
+              {mode === "login" && (
+                <div className="mt-4 rounded-2xl bg-card px-4 py-4">
+                  <p className="text-center text-xl font-semibold text-white">Ou entre com:</p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 justify-center rounded-xl !border-0 !bg-white !text-[#1f1f1f] shadow-none hover:!bg-[#f2f3f5]"
+                      disabled={isLoading}
+                      onClick={() => handleSocialLogin("Google")}
+                      aria-label="Continuar com Google"
+                    >
+                      <GoogleIcon />
+                    </Button>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full justify-start rounded-xl !border-black !bg-black !text-white font-semibold tracking-[0.01em] hover:!bg-[#111111]"
-                  style={{ backgroundColor: "#000000", color: "#ffffff" }}
-                  disabled={isLoading}
-                  onClick={() => handleSocialLogin("Apple")}
-                >
-                  <span className="mr-2 inline-flex h-6 w-6 items-center justify-center">
-                    <AppleIcon />
-                  </span>
-                  Continuar com Apple
-                </Button>
-              </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 justify-center rounded-xl !border-0 !bg-black !text-white shadow-none hover:!bg-[#111111]"
+                      disabled={isLoading}
+                      onClick={() => handleSocialLogin("Apple")}
+                      aria-label="Continuar com Apple"
+                    >
+                      <AppleIcon />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </form>
 
             {/* Alternância entre modos */}
@@ -414,8 +410,10 @@ export default function Login() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground/50">
-          Seus dados são privados e seguros.
+        <p className="text-center text-xs text-muted-foreground/60">Seus dados são privados e seguros.</p>
+        <p className="text-center text-[11px] text-muted-foreground/70">
+          <span className="mr-1.5 inline-flex h-5 w-6 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold leading-none text-white">+18</span>
+          Jogo responsável. Somente para maiores de 18 anos.
         </p>
       </div>
     </div>

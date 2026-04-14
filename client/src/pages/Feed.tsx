@@ -422,8 +422,15 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
           typeof error?.message === "string" && error.message.trim().length > 0
             ? error.message
             : "Falha ao enviar imagem. Verifique a configuração de armazenamento.";
-        toast.error(message);
-        return;
+        if (trimmedContent) {
+          toast.warning(`${message} Publicando somente o texto.`);
+          setImagePreview(null);
+          setImageBase64(null);
+          if (fileRef.current) fileRef.current.value = "";
+        } else {
+          toast.error(message);
+          return;
+        }
       }
     }
     createPost.mutate({ content: trimmedContent, visibility, imageUrl, imageKey });

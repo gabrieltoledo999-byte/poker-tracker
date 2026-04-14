@@ -10,6 +10,46 @@ const SYSTEM_ADMIN_EMAILS = new Set(["admin@therailapp.company"]);
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+function isConnectionLostError(error: unknown): boolean {
+  const err = error as { code?: string; message?: string; cause?: { code?: string; message?: string } } | undefined;
+  const code = String(err?.code ?? err?.cause?.code ?? "").toUpperCase();
+  const message = String(err?.message ?? err?.cause?.message ?? "").toLowerCase();
+
+  return (
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "ECONNRESET" ||
+    message.includes("connection lost") ||
+    message.includes("server closed the connection")
+  );
+}
+
+function resetDbConnection() {
+  _db = null;
+}
+
+async function withDbRetry<T>(operation: (db: ReturnType<typeof drizzle>) => Promise<T>): Promise<T> {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  try {
+    return await operation(db);
+  } catch (error) {
+    if (!isConnectionLostError(error)) throw error;
+
+    console.warn("[Database] Connection lost. Retrying query once...");
+    resetDbConnection();
+
+    const retriedDb = await getDb();
+    if (!retriedDb) {
+      throw error;
+    }
+
+    return await operation(retriedDb);
+  }
+}
+
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -115,11 +155,13 @@ export async function getUserByOpenId(openId: string) {
     return undefined;
   }
 
-  const result = await db
-    .select(authCompatUserSelect)
-    .from(users)
-    .where(eq(users.openId, openId))
-    .limit(1);
+  const result = await withDbRetry((conn) =>
+    conn
+      .select(authCompatUserSelect)
+      .from(users)
+      .where(eq(users.openId, openId))
+      .limit(1)
+  );
 
   return result.length > 0 ? result[0] : undefined;
 }
@@ -132,11 +174,13 @@ export async function getUserByEmail(email: string) {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const result = await db
-    .select(authCompatUserSelect)
-    .from(users)
-    .where(eq(users.email, normalizedEmail))
-    .limit(1);
+  const result = await withDbRetry((conn) =>
+    conn
+      .select(authCompatUserSelect)
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1)
+  );
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -735,6 +779,8 @@ export async function getUserSessions(
       gameType: sessions.gameType,
       stakes: sessions.stakes,
       tournamentName: sessions.tournamentName,
+      finalPosition: sessions.finalPosition,
+      fieldSize: sessions.fieldSize,
       location: sessions.location,
       createdAt: sessions.createdAt,
       updatedAt: sessions.updatedAt,
@@ -762,6 +808,8 @@ export async function getUserSessions(
       venueId: sessionTables.venueId,
       gameFormat: sessionTables.gameFormat,
       tournamentName: sessionTables.tournamentName,
+      finalPosition: sessionTables.finalPosition,
+      fieldSize: sessionTables.fieldSize,
     })
     .from(sessionTables)
     .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`));
@@ -784,6 +832,10 @@ export async function getUserSessions(
     venueIds: Set<number>;
     gameFormats: Set<string>;
     primaryTournamentName: string | null;
+    bestFinalPosition: number | null;
+    maxFieldSize: number | null;
+    finalPositionSum: number;
+    finalPositionCount: number;
   }>();
 
   for (const row of tableRows) {
@@ -799,6 +851,10 @@ export async function getUserSessions(
         venueIds: new Set<number>(),
         gameFormats: new Set<string>(),
         primaryTournamentName: null,
+        bestFinalPosition: null,
+        maxFieldSize: null,
+        finalPositionSum: 0,
+        finalPositionCount: 0,
       });
     }
 
@@ -816,6 +872,18 @@ export async function getUserSessions(
     agg.gameFormats.add(row.gameFormat);
     if (!agg.primaryTournamentName && row.tournamentName && row.tournamentName.trim()) {
       agg.primaryTournamentName = row.tournamentName.trim();
+    }
+    if (typeof row.finalPosition === "number" && row.finalPosition > 0) {
+      agg.bestFinalPosition = agg.bestFinalPosition === null
+        ? row.finalPosition
+        : Math.min(agg.bestFinalPosition, row.finalPosition);
+      agg.finalPositionSum += row.finalPosition;
+      agg.finalPositionCount += 1;
+    }
+    if (typeof row.fieldSize === "number" && row.fieldSize > 0) {
+      agg.maxFieldSize = agg.maxFieldSize === null
+        ? row.fieldSize
+        : Math.max(agg.maxFieldSize, row.fieldSize);
     }
   }
 
@@ -838,6 +906,11 @@ export async function getUserSessions(
       bestTableProfit: agg?.bestTableProfit ?? null,
       worstTableProfit: agg?.worstTableProfit ?? null,
       primaryTournamentName: agg?.primaryTournamentName ?? null,
+      bestFinalPosition: agg?.bestFinalPosition ?? s.finalPosition ?? null,
+      avgFinalPosition: agg && agg.finalPositionCount > 0
+        ? Math.round(agg.finalPositionSum / agg.finalPositionCount)
+        : (s.finalPosition ?? null),
+      fieldSize: agg?.maxFieldSize ?? s.fieldSize ?? null,
       uniqueVenueCount: agg?.venueIds.size ?? 0,
       uniqueGameFormatCount: agg?.gameFormats.size ?? 0,
       isMultiTable: (agg?.tableCount ?? 0) > 1,
@@ -866,6 +939,7 @@ export async function getRecentPlayedTables(userId: number, limit = 12) {
       cashOut: sessionTables.cashOut,
       stakes: sessionTables.stakes,
       tournamentName: sessionTables.tournamentName,
+      finalPosition: sessionTables.finalPosition,
       venueId: sessionTables.venueId,
       venueName: venues.name,
       venueLogoUrl: venues.logoUrl,
@@ -904,6 +978,8 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       breakEvenSessions: 0,
       bestSession: null,
       worstSession: null,
+      maxFieldSize: null,
+      avgFieldSize: null,
       avgProfit: 0,
       winRate: 0,
       avgHourlyRate: 0,
@@ -1016,6 +1092,8 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       itmCount: 0,
       bestSession: null,
       worstSession: null,
+      maxFieldSize: null,
+      avgFieldSize: null,
       avgProfit: 0,
       winRate: 0,
       avgHourlyRate: 0,
@@ -1035,6 +1113,12 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   let worstProfit = Infinity;
   let bestSession: Session | null = null;
   let worstSession: Session | null = null;
+  let bestFinalPosition: number | null = null;
+  let finalPositionSum = 0;
+  let finalPositionCount = 0;
+  let maxFieldSize: number | null = null;
+  let fieldSizeSum = 0;
+  let fieldSizeCount = 0;
 
   for (const row of includedSessions) {
     const buyIn = Math.round(row.session.buyIn * row.share);
@@ -1048,6 +1132,20 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     totalTables += row.matchedTables;
     itmCount += row.matchedItmTables;
     itmEligibleTables += row.matchedItmEligibleTables;
+
+    const fp = row.session.finalPosition;
+    if (typeof fp === "number" && fp > 0) {
+      bestFinalPosition = bestFinalPosition === null ? fp : Math.min(bestFinalPosition, fp);
+      finalPositionSum += fp;
+      finalPositionCount += 1;
+    }
+
+    const fs = (row.session as any).fieldSize;
+    if (typeof fs === "number" && fs > 0) {
+      maxFieldSize = maxFieldSize === null ? fs : Math.max(maxFieldSize, fs);
+      fieldSizeSum += fs;
+      fieldSizeCount += 1;
+    }
 
     if (row.matchedItmTables > 0) winningSessions++;
     else if (profit < 0) losingSessions++;
@@ -1079,6 +1177,10 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     itmCount,
     bestSession,
     worstSession,
+    bestFinalPosition,
+    avgFinalPosition: finalPositionCount > 0 ? Math.round(finalPositionSum / finalPositionCount) : null,
+    maxFieldSize,
+    avgFieldSize: fieldSizeCount > 0 ? Math.round(fieldSizeSum / fieldSizeCount) : null,
     avgProfit: Math.round(totalProfit / includedSessions.length),
     winRate: itmEligibleTables > 0 ? Math.round((itmCount / itmEligibleTables) * 100) : 0,
     avgHourlyRate: totalHours > 0 ? Math.round(totalProfit / totalHours) : 0,
@@ -3812,6 +3914,8 @@ export async function finalizeActiveSession(
   const typeCount: Record<string, number> = {};
   const formatCount: Record<string, number> = {};
   let dominantVenueId: number | undefined;
+  let bestFinalPosition: number | undefined;
+  let maxFieldSize: number | undefined;
   const venueCounts: Record<number, number> = {};
 
   for (const t of normalizedTables) {
@@ -3820,6 +3924,12 @@ export async function finalizeActiveSession(
     typeCount[t.type] = (typeCount[t.type] || 0) + 1;
     formatCount[t.gameFormat] = (formatCount[t.gameFormat] || 0) + 1;
     if (t.venueId) venueCounts[t.venueId] = (venueCounts[t.venueId] || 0) + 1;
+    if (typeof t.finalPosition === "number" && t.finalPosition > 0) {
+      bestFinalPosition = bestFinalPosition === undefined ? t.finalPosition : Math.min(bestFinalPosition, t.finalPosition);
+    }
+    if (typeof (t as any).fieldSize === "number" && (t as any).fieldSize > 0) {
+      maxFieldSize = maxFieldSize === undefined ? (t as any).fieldSize : Math.max(maxFieldSize, (t as any).fieldSize);
+    }
   }
 
   const dominantType = (Object.entries(typeCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "online") as "online" | "live";
@@ -3839,6 +3949,9 @@ export async function finalizeActiveSession(
     durationMinutes,
     notes: notes ?? active.notes ?? undefined,
     venueId: dominantVenueId,
+    tournamentName: normalizedTables.find((t) => t.tournamentName && t.tournamentName.trim())?.tournamentName ?? null,
+    finalPosition: bestFinalPosition,
+    fieldSize: maxFieldSize,
   });
 
   const [newSession] = await db

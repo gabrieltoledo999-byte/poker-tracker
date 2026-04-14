@@ -197,6 +197,13 @@
       "when": 1744250400000,
       "tag": "0027_chat_reactions_and_caption",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1776124800000,
+      "tag": "0028_final_position",
+      "breakpoints": true
     }
   ]
 }
