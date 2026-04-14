@@ -39,10 +39,16 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  // Em produção (Railway), forçamos secure: true — o Railway sempre usa HTTPS.
+  // sameSite: "lax" funciona com redirects OAuth e não exige secure obrigatório.
+  // sameSite: "none" exige secure: true — se secure falhar, o browser rejeita silenciosamente.
+  const isProduction = process.env.NODE_ENV === "production";
+  const secure = isProduction ? true : isSecureRequest(req);
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    sameSite: "lax",
+    secure,
   };
 }
