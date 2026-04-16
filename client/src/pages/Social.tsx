@@ -29,15 +29,13 @@ export default function Social() {
   const [, setLocation] = useLocation();
 
   const { data: unreadChat } = trpc.chat.unreadCount.useQuery(undefined, {
-    refetchInterval: 3000,
-    staleTime: 1500,
-    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 8000,
   });
 
   const { data: incomingRequests = [] } = trpc.ranking.incomingRequests.useQuery(undefined, {
-    refetchInterval: 3000,
-    staleTime: 1500,
-    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 8000,
   });
 
   const { data: posts = [] } = trpc.feed.list.useQuery(

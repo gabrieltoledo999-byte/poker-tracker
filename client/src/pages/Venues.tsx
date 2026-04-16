@@ -57,7 +57,7 @@ import {
   Check,
 } from "lucide-react";
 
-type Currency = "BRL" | "USD" | "CAD" | "JPY" | "CNY";
+type Currency = "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
 
 const CURRENCY_SYMBOLS: Record<Currency, string> = {
   BRL: "R$",
@@ -65,6 +65,7 @@ const CURRENCY_SYMBOLS: Record<Currency, string> = {
   CAD: "CA$",
   JPY: "¥",
   CNY: "CN¥",
+  EUR: "EUR",
 };
 
 const CURRENCY_DECIMALS: Record<Currency, number> = {
@@ -73,6 +74,7 @@ const CURRENCY_DECIMALS: Record<Currency, number> = {
   CAD: 2,
   JPY: 0,
   CNY: 2,
+  EUR: 2,
 };
 
 function formatInCurrency(centavos: number, currency: Currency): string {
@@ -169,7 +171,8 @@ function BalanceEditor({
   const rate = currency === "USD" ? rates?.USD?.rate :
                currency === "CAD" ? rates?.CAD?.rate :
                currency === "JPY" ? rates?.JPY?.rate :
-               currency === "CNY" ? rates?.CNY?.rate : 1;
+               currency === "CNY" ? rates?.CNY?.rate :
+               currency === "EUR" ? rates?.EUR?.rate : 1;
                
 
   const parsedBalance = parseFloat(balanceInput.replace(",", "."));
@@ -212,6 +215,7 @@ function BalanceEditor({
               <SelectItem value="CAD">CAD (CA$)</SelectItem>
               <SelectItem value="JPY">JPY (¥)</SelectItem>
               <SelectItem value="CNY">CNY (CN¥)</SelectItem>
+              <SelectItem value="EUR">EUR (EUR)</SelectItem>
             </SelectContent>
           </Select>
           <Input
@@ -423,7 +427,8 @@ function VenueCard({
   const rate = currency === "USD" ? rates?.USD?.rate :
                currency === "CAD" ? rates?.CAD?.rate :
                currency === "JPY" ? rates?.JPY?.rate :
-               currency === "CNY" ? rates?.CNY?.rate : 1;
+               currency === "CNY" ? rates?.CNY?.rate :
+               currency === "EUR" ? rates?.EUR?.rate : 1;
   const balanceBrl = rate ? Math.round(venue.balance * rate) : venue.balance;
 
   return (

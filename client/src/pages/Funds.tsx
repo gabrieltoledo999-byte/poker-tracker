@@ -51,7 +51,7 @@ export default function Funds() {
   const [transactionType, setTransactionType] = useState<"deposit" | "withdrawal">("deposit");
   const [bankrollType, setBankrollType] = useState<"online" | "live">(primaryType);
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<"BRL" | "USD">("BRL");
+  const [currency, setCurrency] = useState<"BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR">("BRL");
   const [description, setDescription] = useState("");
   const [transactionDate, setTransactionDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -72,7 +72,15 @@ export default function Funds() {
   const { data: bankroll, isLoading: loadingBankroll } =
     trpc.bankroll.getCurrent.useQuery();
 
-  const { data: exchangeRate } = trpc.currency.getRate.useQuery();
+  const { data: exchangeRates } = trpc.currency.getRates.useQuery();
+
+  const selectedRate =
+    currency === "USD" ? exchangeRates?.USD?.rate :
+    currency === "CAD" ? exchangeRates?.CAD?.rate :
+    currency === "JPY" ? exchangeRates?.JPY?.rate :
+    currency === "CNY" ? exchangeRates?.CNY?.rate :
+    currency === "EUR" ? exchangeRates?.EUR?.rate :
+    undefined;
 
   const createMutation = trpc.funds.create.useMutation({
     onSuccess: () => {
@@ -271,7 +279,7 @@ export default function Funds() {
                   <Label>Moeda</Label>
                   <Select
                     value={currency}
-                    onValueChange={(v) => setCurrency(v as "BRL" | "USD")}
+                    onValueChange={(v) => setCurrency(v as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR")}
                   >
                     <SelectTrigger className="bg-background border-border">
                       <SelectValue />
@@ -279,14 +287,18 @@ export default function Funds() {
                     <SelectContent>
                       <SelectItem value="BRL">R$</SelectItem>
                       <SelectItem value="USD">US$</SelectItem>
+                      <SelectItem value="CAD">CA$</SelectItem>
+                      <SelectItem value="JPY">¥</SelectItem>
+                      <SelectItem value="CNY">CN¥</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              {currency === "USD" && exchangeRate && (
+              {currency !== "BRL" && selectedRate && (
                 <p className="text-xs text-muted-foreground">
-                  Cotação atual: 1 USD = {formatCurrency(exchangeRate.rate * 100)}
+                  Cotação atual: 1 {currency} = {formatCurrency(Math.round(selectedRate * 100))}
                 </p>
               )}
 

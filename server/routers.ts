@@ -27,6 +27,7 @@ import {
   getVenueById,
   initializePresetVenues,
   getStatsByVenue,
+  getBuyInsByVenue,
   createInvite,
   getInviteByCode,
   acceptInvite,
@@ -61,7 +62,7 @@ import {
   registerHandPatternResult,
   updateHandPatternManualStats,
 } from "./db";
-import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getAllRates, refreshRates, getCadToBrlRate } from "./currency";
+import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getRateToBrl, getAllRates, refreshRates } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
 import { registerUser, loginUser, setupPasswordForExistingUser } from "./auth";
 
@@ -80,7 +81,7 @@ const gameFormatEnum = z.enum([
 ]);
 
 // Currency enum
-const currencyEnum = z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]);
+const currencyEnum = z.enum(["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]);
 
 const onboardingProfileInput = z.object({
   preferredPlayType: z.enum(["online", "live"]),
@@ -109,9 +110,9 @@ function isAcceptedAvatarUrl(value: string): boolean {
 }
 
 type ImportType = "online" | "live";
-type ImportCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY";
+type ImportCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
 type ImportFormat = z.infer<typeof gameFormatEnum>;
-const importCurrencyModeEnum = z.enum(["auto", "BRL", "USD", "CAD", "JPY", "CNY"]);
+const importCurrencyModeEnum = z.enum(["auto", "BRL", "USD", "CAD", "JPY", "CNY", "EUR"]);
 const importTypeModeEnum = z.enum(["auto", "online", "live"]);
 
 type ParsedImportItem = {
@@ -189,7 +190,7 @@ function parseDurationMinutes(text: string): number {
 
 function detectType(text: string): ImportType {
   // Prefer online when text contains common online poker markers.
-  if (/\b(plataforma|site|app|room|online|pp\s*poker|pppoker|gg\s*poker|ggpoker|pokerstars|888poker|888|kkpoker|pokerbros|suprema|wpt\s*global|x-poker|xpoker|clubgg)\b/i.test(text)) {
+  if (/\b(plataforma|site|app|room|online|pp\s*poker|pppoker|gg\s*poker|ggpoker|pokerstars|888poker|888|kkpoker|pokerbros|suprema|wpt\s*global|x-poker|xpoker|clubgg|champion\s*poker|championpoker)\b/i.test(text)) {
     return "online";
   }
   // Mark as live only for explicit presencial/live context.
@@ -215,6 +216,7 @@ function detectFormat(text: string): ImportFormat {
 function detectCurrency(text: string): ImportCurrency {
   if (/\b(CA\$|CAD)\b/i.test(text)) return "CAD";
   if (/\b(CN¥|CNY|RMB)\b/i.test(text)) return "CNY";
+  if (/\b(EUR|EURO|€)\b/i.test(text)) return "EUR";
   if (/\b(¥|JPY)\b/i.test(text)) return "JPY";
   if (/\b(US\$|USD|\$)\b/i.test(text)) return "USD";
   return "BRL";
@@ -222,7 +224,7 @@ function detectCurrency(text: string): ImportCurrency {
 
 function parseMoneyValue(raw: string): number | null {
   const cleaned = raw
-    .replace(/[R$US$CA$CN¥¥\s]/g, "")
+    .replace(/[R$US$CA$CN¥€¥\s]/g, "")
     .replace(/\.(?=\d{3}(\D|$))/g, "")
     .replace(",", ".");
   const num = Number(cleaned);
@@ -241,7 +243,7 @@ function parseBuyInAndCashOut(text: string): { buyIn: number | null; cashOut: nu
   if (buyIn !== null || cashOut !== null) return { buyIn, cashOut };
 
   // Check for currency symbols (legacy fallback)
-  const numbers = Array.from(text.matchAll(/(?:R\$|US\$|CA\$|CN¥|¥|\$)?\s*(\d+[\d.,]*)/g));
+  const numbers = Array.from(text.matchAll(/(?:R\$|US\$|CA\$|CN¥|€|¥|\$)?\s*(\d+[\d.,]*)/g));
   const first = numbers[0]?.[1] ? parseMoneyValue(numbers[0][1]) : null;
   const second = numbers[1]?.[1] ? parseMoneyValue(numbers[1][1]) : null;
   return { buyIn: first, cashOut: second };
@@ -261,6 +263,7 @@ function parseVenueName(text: string): string | undefined {
     if (normalizedRaw.includes("888poker")) return "888poker";
     if (normalizedRaw.includes("kkpoker")) return "KKPoker";
     if (normalizedRaw.includes("x-poker") || normalizedRaw.includes("xpoker")) return "X-Poker";
+    if (normalizedRaw.includes("champion poker") || normalizedRaw.includes("championpoker")) return "Champion Poker";
     return raw.trim();
   };
 
@@ -279,6 +282,7 @@ function parseVenueName(text: string): string | undefined {
     "888poker",
     "kkpoker",
     "x-poker",
+    "champion poker",
   ];
   const normalized = normalizeVenueName(text);
   const hit = known.find((name) => normalized.includes(name));
@@ -608,6 +612,13 @@ export const appRouter = router({
         return await getUserPreferences(ctx.user.id);
       }),
 
+    // Get most-used buy-ins for a specific venue from session history
+    getBuyInsByVenue: protectedProcedure
+      .input(z.object({ venueId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        return await getBuyInsByVenue(ctx.user.id, input.venueId);
+      }),
+
     // Save onboarding answer used to bootstrap smart defaults before enough history exists
     saveInitialPlayStyle: protectedProcedure
       .input(z.object({ preferredPlayType: z.enum(["online", "live"]) }))
@@ -890,7 +901,7 @@ export const appRouter = router({
         venueId: z.number().int().optional(),
         type: z.enum(["online", "live"]).default("online"),
         gameFormat: gameFormatEnum.default("tournament"),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL"),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]).default("BRL"),
         buyIn: z.number().int().min(0),
         gameType: z.string().optional(),
         stakes: z.string().optional(),
@@ -923,7 +934,7 @@ export const appRouter = router({
         venueId: z.number().int().optional(),
         type: z.enum(["online", "live"]).optional(),
         gameFormat: gameFormatEnum.optional(),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).optional(),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]).optional(),
         buyIn: z.number().int().min(0).optional(),
         cashOut: z.number().int().min(0).optional().nullable(),
         gameType: z.string().optional(),
@@ -1059,7 +1070,7 @@ export const appRouter = router({
         website: z.string().optional(),
         address: z.string().optional(),
         notes: z.string().optional(),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).optional(),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]).optional(),
         balance: z.number().int().min(0).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -1071,7 +1082,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number().int(),
         balance: z.number().int().min(0),
-        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY"]).default("BRL"),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]).default("BRL"),
         note: z.string().max(256).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -1532,9 +1543,9 @@ export const appRouter = router({
         let originalAmount: number | undefined;
         let exchangeRate: number | undefined;
 
-        // Convert USD to BRL if needed
-        if (input.currency === "USD") {
-          const rate = await getUsdToBrlRate();
+        // Convert foreign currency to BRL if needed
+        if (input.currency !== "BRL") {
+          const rate = await getRateToBrl(input.currency);
           originalAmount = input.amount;
           exchangeRate = Math.round(rate * 10000);
           amountBrl = Math.round(input.amount * rate);
@@ -1838,3 +1849,4 @@ export const appRouter = router({
   }),
 });
 export type AppRouter = typeof appRouter;
+

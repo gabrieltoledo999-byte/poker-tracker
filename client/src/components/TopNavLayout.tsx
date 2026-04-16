@@ -30,9 +30,6 @@ import { SplashScreen } from "./SplashScreen";
 import { trpc } from "@/lib/trpc";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { MessageNotificationPopup } from "./MessageNotificationPopup";
-import { useMessageNotifications } from "@/hooks/useMessageNotifications";
-import type { MessageNotification } from "./MessageNotificationPopup";
 
 const FEED_LAST_SEEN_KEY_PREFIX = "feed-last-seen-ms";
 
@@ -68,8 +65,6 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedLastSeenMs, setFeedLastSeenMs] = useState(0);
   const { theme, toggleTheme } = useTheme();
-  const { activeNotification, showNotification, dismissNotification } = useMessageNotifications();
-
   const { data: latestFeedPosts = [] } = trpc.feed.list.useQuery(
     { limit: 30, offset: 0 },
     {
@@ -81,24 +76,21 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
 
   const { data: incomingFriendRequests = [] } = trpc.ranking.incomingRequests.useQuery(undefined, {
     enabled: !!user,
-    refetchInterval: 3000,
-    staleTime: 1500,
-    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 8000,
   });
 
   const { data: unreadChatData } = trpc.chat.unreadCount.useQuery(undefined, {
     enabled: !!user,
-    refetchInterval: 3000,
-    staleTime: 1500,
-    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 8000,
   });
   const unreadChatCount = unreadChatData?.count ?? 0;
 
   const { data: conversations = [] } = trpc.chat.conversations.useQuery(undefined, {
     enabled: !!user,
-    refetchInterval: 3000,
-    staleTime: 1500,
-    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 8000,
   });
 
   useEffect(() => {
@@ -123,115 +115,10 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const feedUpdatesLabel = greenCount > 99 ? "99+" : String(greenCount);
   const previousIncomingCountRef = useRef(0);
   const previousUnreadChatCountRef = useRef(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const notificationPermissionRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Combine regular menu items with admin items (only if user is admin)
   const visibleMenuItems = [...menuItems, ...getAdminMenuItems(user?.role)];
-  
-  // Pre-encoded simple beep WAV (440Hz for 500ms) - plays without user interaction
-  const NOTIFICATION_SOUND_B64 = "UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==";
-
-  const playNotificationSoundInBackground = () => {
-    try {
-      // Use HTMLAudioElement with data URL - works in background without user interaction requirement
-      const audio = new Audio(`data:audio/wav;base64,${NOTIFICATION_SOUND_B64}`);
-      audio.volume = 0.7;
-      const playPromise = audio.play();
-      if (playPromise) {
-        playPromise.catch(() => {
-          // Fallback: try creating a simple beep via Web Audio
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.frequency.value = 800;
-          gain.gain.setValueAtTime(0.3, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-          osc.start(ctx.currentTime);
-          osc.stop(ctx.currentTime + 0.5);
-        });
-      }
-    } catch {
-      // Silent fallback
-    }
-  };
-
-  const requestNotificationPermission = () => {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    if (Notification.permission === "granted") {
-      notificationPermissionRef.current = true;
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then((permission) => {
-        if (permission === "granted") {
-          notificationPermissionRef.current = true;
-        }
-      });
-    }
-  };
-
-  const ensureAudioContext = () => {
-    if (typeof window === "undefined") return null;
-    const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextCtor) return null;
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContextCtor();
-    }
-    if (audioContextRef.current.state === "suspended") {
-      void audioContextRef.current.resume();
-    }
-    return audioContextRef.current;
-  };
-
-  const playIncomingMessageSound = () => {
-    const audioContext = ensureAudioContext();
-    if (!audioContext) return;
-
-    const now = audioContext.currentTime;
-    const gain = audioContext.createGain();
-    gain.connect(audioContext.destination);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-
-    const oscillator = audioContext.createOscillator();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(740, now);
-    oscillator.frequency.exponentialRampToValueAtTime(520, now + 0.17);
-    oscillator.connect(gain);
-    oscillator.start(now);
-    oscillator.stop(now + 0.22);
-
-    const click = audioContext.createOscillator();
-    const clickGain = audioContext.createGain();
-    click.type = "triangle";
-    click.frequency.setValueAtTime(980, now + 0.03);
-    clickGain.gain.setValueAtTime(0.0001, now + 0.03);
-    clickGain.gain.exponentialRampToValueAtTime(0.045, now + 0.05);
-    clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-    click.connect(clickGain);
-    clickGain.connect(audioContext.destination);
-    click.start(now + 0.03);
-    click.stop(now + 0.17);
-  };
-
-  useEffect(() => {
-    const unlock = () => {
-      ensureAudioContext();
-      requestNotificationPermission();
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-
-    window.addEventListener("pointerdown", unlock);
-    window.addEventListener("keydown", unlock);
-
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -258,70 +145,55 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     const increased = current > previous;
 
     if (increased) {
-      playIncomingMessageSound();
-      playNotificationSoundInBackground(); // Also play in background
+      // Play a single subtle notification sound
+      try {
+        const ctx = audioCtxRef.current ?? new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtxRef.current = ctx;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(480, now + 0.15);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      } catch { /* silent */ }
+    }
 
-      if (location !== "/chat") {
-        const delta = current - previous;
-        const latestConv = conversations[0];
-        const friendName = latestConv?.friend?.name ?? "Jogador";
-        const friendId = latestConv?.friend?.id ?? 0;
-        const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName }) || "";
+    if (increased && location !== "/chat") {
+      const delta = current - previous;
+      const latestConv = conversations[0];
+      const friendName = latestConv?.friend?.name ?? "Jogador";
+      const friendId = latestConv?.friend?.id ?? 0;
+      const friendAvatar = latestConv?.friend?.avatarUrl || getAvatarSrc({ id: friendId, name: friendName }) || "";
 
-        // Show system notification with sound (works in background)
-        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-          new Notification(delta > 1 ? `${delta} novas mensagens` : "Mensagem nova", {
-            icon: friendAvatar,
-            badge: friendAvatar,
-            tag: "message-notification",
-            requireInteraction: false,
-          });
+      toast.info(
+        delta > 1 ? `${delta} novas mensagens` : "Mensagem nova",
+        {
+          description: latestConv ? (
+            <div
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => friendId && setLocation(`/chat?friend=${friendId}`)}
+            >
+              <img
+                src={friendAvatar}
+                alt={friendName}
+                className="h-8 w-8 rounded-full object-cover"
+              />
+              <p className="text-xs text-muted-foreground">Toque para responder</p>
+            </div>
+          ) : (
+            "Abra o chat para responder."
+          ),
         }
-
-        // Show new popup notification
-        const lastMessage = latestConv?.lastMessage;
-        const messagePreview = lastMessage?.type === "image"
-          ? `📷 ${lastMessage.caption?.trim() || "Foto enviada"}`
-          : lastMessage?.content?.trim() || "Nova mensagem";
-
-        const notification: MessageNotification = {
-          id: `${friendId}-${Date.now()}`,
-          friendName,
-          friendAvatar,
-          friendId,
-          message: messagePreview,
-          timestamp: Date.now(),
-          unreadCount: current,
-        };
-
-        showNotification(notification);
-
-        // Also show in-app toast for visibility as backup
-        toast.info(
-          delta > 1 ? `${delta} novas mensagens` : "Mensagem nova",
-          {
-            description: latestConv ? (
-              <div
-                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => friendId && setLocation(`/chat?friend=${friendId}`)}
-              >
-                <img
-                  src={friendAvatar}
-                  alt={friendName}
-                  className="h-8 w-8 rounded-full object-cover"
-                />
-                <p className="text-xs text-muted-foreground">Toque para responder</p>
-              </div>
-            ) : (
-              "Abra o chat para responder."
-            ),
-          }
-        );
-      }
+      );
     }
 
     previousUnreadChatCountRef.current = current;
-  }, [location, unreadChatCount, user?.id, conversations, showNotification]);
+  }, [location, unreadChatCount, user?.id, conversations]);
 
   useEffect(() => {
     if (!user?.id || location !== "/feed") return;
@@ -422,6 +294,14 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                       aria-label={`${feedUpdatesLabel} atualizações`}
                     >
                       {feedUpdatesLabel}
+                    </span>
+                  )}
+                  {item.path === "/feed" && hasUnreadMessages && (
+                    <span
+                      className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
+                      aria-label={`${unreadChatCount > 99 ? "99+" : unreadChatCount} mensagens não lidas`}
+                    >
+                      {unreadChatCount > 99 ? "99+" : unreadChatCount}
                     </span>
                   )}
                   {isActive && <ChevronRight className="h-4 w-4 text-white/70" />}
@@ -583,6 +463,14 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                           {feedUpdatesLabel}
                         </span>
                       )}
+                      {item.path === "/feed" && hasUnreadMessages && (
+                        <span
+                          className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                          aria-label={`${unreadChatCount > 99 ? "99+" : unreadChatCount} mensagens não lidas`}
+                        >
+                          {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );
@@ -617,12 +505,6 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
         </div>
       </main>
 
-      {/* ── Message Notification Popup ── */}
-      <MessageNotificationPopup
-        notification={activeNotification}
-        onDismiss={dismissNotification}
-        onNavigate={(friendId) => setLocation(`/chat?friend=${friendId}`)}
-      />
     </div>
   );
 }

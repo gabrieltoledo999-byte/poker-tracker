@@ -40,27 +40,23 @@ export default function Invites() {
 
   const { data: myCode } = trpc.invites.getMyCode.useQuery();
   const { data: friends = [], isLoading: loadingFriends } = trpc.ranking.friends.useQuery(undefined, {
-    refetchInterval: 5000,
-    staleTime: 2000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
   const { data: incomingRequests = [], isLoading: loadingIncomingRequests } = trpc.ranking.incomingRequests.useQuery(undefined, {
-    refetchInterval: 3000,
-    staleTime: 1500,
-    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+    staleTime: 8000,
   });
   const { data: outgoingRequests = [], isLoading: loadingOutgoingRequests } = trpc.ranking.outgoingRequests.useQuery(undefined, {
-    refetchInterval: 5000,
-    staleTime: 2000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
   const { data: searchResults = [], isFetching: loadingSearch } = trpc.ranking.searchUsers.useQuery(
     { query: search },
     {
       enabled: search.trim().length >= 1,
-      refetchInterval: 4000,
-      staleTime: 1500,
-      refetchOnWindowFocus: true,
+      refetchInterval: 15000,
+      staleTime: 8000,
     }
   );
 

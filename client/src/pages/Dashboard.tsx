@@ -1,11 +1,13 @@
 import { trpc } from "@/lib/trpc";
 import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
+import { useTheme } from "@/contexts/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -70,6 +72,7 @@ function formatByCurrency(centavos: number, currency: string) {
   const amount = centavos / 100;
   if (currency === "USD") return `$${amount.toFixed(2)}`;
   if (currency === "CAD") return `CA$${amount.toFixed(2)}`;
+  if (currency === "EUR") return `€${amount.toFixed(2)}`;
   if (currency === "JPY") return `¥${amount.toFixed(2)}`;
   if (currency === "CNY") return `CN¥${amount.toFixed(2)}`;
   return `R$${amount.toFixed(2)}`;
@@ -83,9 +86,24 @@ const VENUE_COLORS = [
 const FX_RATE_META = {
   USD: { label: "Dólar", flagUrl: "/flags/us.svg" },
   CAD: { label: "Dólar CAD", flagUrl: "/flags/ca.svg" },
+  EUR: { label: "Euro", flagUrl: "/flags/eu.svg" },
   JPY: { label: "Iene", flagUrl: "/flags/jp.svg" },
   CNY: { label: "Yuan", flagUrl: "/flags/cn.svg" },
 } as const;
+
+const GAME_FORMAT_LABELS: Record<string, string> = {
+  tournament: "Torneio",
+  cash_game: "Cash Game",
+  turbo: "Turbo",
+  hyper_turbo: "Hyper Turbo",
+  sit_and_go: "Sit & Go",
+  spin_and_go: "Spin & Go",
+  bounty: "Bounty",
+  satellite: "Satélite",
+  freeroll: "Freeroll",
+  home_game: "Home Game",
+  heads_up: "Heads-up",
+};
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -115,6 +133,7 @@ function VenueRow({
   const color = VENUE_COLORS[colorIdx % VENUE_COLORS.length];
   const stats = venue.stats;
   const tableCount = stats?.tables ?? stats?.sessions ?? 0;
+  const sessionCount = stats?.sessions ?? 0;
   const roi = stats && (stats.totalBuyIn ?? 0) > 0
     ? ((stats.totalProfit / stats.totalBuyIn) * 100).toFixed(1)
     : null;
@@ -142,7 +161,7 @@ function VenueRow({
             <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
               <span>{venue.currency || "BRL"}</span>
               {venue.type === "online" && (venue.currency === "BRL" || !venue.currency) && (
-                <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20">
                   🇧🇷 Nacional
                 </span>
               )}
@@ -152,10 +171,17 @@ function VenueRow({
         <div className="text-right shrink-0">
           {stats && tableCount > 0 ? (
             <>
-              <p className={`text-sm font-bold ${stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              <p className={`text-sm font-bold ${stats.totalProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                 {stats.totalProfit >= 0 ? "+" : ""}{formatCurrencyCompact(stats.totalProfit)}
               </p>
-              <p className="text-xs text-muted-foreground">{tableCount} mesas</p>
+              <UiTooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-muted-foreground cursor-default">{tableCount} mesa{tableCount === 1 ? "" : "s"}</p>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <span>{sessionCount} sess{sessionCount === 1 ? "ão" : "ões"}</span>
+                </TooltipContent>
+              </UiTooltip>
             </>
           ) : (
             <span className="text-xs text-muted-foreground">Sem mesas</span>
@@ -176,13 +202,13 @@ function VenueRow({
               </div>
               <div className="bg-muted/20 rounded-lg p-2 text-center">
                 <p className="text-[10px] text-muted-foreground mb-0.5">ROI</p>
-                <p className={`text-sm font-bold ${roi && parseFloat(roi) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                <p className={`text-sm font-bold ${roi && parseFloat(roi) >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                   {roi !== null ? `${roi}%` : "—"}
                 </p>
               </div>
               <div className="bg-muted/20 rounded-lg p-2 text-center">
                 <p className="text-[10px] text-muted-foreground mb-0.5">ITM Rate</p>
-                <p className={`text-sm font-bold ${(stats.winRate || 0) >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
+                <p className={`text-sm font-bold ${(stats.winRate || 0) >= 50 ? "text-green-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
                   {stats.winRate !== null ? `${stats.winRate}%` : "—"}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -202,7 +228,21 @@ function VenueRow({
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { preferences: prefs, primaryType, playTypeOrder, sortVenues } = useBehaviorProfile();
+  const { theme } = useTheme();
   const utils = trpc.useUtils();
+  
+  // Cores do gráfico responsivas ao tema
+  const chartColors = {
+    gridLine: theme === "light" ? "#cbd5e1" : "#334155",
+    backgroundColor: theme === "light" ? "rgba(248, 250, 252, 0.96)" : "rgba(0, 0, 0, 0.18)",
+    axis: theme === "light" ? "#64748b" : "oklch(0.55 0.01 240)",
+    positive: theme === "light" ? "#15803d" : "#10b981",
+    positiveSoft: theme === "light" ? "#22c55e" : "#34d399",
+    positiveStrong: theme === "light" ? "#166534" : "#6ee7b7",
+    negative: theme === "light" ? "#b91c1c" : "#ef4444",
+    negativeSoft: theme === "light" ? "#ef4444" : "#f87171",
+    negativeStrong: theme === "light" ? "#dc2626" : "#fca5a5",
+  };
   const [chartPeriod, setChartPeriod] = useState<"online" | "live" | "all">("all");
   const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("roi");
   const [showOnlineModal, setShowOnlineModal] = useState(false);
@@ -225,6 +265,7 @@ export default function Dashboard() {
   });
   const [onlineInputValue, setOnlineInputValue] = useState("");
   const [liveInputValue, setLiveInputValue] = useState("");
+  const [monthlyCompareMode, setMonthlyCompareMode] = useState<"3m" | "6m" | "12m" | "yoy">("6m");
   const [handEdit, setHandEdit] = useState({
     kk: { hands: 0, wins: 0, losses: 0 },
     jj: { hands: 0, wins: 0, losses: 0 },
@@ -437,6 +478,7 @@ export default function Dashboard() {
   const consolidatedPct = roiInvestment > 0 ? (roiProfit / roiInvestment) * 100 : 0;
   const hasRoiData = roiInvestment > 0;
   const hasAnyBalance = consolidatedTotal > 0;
+  const totalPlayedSessions = Array.isArray(allSessions) ? allSessions.length : ((stats as any)?.totalSessions ?? 0);
   const totalPlayedTables = consolidated?.total.tables ?? 0;
   const abiOnlineAvg = prefs?.abiOnlineAvgBuyIn ?? 0;
   const abiLiveAvg = prefs?.abiLiveAvgBuyIn ?? 0;
@@ -450,7 +492,9 @@ export default function Dashboard() {
   const primaryTypeShare = ((prefs?.typeRanking ?? [])[0]?.share ?? 0) * 100;
   const topVenueId = (prefs?.venueRanking ?? [])[0]?.value ?? prefs?.preferredVenueIds?.[0] ?? null;
   const topFormatKey = (prefs?.gameFormatRanking ?? [])[0]?.value ?? prefs?.preferredGameFormats?.[0] ?? null;
-  const topFormatLabel = topFormatKey ? String(topFormatKey).replaceAll("_", " ") : null;
+  const topFormatLabel = topFormatKey
+    ? (GAME_FORMAT_LABELS[String(topFormatKey)] ?? String(topFormatKey).replaceAll("_", " "))
+    : null;
   const topBuyInValue = primaryType === "online"
     ? (prefs?.buyInRankingOnline ?? [])[0]?.value ?? prefs?.preferredBuyInsOnline?.[0] ?? 0
     : (prefs?.buyInRankingLive ?? [])[0]?.value ?? prefs?.preferredBuyInsLive?.[0] ?? 0;
@@ -458,12 +502,14 @@ export default function Dashboard() {
     key: type,
     title: type === "online" ? "Online" : "Live",
     icon: type === "online" ? Wifi : MapPin,
-    badgeClass: type === "online" ? "text-cyan-400 border-cyan-500/30" : "text-violet-400 border-violet-500/30",
+    badgeClass: type === "online" ? "text-cyan-700 dark:text-cyan-400 border-cyan-500/30" : "text-violet-700 dark:text-violet-400 border-violet-500/30",
+    borderClass: type === "online" ? "border-cyan-500/30" : "border-violet-500/30",
     gradientClass: type === "online" ? "from-cyan-500 to-blue-600" : "from-violet-500 to-purple-700",
-    editClass: type === "online" ? "text-cyan-400 hover:text-cyan-300" : "text-violet-400 hover:text-violet-300",
+    editClass: type === "online" ? "text-cyan-700 hover:text-cyan-600 dark:text-cyan-400 dark:hover:text-cyan-300" : "text-violet-700 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-300",
     current: consolidated?.[type].current || 0,
     profit: consolidated?.[type].profit || 0,
     tables: consolidated?.[type].tables || 0,
+    sessions: (allSessions as any[] | undefined)?.filter((session) => session?.type === type).length ?? 0,
     onEdit: type === "online" ? () => setShowOnlineModal(true) : () => setShowLiveModal(true),
   }));
 
@@ -541,6 +587,89 @@ export default function Dashboard() {
       .slice(0, 8);
   }, [allSessions]);
 
+  const monthlyComparison = useMemo(() => {
+    const monthlyProfit = new Map<string, number>();
+
+    for (const session of (allSessions ?? []) as any[]) {
+      const rawDate = session.sessionDate ?? session.startedAt ?? session.createdAt;
+      const date = new Date(rawDate);
+      if (Number.isNaN(date.getTime())) continue;
+
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const sessionProfit = typeof session.totalTableProfit === "number"
+        ? session.totalTableProfit
+        : (session.cashOut ?? 0) - (session.buyIn ?? 0);
+
+      monthlyProfit.set(monthKey, (monthlyProfit.get(monthKey) ?? 0) + sessionProfit);
+    }
+
+    const entries = Array.from(monthlyProfit.entries())
+      .map(([key, profit]) => {
+        const [year, month] = key.split("-").map((value) => Number(value));
+        const date = new Date(year, month - 1, 1);
+        return {
+          key,
+          profit,
+          date,
+          label: date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", ""),
+        };
+      })
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(previousMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+    const currentYear = now.getFullYear();
+    const previousYear = currentYear - 1;
+    const currentYearProfit = entries
+      .filter((entry) => entry.date.getFullYear() === currentYear)
+      .reduce((acc, entry) => acc + entry.profit, 0);
+    const previousYearProfit = entries
+      .filter((entry) => entry.date.getFullYear() === previousYear)
+      .reduce((acc, entry) => acc + entry.profit, 0);
+
+    const modeMonths = monthlyCompareMode === "3m" ? 3 : monthlyCompareMode === "6m" ? 6 : 12;
+    const recent = entries.slice(-modeMonths);
+
+    const currentProfit = monthlyCompareMode === "yoy"
+      ? currentYearProfit
+      : (monthlyProfit.get(currentKey) ?? 0);
+    const previousProfit = monthlyCompareMode === "yoy"
+      ? previousYearProfit
+      : (monthlyProfit.get(previousMonthKey) ?? 0);
+    const delta = currentProfit - previousProfit;
+    const deltaPct = previousProfit !== 0
+      ? (delta / Math.abs(previousProfit)) * 100
+      : currentProfit !== 0
+        ? 100
+        : 0;
+
+    const currentLabel = monthlyCompareMode === "yoy"
+      ? String(currentYear)
+      : now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    const previousLabel = monthlyCompareMode === "yoy"
+      ? String(previousYear)
+      : previousMonthDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+    const maxAbs = Math.max(1, ...recent.map((entry) => Math.abs(entry.profit)));
+
+    return {
+      mode: monthlyCompareMode,
+      currentLabel,
+      previousLabel,
+      currentProfit,
+      previousProfit,
+      delta,
+      deltaPct,
+      recent: recent.map((entry) => ({
+        ...entry,
+        widthPct: (Math.abs(entry.profit) / maxAbs) * 100,
+      })),
+    };
+  }, [allSessions, monthlyCompareMode]);
+
   const topVenueName = prioritizedVenues.find((venue: any) => venue.id === topVenueId)?.name ?? null;
 
   const isLoading = loadingStats || loadingHistory || loadingConsolidated;
@@ -550,6 +679,7 @@ export default function Dashboard() {
     return [
       { code: "USD", ...FX_RATE_META.USD, rate: fxRates.USD?.rate ?? 0 },
       { code: "CAD", ...FX_RATE_META.CAD, rate: fxRates.CAD?.rate ?? 0 },
+      { code: "EUR", ...FX_RATE_META.EUR, rate: fxRates.EUR?.rate ?? 0 },
       { code: "JPY", ...FX_RATE_META.JPY, rate: fxRates.JPY?.rate ?? 0 },
       { code: "CNY", ...FX_RATE_META.CNY, rate: fxRates.CNY?.rate ?? 0 },
     ].filter((r) => r.rate > 0);
@@ -570,27 +700,27 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="relative mx-auto max-w-[1600px] overflow-hidden space-y-5 rounded-2xl border border-cyan-500/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_32%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_38%),linear-gradient(180deg,rgba(3,8,22,0.98),rgba(5,10,24,0.96))] p-3 sm:p-4 lg:p-5">
+    <div className="relative mx-auto max-w-[1600px] overflow-hidden space-y-5 rounded-2xl border border-slate-200 dark:border-cyan-500/15 card-gradient-main p-3 sm:p-4 lg:p-5">
       <div className="pointer-events-none absolute inset-0 z-0">
-        <div className="absolute -left-16 top-24 h-40 w-40 rounded-full border border-violet-300/25 bg-[radial-gradient(circle_at_35%_30%,#8b5cf6_0%,#6d28d9_45%,#14082a_100%)] opacity-50">
-          <div className="absolute inset-[9px] rounded-full border border-amber-200/45" />
-          <div className="absolute inset-[22px] rounded-full border border-fuchsia-300/40 bg-[#12081f]" />
+        <div className="absolute -left-16 top-24 h-40 w-40 rounded-full border border-violet-300/35 dark:border-violet-300/25 bg-[radial-gradient(circle_at_35%_30%,#c4b5fd_0%,#a78bfa_45%,#ede9fe_100%)] dark:bg-[radial-gradient(circle_at_35%_30%,#8b5cf6_0%,#6d28d9_45%,#14082a_100%)] opacity-60 dark:opacity-50">
+          <div className="absolute inset-[9px] rounded-full border border-violet-300/45 dark:border-amber-200/45" />
+          <div className="absolute inset-[22px] rounded-full border border-violet-300/35 dark:border-fuchsia-300/40 bg-[#f5f3ff] dark:bg-[#12081f]" />
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-6 w-6 rounded-full border border-fuchsia-200/50 bg-fuchsia-300/20 shadow-[0_0_14px_rgba(244,114,182,0.45)]" />
+            <div className="h-6 w-6 rounded-full border border-violet-300/55 dark:border-fuchsia-200/50 bg-violet-300/35 dark:bg-fuchsia-300/20 shadow-[0_0_12px_rgba(139,92,246,0.28)] dark:shadow-[0_0_14px_rgba(244,114,182,0.45)]" />
           </div>
         </div>
-        <div className="absolute -right-20 top-[28%] h-52 w-52 rounded-full border border-cyan-200/20 bg-[radial-gradient(circle_at_35%_30%,#22d3ee_0%,#0e7490_48%,#041827_100%)] opacity-40">
-          <div className="absolute inset-[10px] rounded-full border border-amber-200/35" />
-          <div className="absolute inset-[25px] rounded-full border border-cyan-200/30 bg-[#081726]" />
+        <div className="absolute -right-20 top-[28%] h-52 w-52 rounded-full border border-cyan-300/30 dark:border-cyan-200/20 bg-[radial-gradient(circle_at_35%_30%,#a5f3fc_0%,#67e8f9_48%,#ecfeff_100%)] dark:bg-[radial-gradient(circle_at_35%_30%,#22d3ee_0%,#0e7490_48%,#041827_100%)] opacity-55 dark:opacity-40">
+          <div className="absolute inset-[10px] rounded-full border border-cyan-300/40 dark:border-amber-200/35" />
+          <div className="absolute inset-[25px] rounded-full border border-cyan-300/35 dark:border-cyan-200/30 bg-[#ecfeff] dark:bg-[#081726]" />
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-7 w-7 rounded-full border border-cyan-200/50 bg-cyan-300/20 shadow-[0_0_16px_rgba(34,211,238,0.5)]" />
+            <div className="h-7 w-7 rounded-full border border-cyan-300/60 dark:border-cyan-200/50 bg-cyan-300/35 dark:bg-cyan-300/20 shadow-[0_0_12px_rgba(6,182,212,0.24)] dark:shadow-[0_0_16px_rgba(34,211,238,0.5)]" />
           </div>
         </div>
-        <div className="absolute -bottom-16 left-[32%] h-44 w-44 rounded-full border border-emerald-200/20 bg-[radial-gradient(circle_at_35%_30%,#34d399_0%,#047857_46%,#06261d_100%)] opacity-35">
-          <div className="absolute inset-[10px] rounded-full border border-amber-200/35" />
-          <div className="absolute inset-[24px] rounded-full border border-emerald-200/30 bg-[#06261d]" />
+        <div className="absolute -bottom-16 left-[32%] h-44 w-44 rounded-full border border-emerald-300/30 dark:border-emerald-200/20 bg-[radial-gradient(circle_at_35%_30%,#bbf7d0_0%,#6ee7b7_46%,#ecfdf5_100%)] dark:bg-[radial-gradient(circle_at_35%_30%,#34d399_0%,#047857_46%,#06261d_100%)] opacity-50 dark:opacity-35">
+          <div className="absolute inset-[10px] rounded-full border border-emerald-300/40 dark:border-amber-200/35" />
+          <div className="absolute inset-[24px] rounded-full border border-emerald-300/35 dark:border-emerald-200/30 bg-[#ecfdf5] dark:bg-[#06261d]" />
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-6 w-6 rounded-full border border-emerald-200/50 bg-emerald-300/20 shadow-[0_0_14px_rgba(16,185,129,0.45)]" />
+            <div className="h-6 w-6 rounded-full border border-emerald-300/55 dark:border-emerald-200/50 bg-emerald-300/35 dark:bg-emerald-300/20 shadow-[0_0_12px_rgba(22,163,74,0.24)] dark:shadow-[0_0_14px_rgba(16,185,129,0.45)]" />
           </div>
         </div>
       </div>
@@ -612,8 +742,8 @@ export default function Dashboard() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Bankroll</h1>
-          <p className="text-sm text-slate-400">Visão consolidada do seu stack</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Bankroll</h1>
+          <p className="text-sm text-muted-foreground">Visão consolidada do seu stack</p>
         </div>
         <Link href="/sessions">
           <button
@@ -893,7 +1023,7 @@ export default function Dashboard() {
                         customHands: handPrefs.customHands.filter((item) => item.name !== hand.name),
                       })}
                     >
-                      <X className="h-4 w-4 text-red-400 hover:text-red-300" />
+                      <X className="h-4 w-4 text-red-700 dark:text-red-400 hover:text-red-700 dark:text-red-300" />
                     </button>
                   </div>
                 </div>
@@ -924,9 +1054,9 @@ export default function Dashboard() {
         {/* LEFT COLUMN */}
         <div className="xl:col-span-3 space-y-5">
           {/* ==================== HERO PRINCIPAL - GRÁFICO DE FUNDO ==================== */}
-          <div className="bg-gradient-to-br from-zinc-950 to-black border border-zinc-700 rounded-3xl p-5 md:p-7 relative overflow-hidden mb-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60 min-h-[340px] md:min-h-[390px]">
-            <div className="absolute inset-0 bg-[radial-gradient(#1f2937_1px,transparent_1px)] [background-size:28px_28px] opacity-16 pointer-events-none"></div>
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(16,185,129,0.12),transparent_48%)]" />
+          <div className="bg-white dark:bg-gradient-to-br dark:from-zinc-950 dark:to-black border border-slate-200 dark:border-zinc-700 rounded-3xl p-5 md:p-7 relative overflow-hidden mb-8 transition-all duration-300 hover:-translate-y-1 shadow-[0_14px_30px_rgba(15,23,42,0.08),0_0_0_1px_rgba(139,92,246,0.08)] dark:shadow-none hover:shadow-[0_16px_36px_rgba(15,23,42,0.11),0_0_0_1px_rgba(139,92,246,0.14)] dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-violet-300 dark:hover:border-purple-500/60 min-h-[340px] md:min-h-[390px]">
+            <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] dark:bg-[radial-gradient(#1f2937_1px,transparent_1px)] [background-size:28px_28px] opacity-45 dark:opacity-16 pointer-events-none"></div>
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(21,128,61,0.09),transparent_50%)] dark:bg-[radial-gradient(circle_at_50%_10%,rgba(16,185,129,0.12),transparent_48%)]" />
 
             {(() => {
               const heroPlotData = chartData.map((point, index) => ({ index, value: point.total }));
@@ -939,37 +1069,37 @@ export default function Dashboard() {
               return (
                 <>
                   <div className="pointer-events-none absolute right-4 top-4 z-20 flex items-center gap-2 text-[11px]">
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-black/55 px-2.5 py-1 text-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-700/25 dark:border-emerald-400/35 bg-white/90 dark:bg-black/55 px-2.5 py-1 text-emerald-700 dark:text-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-700 dark:bg-emerald-400" />
                       Online {onlineShare}%
                     </div>
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/35 bg-black/55 px-2.5 py-1 text-violet-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-violet-700/25 dark:border-violet-400/35 bg-white/90 dark:bg-black/55 px-2.5 py-1 text-violet-700 dark:text-violet-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-violet-700 dark:bg-violet-400" />
                       Live {liveShare}%
                     </div>
                   </div>
 
-                  <div className="pointer-events-none absolute inset-x-3 bottom-3 top-[34%] rounded-2xl bg-black/18 z-0">
+                  <div className="pointer-events-none absolute inset-x-3 bottom-3 top-[34%] rounded-2xl z-0" style={{ backgroundColor: chartColors.backgroundColor }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={heroPlotData} margin={{ top: 6, right: 6, left: 6, bottom: 6 }}>
                         <defs>
                           <linearGradient id="heroBackdropFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={isPositive ? "#10b981" : "#ef4444"} stopOpacity={0.26} />
-                            <stop offset="100%" stopColor={isPositive ? "#10b981" : "#ef4444"} stopOpacity={0.01} />
+                            <stop offset="0%" stopColor={isPositive ? chartColors.positive : chartColors.negative} stopOpacity={0.24} />
+                            <stop offset="100%" stopColor={isPositive ? chartColors.positive : chartColors.negative} stopOpacity={0.02} />
                           </linearGradient>
                           <linearGradient id="heroBackdropLine" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stopColor={isPositive ? "#34d399" : "#f87171"} stopOpacity={0.5} />
-                            <stop offset="55%" stopColor={isPositive ? "#10b981" : "#ef4444"} stopOpacity={0.88} />
-                            <stop offset="100%" stopColor={isPositive ? "#6ee7b7" : "#fca5a5"} stopOpacity={1} />
+                            <stop offset="0%" stopColor={isPositive ? chartColors.positiveSoft : chartColors.negativeSoft} stopOpacity={0.55} />
+                            <stop offset="55%" stopColor={isPositive ? chartColors.positive : chartColors.negative} stopOpacity={0.9} />
+                            <stop offset="100%" stopColor={isPositive ? chartColors.positiveStrong : chartColors.negativeStrong} stopOpacity={1} />
                           </linearGradient>
                         </defs>
                         <XAxis dataKey="index" hide />
                         <YAxis hide domain={["dataMin", "dataMax"]} />
-                        <ReferenceLine y={firstValue + (lastValue - firstValue) * 0.33} stroke="#334155" strokeDasharray="4 7" ifOverflow="extendDomain" />
-                        <ReferenceLine y={firstValue + (lastValue - firstValue) * 0.66} stroke="#334155" strokeDasharray="4 7" ifOverflow="extendDomain" />
-                        <Area type="monotone" dataKey="value" stroke="none" fill="url(#heroBackdropFill)" isAnimationActive={false} />
+                        <ReferenceLine y={firstValue + (lastValue - firstValue) * 0.33} stroke={chartColors.gridLine} strokeDasharray="4 7" ifOverflow="extendDomain" />
+                        <ReferenceLine y={firstValue + (lastValue - firstValue) * 0.66} stroke={chartColors.gridLine} strokeDasharray="4 7" ifOverflow="extendDomain" />
+                        <Area type="linear" dataKey="value" stroke="none" fill="url(#heroBackdropFill)" isAnimationActive={false} />
                         <Line
-                          type="monotone"
+                          type="linear"
                           dataKey="value"
                           stroke="url(#heroBackdropLine)"
                           strokeWidth={3.2}
@@ -982,15 +1112,15 @@ export default function Dashboard() {
                   </div>
 
                   <div className="relative z-10 flex h-full min-h-[290px] flex-col items-center justify-start pt-8 text-center md:pt-10">
-                    <div className="text-4xl md:text-5xl xl:text-6xl font-bold tracking-tight md:tracking-[-1px] bg-gradient-to-r from-emerald-300 via-cyan-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(16,185,129,0.35)]">
+                    <div className="text-4xl md:text-5xl xl:text-6xl font-bold tracking-tight md:tracking-[-1px] bg-gradient-to-r from-slate-900 via-violet-800 to-cyan-700 dark:from-emerald-300 dark:via-cyan-300 dark:to-purple-300 bg-clip-text text-transparent dark:drop-shadow-[0_0_18px_rgba(16,185,129,0.35)]">
                       {formatCurrencyCompact(consolidatedTotal)}
                     </div>
 
-                    <div className="mt-2 text-3xl md:text-4xl font-extrabold leading-none text-emerald-400 drop-shadow-[0_0_16px_rgba(16,185,129,0.28)]">
+                    <div className="mt-2 text-3xl md:text-4xl font-extrabold leading-none text-green-700 dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(16,185,129,0.28)]">
                       {formatPercent(consolidatedPct)}
                     </div>
 
-                    <div className={`mt-2 text-xl md:text-2xl font-semibold ${roiProfit >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                    <div className={`mt-2 text-xl md:text-2xl font-semibold ${roiProfit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
                       {roiProfit >= 0 ? "+" : ""}{formatCurrencyCompact(roiProfit)}
                     </div>
                   </div>
@@ -999,7 +1129,7 @@ export default function Dashboard() {
             })()}
           </div>
 
-          <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.96),rgba(7,13,28,0.92))] shadow-[0_0_26px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+          <Card className="border-cyan-500/20 card-gradient-dark shadow-sm dark:shadow-[0_0_26px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardContent className="p-4 sm:p-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
@@ -1023,25 +1153,96 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-                <div className="mb-4 rounded-xl border border-cyan-500/20 bg-slate-950/40 px-3 py-2">
+              <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {([
+                    { key: "3m", label: "3M" },
+                    { key: "6m", label: "6M" },
+                    { key: "12m", label: "12M" },
+                    { key: "yoy", label: "Ano vs Ano" },
+                  ] as const).map((option) => (
+                    <Button
+                      key={option.key}
+                      type="button"
+                      size="sm"
+                      variant={monthlyCompareMode === option.key ? "default" : "outline"}
+                      className="h-7 px-2.5 text-[10px]"
+                      onClick={() => setMonthlyCompareMode(option.key)}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {monthlyCompareMode === "yoy" ? "Lucro do ano" : "Lucro do mês"}
+                    </p>
+                    <p className={`text-lg font-semibold ${monthlyComparison.currentProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                      {monthlyComparison.currentProfit >= 0 ? "+" : ""}{formatCurrency(monthlyComparison.currentProfit)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground capitalize">{monthlyComparison.currentLabel}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">
+                      {monthlyCompareMode === "yoy" ? "Vs ano anterior" : "Vs mês anterior"}
+                    </p>
+                    <p className={`text-sm font-semibold ${monthlyComparison.delta >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                      {monthlyComparison.delta >= 0 ? "+" : ""}{formatCurrency(monthlyComparison.delta)}
+                    </p>
+                    <p className={`text-[11px] ${monthlyComparison.deltaPct >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
+                      {monthlyComparison.deltaPct >= 0 ? "+" : ""}{monthlyComparison.deltaPct.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border/50 bg-background/40 px-2 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">{monthlyCompareMode === "yoy" ? "Ano atual" : "Mês atual"}</p>
+                    <p className="text-xs font-medium capitalize">{monthlyComparison.currentLabel}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-background/40 px-2 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">{monthlyCompareMode === "yoy" ? "Ano anterior" : "Mês anterior"}</p>
+                    <p className="text-xs font-medium capitalize">{monthlyComparison.previousLabel}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-1.5">
+                  {monthlyComparison.recent.map((month) => (
+                    <div key={month.key} className="flex items-center gap-2">
+                      <span className="w-12 text-[10px] uppercase text-muted-foreground">{month.label}</span>
+                      <div className="h-2 flex-1 rounded-sm bg-background/60">
+                        <div
+                          className={`h-2 rounded-sm ${month.profit >= 0 ? "bg-emerald-500/80" : "bg-red-500/80"}`}
+                          style={{ width: `${Math.max(6, month.widthPct)}%` }}
+                        />
+                      </div>
+                      <span className={`w-24 text-right text-[10px] font-medium ${month.profit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
+                        {month.profit >= 0 ? "+" : ""}{formatCurrency(month.profit)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+                <div className="mb-4 rounded-xl border border-cyan-500/20 bg-slate-100/95 dark:bg-slate-950/40 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   <div>
-                      <span className="text-slate-400">Foco:</span>{" "}
+                      <span className="text-slate-600 dark:text-slate-400">Foco:</span>{" "}
                     <span className="font-semibold">{primaryType === "online" ? "Online" : "Live"}</span>{" "}
                     <span className="text-muted-foreground">
                       ({primaryTypeShare > 0 ? `${primaryTypeShare.toFixed(0)}%` : "sem amostra"})
                     </span>
                   </div>
                   <div>
-                      <span className="text-slate-400">Plataforma:</span>{" "}
+                      <span className="text-slate-600 dark:text-slate-400">Plataforma:</span>{" "}
                     <span className="font-semibold">{topVenueName ?? "indefinida"}</span>
                   </div>
                   <div>
-                      <span className="text-slate-400">Formato:</span>{" "}
+                      <span className="text-slate-600 dark:text-slate-400">Formato:</span>{" "}
                     <span className="font-semibold">{topFormatLabel ?? "indefinido"}</span>
                   </div>
                   <div>
-                      <span className="text-slate-400">BI base:</span>{" "}
+                      <span className="text-slate-600 dark:text-slate-400">BI base:</span>{" "}
                     <span className="font-semibold">
                       {topBuyInValue > 0
                         ? (primaryType === "online" ? formatByCurrency(topBuyInValue, "USD") : formatCurrency(topBuyInValue))
@@ -1052,12 +1253,16 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-4 text-xs border-t border-cyan-500/15 pt-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">Mesas jogadas:</span>
+                  <span className="text-slate-600 dark:text-slate-400">Sessões jogadas:</span>
+                  <span className="font-semibold">{totalPlayedSessions}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-600 dark:text-slate-400">Mesas jogadas:</span>
                   <span className="font-semibold">{totalPlayedTables}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">ITM Rate:</span>
-                  <span className={`font-semibold ${(stats?.winRate || 0) >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
+                  <span className="text-slate-600 dark:text-slate-400">ITM Rate:</span>
+                  <span className={`font-semibold ${(stats?.winRate || 0) >= 50 ? "text-green-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
                     {(stats?.winRate || 0).toFixed(1)}%
                   </span>
                   <span className="text-muted-foreground">
@@ -1065,14 +1270,14 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">Média/sessão:</span>
-                  <span className={`font-semibold ${(stats?.avgProfit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  <span className="text-slate-600 dark:text-slate-400">Média/sessão:</span>
+                  <span className={`font-semibold ${(stats?.avgProfit || 0) >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                     {formatCurrencyCompact(stats?.avgProfit || 0)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">Hourly:</span>
-                  <span className={`font-semibold ${(stats?.avgHourlyRate || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  <span className="text-slate-600 dark:text-slate-400">Hourly:</span>
+                  <span className={`font-semibold ${(stats?.avgHourlyRate || 0) >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                     {formatCurrencyCompact(stats?.avgHourlyRate || 0)}/h
                   </span>
                 </div>
@@ -1083,7 +1288,7 @@ export default function Dashboard() {
           {/* Donut + Desempenho */}
           <div>
             {/* Desempenho por plataforma */}
-            <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.96),rgba(7,13,28,0.92))] shadow-[0_0_26px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+            <Card className="border-cyan-500/20 card-gradient-dark shadow-sm dark:shadow-[0_0_26px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-semibold">Desempenho</CardTitle>
@@ -1105,17 +1310,17 @@ export default function Dashboard() {
                     <div className="h-36">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: -6 }}>
-                          <CartesianGrid strokeDasharray="2 2" stroke="oklch(0.3 0.01 240 / 0.45)" vertical={false} />
+                          <CartesianGrid strokeDasharray="2 2" stroke={chartColors.gridLine} vertical={false} />
                           <XAxis
                             dataKey="date"
-                            stroke="oklch(0.55 0.01 240)"
+                            stroke={chartColors.axis}
                             fontSize={9}
                             tickLine={false}
                             axisLine={false}
                             minTickGap={24}
                             interval="preserveStartEnd"
                           />
-                          <YAxis stroke="oklch(0.55 0.01 240)" fontSize={9} tickLine={false} axisLine={false}
+                          <YAxis stroke={chartColors.axis} fontSize={9} tickLine={false} axisLine={false}
                             tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)}
                             domain={chartYDomain} width={52} />
                           <RechartsTooltip
@@ -1134,9 +1339,9 @@ export default function Dashboard() {
                               );
                             }}
                           />
-                          <Line type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} name="Total" />
-                          <Line type="monotone" dataKey="online" stroke="#06b6d4" strokeWidth={1.75} dot={false} strokeDasharray="4 2" name="Online" />
-                          <Line type="monotone" dataKey="live" stroke="#f59e0b" strokeWidth={1.75} dot={false} strokeDasharray="3 3" name="Live" />
+                          <Line type="linear" dataKey="total" stroke={theme === "light" ? "#15803d" : "var(--primary)"} strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} name="Total" />
+                          <Line type="linear" dataKey="online" stroke={theme === "light" ? "#0369a1" : "#06b6d4"} strokeWidth={1.75} dot={false} strokeDasharray="4 2" name="Online" />
+                          <Line type="linear" dataKey="live" stroke={theme === "light" ? "#92400e" : "#f59e0b"} strokeWidth={1.75} dot={false} strokeDasharray="3 3" name="Live" />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -1165,13 +1370,13 @@ export default function Dashboard() {
                     <div className="h-40">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={perfData} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
-                        <XAxis type="number" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false}
+                        <XAxis type="number" stroke={chartColors.axis} fontSize={10} tickLine={false}
                           tickFormatter={(v) => {
                             if (perfMetric === "sessions") return String(v);
                             if (perfMetric === "profit") return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
                             return `${v}%`;
                           }} />
-                        <YAxis type="category" dataKey="name" stroke="oklch(0.55 0.01 240)" fontSize={10} tickLine={false} width={70} />
+                        <YAxis type="category" dataKey="name" stroke={chartColors.axis} fontSize={10} tickLine={false} width={70} />
                         <RechartsTooltip
                               content={({ active, payload }: any) => {
                             if (!active || !payload?.length) return null;
@@ -1179,8 +1384,8 @@ export default function Dashboard() {
                             return (
                               <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
                                 <p className="font-semibold mb-1">{d.fullName}</p>
-                                <p>Resultado: <span className={d.profit >= 0 ? "text-emerald-400" : "text-red-400"}>{d.profit >= 0 ? "+" : ""}{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.profit)}</span></p>
-                                <p>ROI: <span className={d.roi >= 0 ? "text-emerald-400" : "text-red-400"}>{d.roi}%</span></p>
+                                <p>Resultado: <span className={d.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}>{d.profit >= 0 ? "+" : ""}{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(d.profit)}</span></p>
+                                <p>ROI: <span className={d.roi >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}>{d.roi}%</span></p>
                                 <p>ITM Rate: <span className="text-primary">{d.winrate}%</span> <span className="text-muted-foreground">({d.itmCount}/{d.tables})</span></p>
                                 <p>Mesas: <span className="font-semibold">{d.tables ?? d.sessions}</span></p>
                               </div>
@@ -1207,7 +1412,7 @@ export default function Dashboard() {
           </div>
 
           {/* Evolução do Bankroll */}
-            <Card className="border-violet-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.96),rgba(8,12,30,0.94))] shadow-[0_0_26px_rgba(168,85,247,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+            <Card className="border-violet-500/20 card-gradient-violet shadow-sm dark:shadow-[0_0_26px_rgba(168,85,247,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
@@ -1236,33 +1441,33 @@ export default function Dashboard() {
                     <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
                       <defs>
                         <linearGradient id="gradOnline" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                          <stop offset="5%" stopColor={theme === "light" ? "#0369a1" : "#06b6d4"} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={theme === "light" ? "#0369a1" : "#06b6d4"} stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="gradLive" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                          <stop offset="5%" stopColor={theme === "light" ? "#92400e" : "#f59e0b"} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={theme === "light" ? "#92400e" : "#f59e0b"} stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                          <stop offset="5%" stopColor={theme === "light" ? "#15803d" : "#3b82f6"} stopOpacity={0.35} />
+                          <stop offset="95%" stopColor={theme === "light" ? "#15803d" : "#3b82f6"} stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.03 240 / 0.4)" />
-                      <XAxis dataKey="date" stroke="oklch(0.55 0.01 240)" fontSize={11} tickLine={false} />
-                      <YAxis stroke="oklch(0.55 0.01 240)" fontSize={11} tickLine={false} axisLine={false}
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartColors.gridLine} />
+                      <XAxis dataKey="date" stroke={chartColors.axis} fontSize={11} tickLine={false} />
+                      <YAxis stroke={chartColors.axis} fontSize={11} tickLine={false} axisLine={false}
                         domain={chartYDomain}
                         tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)} />
-                      <ReferenceLine y={0} stroke="oklch(0.4 0.01 240)" strokeDasharray="4 4" />
+                      <ReferenceLine y={0} stroke={chartColors.gridLine} strokeDasharray="4 4" />
                       <RechartsTooltip content={<CustomTooltip />} />
                       {(chartPeriod === "all" || chartPeriod === "online") && (
-                        <Area type="monotone" dataKey="online" name="Online" stroke="#06b6d4" strokeWidth={2} fill="url(#gradOnline)" dot={false} activeDot={{ r: 4 }} />
+                        <Area type="linear" dataKey="online" name="Online" stroke={theme === "light" ? "#0369a1" : "#06b6d4"} strokeWidth={2} fill="url(#gradOnline)" dot={false} activeDot={{ r: 4 }} />
                       )}
                       {(chartPeriod === "all" || chartPeriod === "live") && (
-                        <Area type="monotone" dataKey="live" name="Live" stroke="#f59e0b" strokeWidth={2} fill="url(#gradLive)" dot={false} activeDot={{ r: 4 }} />
+                        <Area type="linear" dataKey="live" name="Live" stroke={theme === "light" ? "#92400e" : "#f59e0b"} strokeWidth={2} fill="url(#gradLive)" dot={false} activeDot={{ r: 4 }} />
                       )}
                       {chartPeriod === "all" && (
-                        <Area type="monotone" dataKey="total" name="Total" stroke="#3b82f6" strokeWidth={2.5} fill="url(#gradTotal)" dot={false} activeDot={{ r: 5 }} />
+                        <Area type="linear" dataKey="total" name="Total" stroke={theme === "light" ? "#15803d" : "#3b82f6"} strokeWidth={2.5} fill="url(#gradTotal)" dot={false} activeDot={{ r: 5 }} />
                       )}
                     </AreaChart>
                   </ResponsiveContainer>
@@ -1279,20 +1484,20 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.18),_transparent_36%),linear-gradient(180deg,_rgba(7,10,24,0.99),_rgba(10,14,30,0.95))] shadow-[0_0_35px_rgba(34,211,238,0.1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+          <Card className="overflow-hidden border-cyan-500/20 card-gradient-radial shadow-sm dark:shadow-[0_0_35px_rgba(34,211,238,0.1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-100">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-foreground">
                     <Swords className="h-4 w-4 text-cyan-400" /> Contador de Mãos
                   </CardTitle>
-                  <p className="text-xs text-slate-400">Perfil visual aplicado em todas as mãos e favoritas em destaque.</p>
+                  <p className="text-xs text-muted-foreground">Perfil visual aplicado em todas as mãos e favoritas em destaque.</p>
                 </div>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-300 hover:text-white" onClick={openHandsEditModal}>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" onClick={openHandsEditModal}>
                     <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-300 hover:text-white" onClick={() => setShowHandsConfigModal(true)}>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" onClick={() => setShowHandsConfigModal(true)}>
                     <Settings2 className="h-3.5 w-3.5 mr-1" /> Personalizar
                   </Button>
                 </div>
@@ -1302,16 +1507,16 @@ export default function Dashboard() {
               {(() => {
                 const builtInHands = ["kk", "jj", "aa", "ak"] as const;
                 const customColors = [
-                  { border: "border-emerald-500/60", glow: "shadow-[0_0_30px_rgba(16,185,129,0.18)]", text: "text-emerald-300" },
-                  { border: "border-pink-500/60", glow: "shadow-[0_0_30px_rgba(236,72,153,0.18)]", text: "text-pink-300" },
-                  { border: "border-amber-500/60", glow: "shadow-[0_0_30px_rgba(245,158,11,0.18)]", text: "text-amber-300" },
-                  { border: "border-blue-500/60", glow: "shadow-[0_0_30px_rgba(59,130,246,0.18)]", text: "text-blue-300" },
+                  { border: "border-emerald-500/60", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(16,185,129,0.18)]", text: "text-green-700 dark:text-emerald-300" },
+                  { border: "border-pink-500/60", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(236,72,153,0.18)]", text: "text-pink-700 dark:text-pink-300" },
+                  { border: "border-amber-500/60", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(245,158,11,0.18)]", text: "text-amber-700 dark:text-amber-300" },
+                  { border: "border-blue-500/60", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(59,130,246,0.18)]", text: "text-blue-700 dark:text-blue-300" },
                 ];
                 const builtInTheme: Record<string, { border: string; glow: string; text: string }> = {
-                  kk: { border: "border-cyan-500/70", glow: "shadow-[0_0_30px_rgba(34,211,238,0.18)]", text: "text-cyan-300" },
-                  jj: { border: "border-violet-500/70", glow: "shadow-[0_0_30px_rgba(168,85,247,0.18)]", text: "text-violet-300" },
-                  aa: { border: "border-cyan-400/70", glow: "shadow-[0_0_30px_rgba(34,211,238,0.22)]", text: "text-cyan-200" },
-                  ak: { border: "border-blue-500/70", glow: "shadow-[0_0_30px_rgba(59,130,246,0.18)]", text: "text-blue-300" },
+                  kk: { border: "border-cyan-500/70", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(34,211,238,0.18)]", text: "text-cyan-700 dark:text-cyan-300" },
+                  jj: { border: "border-violet-500/70", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(168,85,247,0.18)]", text: "text-violet-700 dark:text-violet-300" },
+                  aa: { border: "border-cyan-400/70", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(34,211,238,0.22)]", text: "text-cyan-800 dark:text-cyan-200" },
+                  ak: { border: "border-blue-500/70", glow: "shadow-sm dark:shadow-[0_0_30px_rgba(59,130,246,0.18)]", text: "text-blue-700 dark:text-blue-300" },
                 };
 
                 const builtInEntries = builtInHands
@@ -1352,8 +1557,8 @@ export default function Dashboard() {
                     {orderedHands.map((hand, index) => {
                       const theme = hand.isCustom ? customColors[index % customColors.length] : builtInTheme[hand.key];
                       return (
-                        <div key={hand.key} className={`relative rounded-[24px] border ${theme.border} ${theme.glow} bg-[linear-gradient(180deg,_rgba(16,24,40,0.92),_rgba(18,25,46,0.82))] p-4 text-center overflow-hidden`}>
-                          <div className="absolute inset-[10px] rounded-[18px] border border-white/8 pointer-events-none" />
+                        <div key={hand.key} className={`relative rounded-[24px] border ${theme.border} ${theme.glow} bg-white dark:bg-[linear-gradient(180deg,_rgba(16,24,40,0.92),_rgba(18,25,46,0.82))] p-4 text-center overflow-hidden`}>
+                          <div className="absolute inset-[10px] rounded-[18px] border border-slate-200 dark:border-white/8 pointer-events-none" />
                           <button
                             type="button"
                             className="absolute right-3 top-3 z-10"
@@ -1364,15 +1569,15 @@ export default function Dashboard() {
                                 : [...handPrefs.favorites, hand.key],
                             })}
                           >
-                            <Star className={`h-4 w-4 ${hand.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-slate-500 hover:text-yellow-300"}`} />
+                            <Star className={`h-4 w-4 ${hand.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-slate-500 hover:text-yellow-500 dark:hover:text-yellow-300"}`} />
                           </button>
                           <div className="relative z-10 space-y-2">
                             <p className={`text-4xl font-black tracking-widest ${theme.text}`}>{hand.label}</p>
-                            <p className="text-sm text-slate-300">{hand.stats.hands} {hand.stats.hands === 1 ? "mão" : "mãos"}</p>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">{hand.stats.hands} {hand.stats.hands === 1 ? "mão" : "mãos"}</p>
                             <div className="space-y-1">
-                              <p className="text-4xl font-bold text-emerald-400">{hand.stats.wins}W</p>
-                              <p className="text-4xl font-bold text-red-400">{hand.stats.losses}L</p>
-                              <p className="text-2xl font-semibold text-white">{hand.stats.winRate}%</p>
+                              <p className="text-4xl font-bold text-green-700 dark:text-emerald-400">{hand.stats.wins}W</p>
+                              <p className="text-4xl font-bold text-red-700 dark:text-red-400">{hand.stats.losses}L</p>
+                              <p className="text-2xl font-semibold text-slate-900 dark:text-white">{hand.stats.winRate}%</p>
                             </div>
                             <div className="grid grid-cols-2 gap-2 pt-2">
                               <Button
@@ -1404,7 +1609,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setShowHandsConfigModal(true)}
-                      className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/40 p-4 min-h-[264px] flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
+                      className="rounded-[24px] border border-dashed border-slate-300 dark:border-slate-700 bg-white/90 dark:bg-slate-950/40 p-4 min-h-[264px] flex flex-col items-center justify-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:border-slate-400 dark:hover:border-slate-500 transition-colors"
                     >
                       <PlusCircle className="h-7 w-7" />
                       <span className="text-sm font-medium">Adicionar mão</span>
@@ -1423,7 +1628,7 @@ export default function Dashboard() {
             {typeSummaryCards.map((card) => {
               const Icon = card.icon;
               return (
-                <Card key={card.key} className={`overflow-hidden border ${card.badgeClass.split(" ")[1]} bg-[linear-gradient(180deg,rgba(9,16,34,0.95),rgba(8,13,30,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60`}>
+                <Card key={card.key} className={`overflow-hidden border ${card.borderClass} card-gradient-dark transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60`}>
                   <div className={`h-1 w-full bg-gradient-to-r ${card.gradientClass}`} />
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-2">
@@ -1438,11 +1643,20 @@ export default function Dashboard() {
                       </button>
                     </div>
                     <p className="text-xl font-bold mb-1">{formatCurrencyCompact(card.current)}</p>
-                    <div className={`flex items-center gap-1 text-xs ${card.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    <div className={`flex items-center gap-1 text-xs ${card.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                       {card.profit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                       <span>{card.profit >= 0 ? "+" : ""}{formatCurrencyCompact(card.profit)}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{card.tables} mesas</p>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <p className="text-xs text-muted-foreground mt-1 inline-block cursor-default">
+                          {card.tables} mesa{card.tables === 1 ? "" : "s"}
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" align="start" sideOffset={10}>
+                        <span>{card.sessions} sess{card.sessions === 1 ? "ão" : "ões"}</span>
+                      </TooltipContent>
+                    </UiTooltip>
                   </CardContent>
                 </Card>
               );
@@ -1450,7 +1664,7 @@ export default function Dashboard() {
           </div>
 
           {/* Minhas Plataformas (apenas stats) */}
-          <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(8,14,31,0.95),rgba(6,11,25,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+          <Card className="border-cyan-500/20 card-gradient-dark transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold">Plataformas Prioritárias</CardTitle>
@@ -1483,7 +1697,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-violet-500/20 bg-[linear-gradient(180deg,rgba(9,16,34,0.95),rgba(6,10,23,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+          <Card className="border-violet-500/20 card-gradient-violet transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -1513,7 +1727,7 @@ export default function Dashboard() {
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                             {tournament.profit >= 0 ? "+" : ""}{formatCurrencyCompact(tournament.profit)}
                           </p>
                           {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
@@ -1523,7 +1737,7 @@ export default function Dashboard() {
                         <div className="grid grid-cols-3 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
                           <div className="rounded-md bg-background/40 px-2 py-2">
                             <p className="text-[10px] text-muted-foreground">Média</p>
-                            <p className={`text-xs font-semibold ${tournament.avgProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            <p className={`text-xs font-semibold ${tournament.avgProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                               {formatCurrencyCompact(tournament.avgProfit)}
                             </p>
                           </div>
@@ -1533,7 +1747,7 @@ export default function Dashboard() {
                           </div>
                           <div className="rounded-md bg-background/40 px-2 py-2">
                             <p className="text-[10px] text-muted-foreground">Saldo</p>
-                            <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                               {formatCurrencyCompact(tournament.profit)}
                             </p>
                           </div>
@@ -1550,7 +1764,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-cyan-500/20 bg-[linear-gradient(180deg,rgba(8,14,31,0.95),rgba(6,11,25,0.92))] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/20 hover:border-purple-500/60">
+          <Card className="border-cyan-500/20 card-gradient-dark transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1580,7 +1794,7 @@ export default function Dashboard() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className={`text-xs font-semibold ${t.tableProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      <p className={`text-xs font-semibold ${t.tableProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                         {t.tableProfit >= 0 ? "+" : ""}{formatByCurrency(t.tableProfit, t.currency)}
                       </p>
                       <p className="text-[11px] text-muted-foreground">BI {formatByCurrency(t.buyIn, t.currency)}</p>
@@ -1600,3 +1814,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

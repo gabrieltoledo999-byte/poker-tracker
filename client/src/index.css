@@ -199,6 +199,69 @@
     scrollbar-gutter: stable;
   }
 
+  /* Theme-aware gradient backgrounds for Dashboard cards */
+  .card-gradient-dark {
+    background: linear-gradient(180deg, rgba(9, 16, 34, 0.96), rgba(7, 13, 28, 0.92));
+  }
+
+  .dark .card-gradient-dark {
+    background: linear-gradient(180deg, rgba(9, 16, 34, 0.96), rgba(7, 13, 28, 0.92));
+  }
+
+  :is(html:not(.dark)) .card-gradient-dark {
+    background:
+      radial-gradient(circle at top right, rgba(139, 92, 246, 0.10), transparent 42%),
+      radial-gradient(circle at bottom left, rgba(6, 182, 212, 0.08), transparent 46%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 247, 252, 0.97));
+  }
+
+  .card-gradient-main {
+    background: linear-gradient(180deg, rgba(3, 8, 22, 0.98), rgba(5, 10, 24, 0.96));
+  }
+
+  .dark .card-gradient-main {
+    background: linear-gradient(180deg, rgba(3, 8, 22, 0.98), rgba(5, 10, 24, 0.96));
+  }
+
+  :is(html:not(.dark)) .card-gradient-main {
+    background:
+      radial-gradient(circle at top left, rgba(139, 92, 246, 0.09), transparent 34%),
+      radial-gradient(circle at top right, rgba(6, 182, 212, 0.08), transparent 36%),
+      linear-gradient(180deg, rgba(250, 250, 252, 0.99), rgba(246, 247, 252, 0.98));
+  }
+
+  .card-gradient-violet {
+    background: linear-gradient(180deg, rgba(9, 16, 34, 0.96), rgba(8, 12, 30, 0.94));
+  }
+
+  .dark .card-gradient-violet {
+    background: linear-gradient(180deg, rgba(9, 16, 34, 0.96), rgba(8, 12, 30, 0.94));
+  }
+
+  :is(html:not(.dark)) .card-gradient-violet {
+    background:
+      radial-gradient(circle at top right, rgba(139, 92, 246, 0.12), transparent 38%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 244, 253, 0.97));
+  }
+
+  .card-gradient-radial {
+    background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 32%), 
+                radial-gradient(circle at top right, rgba(168, 85, 247, 0.18), transparent 36%), 
+                linear-gradient(180deg, rgba(7, 10, 24, 0.99), rgba(10, 14, 30, 0.95));
+  }
+
+  .dark .card-gradient-radial {
+    background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 32%), 
+                radial-gradient(circle at top right, rgba(168, 85, 247, 0.18), transparent 36%), 
+                linear-gradient(180deg, rgba(7, 10, 24, 0.99), rgba(10, 14, 30, 0.95));
+  }
+
+  :is(html:not(.dark)) .card-gradient-radial {
+    background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.10), transparent 32%), 
+                radial-gradient(circle at top right, rgba(168, 85, 247, 0.10), transparent 36%), 
+                linear-gradient(180deg, rgba(250, 250, 252, 0.99), rgba(246, 247, 252, 0.98));
+  }
+
   .social-shell {
     border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
     background:

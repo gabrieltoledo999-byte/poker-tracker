@@ -79,11 +79,11 @@ async function runSafeMigrations() {
         "ALTER TABLE `session_tables` ADD COLUMN `initialBuyIn` int",
         "ALTER TABLE `session_tables` ADD COLUMN `rebuyCount` int NOT NULL DEFAULT 0",
       // currency enum expansion
-      "ALTER TABLE `sessions` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
-      "ALTER TABLE `session_tables` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
-      "ALTER TABLE `fund_transactions` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
-      "ALTER TABLE `venues` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
-      "ALTER TABLE `venue_balance_history` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY') NOT NULL DEFAULT 'BRL'",
+      "ALTER TABLE `sessions` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY','EUR') NOT NULL DEFAULT 'BRL'",
+      "ALTER TABLE `session_tables` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY','EUR') NOT NULL DEFAULT 'BRL'",
+      "ALTER TABLE `fund_transactions` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY','EUR') NOT NULL DEFAULT 'BRL'",
+      "ALTER TABLE `venues` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY','EUR') NOT NULL DEFAULT 'BRL'",
+      "ALTER TABLE `venue_balance_history` MODIFY COLUMN `currency` enum('BRL','USD','CAD','JPY','CNY','EUR') NOT NULL DEFAULT 'BRL'",
     ];
 
     const createStatements = [
@@ -178,6 +178,8 @@ const VENUE_ALIAS_MAP: Record<string, string> = {
   "kk poker": "KKPoker",
   "wpt global": "WPT Global",
   "x poker": "X-Poker",
+  "champion poker": "Champion Poker",
+  "championpoker": "Champion Poker",
 };
 
 function canonicalVenueName(name: string): string {

@@ -161,21 +161,21 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-screen flex items-start justify-center p-4 pt-14 md:pt-20 bg-cover"
+      className="min-h-screen flex items-center justify-center p-4 bg-cover"
       style={{
         backgroundImage:
           "linear-gradient(rgba(0,0,0,0.62), rgba(0,0,0,0.62)), url('/Tela-de-Login.PNG')",
               backgroundPosition: "center 13%",
       }}
     >
-      <div className="w-full max-w-sm space-y-8">
+      <div className="w-full max-w-sm space-y-4">
 
         {/* Logo */}
-        <div className="flex justify-center mt-14 md:mt-16">
+        <div className="flex justify-center">
           <img
             src="/TheRail_Login_front.png"
             alt="The Rail"
-            className="h-44 md:h-48 w-auto object-contain drop-shadow-xl"
+            className="h-32 md:h-36 w-auto object-contain drop-shadow-xl"
           />
         </div>
 

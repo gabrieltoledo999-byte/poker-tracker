@@ -17,6 +17,7 @@ let usdCache: RateCache | null = null;
 let jpyCache: RateCache | null = null;
 let cadCache: RateCache | null = null;
 let cnyCache: RateCache | null = null;
+let eurCache: RateCache | null = null;
 
 function isCacheValid(cache: RateCache | null): boolean {
   if (!cache) return false;
@@ -24,7 +25,7 @@ function isCacheValid(cache: RateCache | null): boolean {
 }
 
 // Fetch all three rates in a single request from open.er-api.com
-async function fetchAllRatesFromOpenER(): Promise<{ BRL: number; CAD: number; JPY: number; CNY: number }> {
+async function fetchAllRatesFromOpenER(): Promise<{ BRL: number; CAD: number; JPY: number; CNY: number; EUR: number }> {
   const response = await fetch("https://open.er-api.com/v6/latest/USD", {
     signal: AbortSignal.timeout(6000),
   });
@@ -37,12 +38,13 @@ async function fetchAllRatesFromOpenER(): Promise<{ BRL: number; CAD: number; JP
     CAD: rates.CAD,
     JPY: rates.JPY,
     CNY: rates.CNY,
+    EUR: rates.EUR,
   };
 }
 
 // Fallback: frankfurter.dev (ECB-sourced, free)
-async function fetchAllRatesFromFrankfurter(): Promise<{ BRL: number; CAD: number; JPY: number; CNY: number }> {
-  const response = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=BRL,CAD,JPY,CNY", {
+async function fetchAllRatesFromFrankfurter(): Promise<{ BRL: number; CAD: number; JPY: number; CNY: number; EUR: number }> {
+  const response = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=BRL,CAD,JPY,CNY,EUR", {
     signal: AbortSignal.timeout(6000),
   });
   if (!response.ok) throw new Error(`frankfurter HTTP ${response.status}`);
@@ -52,6 +54,7 @@ async function fetchAllRatesFromFrankfurter(): Promise<{ BRL: number; CAD: numbe
     CAD: data.rates.CAD,
     JPY: data.rates.JPY,
     CNY: data.rates.CNY,
+    EUR: data.rates.EUR,
   };
 }
 
@@ -66,7 +69,8 @@ async function refreshAllCaches(): Promise<void> {
     cadCache = { rate: rates.BRL / rates.CAD, timestamp: now, source: "api", fetchedAt };
     jpyCache = { rate: rates.BRL / rates.JPY, timestamp: now, source: "api", fetchedAt };
     cnyCache = { rate: rates.BRL / rates.CNY, timestamp: now, source: "api", fetchedAt };
-    console.log(`[Currency] Rates updated from open.er-api: USD=${rates.BRL?.toFixed(4)}, CAD=${(rates.BRL / rates.CAD)?.toFixed(4)}, JPY=${(rates.BRL / rates.JPY)?.toFixed(6)}, CNY=${(rates.BRL / rates.CNY)?.toFixed(4)}`);
+    eurCache = { rate: rates.BRL / rates.EUR, timestamp: now, source: "api", fetchedAt };
+    console.log(`[Currency] Rates updated from open.er-api: USD=${rates.BRL?.toFixed(4)}, CAD=${(rates.BRL / rates.CAD)?.toFixed(4)}, JPY=${(rates.BRL / rates.JPY)?.toFixed(6)}, CNY=${(rates.BRL / rates.CNY)?.toFixed(4)}, EUR=${(rates.BRL / rates.EUR)?.toFixed(4)}`);
     return;
   } catch (err) {
     console.warn("[Currency] open.er-api failed, trying frankfurter.dev:", err);
@@ -78,7 +82,8 @@ async function refreshAllCaches(): Promise<void> {
     cadCache = { rate: rates.BRL / rates.CAD, timestamp: now, source: "api", fetchedAt };
     jpyCache = { rate: rates.BRL / rates.JPY, timestamp: now, source: "api", fetchedAt };
     cnyCache = { rate: rates.BRL / rates.CNY, timestamp: now, source: "api", fetchedAt };
-    console.log(`[Currency] Rates updated from frankfurter.dev: USD=${rates.BRL?.toFixed(4)}, CAD=${(rates.BRL / rates.CAD)?.toFixed(4)}, JPY=${(rates.BRL / rates.JPY)?.toFixed(6)}, CNY=${(rates.BRL / rates.CNY)?.toFixed(4)}`);
+    eurCache = { rate: rates.BRL / rates.EUR, timestamp: now, source: "api", fetchedAt };
+    console.log(`[Currency] Rates updated from frankfurter.dev: USD=${rates.BRL?.toFixed(4)}, CAD=${(rates.BRL / rates.CAD)?.toFixed(4)}, JPY=${(rates.BRL / rates.JPY)?.toFixed(6)}, CNY=${(rates.BRL / rates.CNY)?.toFixed(4)}, EUR=${(rates.BRL / rates.EUR)?.toFixed(4)}`);
     return;
   } catch (err) {
     console.error("[Currency] Both APIs failed:", err);
@@ -88,7 +93,7 @@ async function refreshAllCaches(): Promise<void> {
 
 async function ensureCachesPopulated(): Promise<void> {
   // If any cache is missing or stale, refresh all at once
-  if (!isCacheValid(usdCache) || !isCacheValid(cadCache) || !isCacheValid(jpyCache) || !isCacheValid(cnyCache)) {
+  if (!isCacheValid(usdCache) || !isCacheValid(cadCache) || !isCacheValid(jpyCache) || !isCacheValid(cnyCache) || !isCacheValid(eurCache)) {
     await refreshAllCaches();
   }
 }
@@ -146,18 +151,42 @@ export async function getCnyToBrlRate(): Promise<number> {
   return fallbackRate;
 }
 
+export async function getEurToBrlRate(): Promise<number> {
+  try {
+    await ensureCachesPopulated();
+    if (eurCache) return eurCache.rate;
+  } catch (err) {
+    console.error("[Currency] Failed to fetch EUR/BRL rate:", err);
+    if (eurCache) return eurCache.rate;
+  }
+  const fallbackRate = 6.30;
+  eurCache = { rate: fallbackRate, timestamp: Date.now() - CACHE_DURATION + 5 * 60 * 1000, source: "fallback", fetchedAt: new Date().toISOString() };
+  return fallbackRate;
+}
+
+/** Returns the exchange rate for any supported currency to BRL */
+export async function getRateToBrl(currency: "USD" | "CAD" | "JPY" | "CNY" | "EUR"): Promise<number> {
+  if (currency === "USD") return getUsdToBrlRate();
+  if (currency === "CAD") return getCadToBrlRate();
+  if (currency === "JPY") return getJpyToBrlRate();
+  if (currency === "CNY") return getCnyToBrlRate();
+  return getEurToBrlRate();
+}
+
 /** Returns all exchange rates at once (used by the dashboard) */
 export async function getAllRates(): Promise<{
   USD: { rate: number; source: string; fetchedAt: string };
   CAD: { rate: number; source: string; fetchedAt: string };
   JPY: { rate: number; source: string; fetchedAt: string };
   CNY: { rate: number; source: string; fetchedAt: string };
+  EUR: { rate: number; source: string; fetchedAt: string };
 }> {
-  const [usdRate, cadRate, jpyRate, cnyRate] = await Promise.all([
+  const [usdRate, cadRate, jpyRate, cnyRate, eurRate] = await Promise.all([
     getUsdToBrlRate(),
     getCadToBrlRate(),
     getJpyToBrlRate(),
     getCnyToBrlRate(),
+    getEurToBrlRate(),
   ]);
 
   return {
@@ -181,6 +210,11 @@ export async function getAllRates(): Promise<{
       source: cnyCache?.source ?? "fallback",
       fetchedAt: cnyCache?.fetchedAt ?? new Date().toISOString(),
     },
+    EUR: {
+      rate: eurRate,
+      source: eurCache?.source ?? "fallback",
+      fetchedAt: eurCache?.fetchedAt ?? new Date().toISOString(),
+    },
   };
 }
 
@@ -190,11 +224,13 @@ export async function refreshRates(): Promise<{
   CAD: { rate: number; source: string; fetchedAt: string };
   JPY: { rate: number; source: string; fetchedAt: string };
   CNY: { rate: number; source: string; fetchedAt: string };
+  EUR: { rate: number; source: string; fetchedAt: string };
 }> {
   usdCache = null;
   cadCache = null;
   jpyCache = null;
   cnyCache = null;
+  eurCache = null;
   return getAllRates();
 }
 
@@ -206,7 +242,7 @@ export function convertBrlToUsd(brlCentavos: number, rate: number): number {
   return Math.round(brlCentavos / rate);
 }
 
-export async function convertToBrl(amount: number, currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY"): Promise<number> {
+export async function convertToBrl(amount: number, currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR"): Promise<number> {
   if (currency === "BRL") return amount;
   if (currency === "USD") {
     const rate = await getUsdToBrlRate();
@@ -222,6 +258,10 @@ export async function convertToBrl(amount: number, currency: "BRL" | "USD" | "CA
   }
   if (currency === "CNY") {
     const rate = await getCnyToBrlRate();
+    return Math.round(amount * rate);
+  }
+  if (currency === "EUR") {
+    const rate = await getEurToBrlRate();
     return Math.round(amount * rate);
   }
   return amount;

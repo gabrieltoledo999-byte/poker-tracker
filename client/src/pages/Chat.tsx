@@ -61,7 +61,7 @@ function ConversationView({
 
   const { data: msgs = [], isLoading } = trpc.chat.messages.useQuery(
     { friendId },
-    { refetchInterval: 2000, staleTime: 1000, refetchOnWindowFocus: true }
+    { refetchInterval: 5000, staleTime: 3000, refetchOnWindowFocus: true }
   );
 
   const markReadMutation = trpc.chat.markRead.useMutation();
@@ -393,14 +393,14 @@ export default function Chat() {
   });
 
   const { data: conversations = [], isLoading: loadingConversations } = trpc.chat.conversations.useQuery(undefined, {
-    refetchInterval: 3000,
-    staleTime: 1500,
+    refetchInterval: 15000,
+    staleTime: 8000,
     refetchOnWindowFocus: true,
   });
 
   const { data: unreadData } = trpc.chat.unreadCount.useQuery(undefined, {
-    refetchInterval: 3000,
-    staleTime: 1500,
+    refetchInterval: 15000,
+    staleTime: 8000,
     refetchOnWindowFocus: true,
   });
 

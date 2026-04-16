@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="Champion Poker logo">
+  <defs>
+    <linearGradient id="gld" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D4A827"/>
+      <stop offset="50%" stop-color="#C9A030"/>
+      <stop offset="100%" stop-color="#B8922A"/>
+    </linearGradient>
+    <clipPath id="chipClip"><circle cx="100" cy="100" r="96"/></clipPath>
+  </defs>
+  <!-- Outer gold circle -->
+  <circle cx="100" cy="100" r="96" fill="url(#gld)"/>
+  <!-- Inner white circle -->
+  <circle cx="100" cy="100" r="72" fill="#FAFAFA"/>
+  <!-- Gold ring between inner and outer -->
+  <circle cx="100" cy="100" r="72" fill="none" stroke="url(#gld)" stroke-width="2"/>
+  <!-- White notches on the gold rim (8 around the chip) -->
+  <g clip-path="url(#chipClip)">
+    <!-- Top -->
+    <rect x="86" y="0" width="28" height="30" rx="6" fill="#FAFAFA"/>
+    <!-- Bottom -->
+    <rect x="86" y="170" width="28" height="30" rx="6" fill="#FAFAFA"/>
+    <!-- Left -->
+    <rect x="0" y="86" width="30" height="28" rx="6" fill="#FAFAFA"/>
+    <!-- Right -->
+    <rect x="170" y="86" width="30" height="28" rx="6" fill="#FAFAFA"/>
+    <!-- Top-right -->
+    <rect x="145" y="22" width="28" height="26" rx="6" fill="#FAFAFA" transform="rotate(45 159 35)"/>
+    <!-- Top-left -->
+    <rect x="27" y="22" width="28" height="26" rx="6" fill="#FAFAFA" transform="rotate(-45 41 35)"/>
+    <!-- Bottom-right -->
+    <rect x="145" y="152" width="28" height="26" rx="6" fill="#FAFAFA" transform="rotate(-45 159 165)"/>
+    <!-- Bottom-left -->
+    <rect x="27" y="152" width="28" height="26" rx="6" fill="#FAFAFA" transform="rotate(45 41 165)"/>
+  </g>
+  <!-- Inner decorative ring -->
+  <circle cx="100" cy="100" r="60" fill="none" stroke="#C9A03080" stroke-width="1.5"/>
+  <!-- "C" letter - black -->
+  <text x="88" y="114" text-anchor="middle" font-family="'Arial Black', Arial, Helvetica, sans-serif" font-size="52" font-weight="900" fill="#1A1A1A" letter-spacing="-2">C</text>
+  <!-- "p" letter - dark gold -->
+  <text x="118" y="114" text-anchor="middle" font-family="'Arial Black', Arial, Helvetica, sans-serif" font-size="52" font-weight="900" fill="#8B7520" letter-spacing="-2">p</text>
+</svg>

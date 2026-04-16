@@ -1936,7 +1936,7 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
         logoUrl: preset.logoUrl,
         website: preset.website || null,
         isPreset: 1,
-        currency: (preset.defaultCurrency as "BRL" | "USD" | "CAD" | "JPY" | "CNY") || "BRL",
+        currency: (preset.defaultCurrency as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR") || "BRL",
       });
     }
   }
@@ -1954,6 +1954,43 @@ export async function initializePresetVenues(userId: number, presets: Array<{ na
   }
 
   await mergeDuplicateVenuesForUser(userId);
+}
+
+export async function getBuyInsByVenue(userId: number, venueId: number): Promise<Array<{ buyIn: number; currency: string; count: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      buyIn: sessionTables.initialBuyIn,
+      currency: sessionTables.currency,
+    })
+    .from(sessionTables)
+    .where(
+      and(
+        eq(sessionTables.userId, userId),
+        eq(sessionTables.venueId, venueId),
+        sql`${sessionTables.initialBuyIn} IS NOT NULL AND ${sessionTables.initialBuyIn} > 0`,
+      )
+    )
+    .orderBy(desc(sessionTables.startedAt))
+    .limit(500);
+
+  // Count by (buyIn, currency) pair
+  const freq = new Map<string, { buyIn: number; currency: string; count: number }>();
+  for (const row of rows) {
+    const bi = row.buyIn ?? 0;
+    const cur = row.currency ?? "BRL";
+    const key = `${bi}:${cur}`;
+    const entry = freq.get(key);
+    if (entry) {
+      entry.count++;
+    } else {
+      freq.set(key, { buyIn: bi, currency: cur, count: 1 });
+    }
+  }
+
+  return Array.from(freq.values()).sort((a, b) => b.count - a.count).slice(0, 8);
 }
 
 export async function getStatsByVenue(userId: number) {
@@ -2423,7 +2460,7 @@ export async function createFundTransaction(
     transactionType: "deposit" | "withdrawal";
     bankrollType: "online" | "live";
     amount: number;
-    currency?: "BRL" | "USD";
+    currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
     originalAmount?: number;
     exchangeRate?: number;
     description?: string;
@@ -3303,7 +3340,7 @@ export async function recordVenueBalanceChange(data: {
   venueId: number;
   balanceBefore: number;
   balanceAfter: number;
-  currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY";
+  currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
   changeType: "manual" | "session" | "initial";
   sessionId?: number;
   note?: string;
@@ -3358,7 +3395,7 @@ export async function updateVenueBalance(
   venueId: number,
   userId: number,
   newBalance: number,
-  currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY",
+  currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR",
   changeType: "manual" | "session" | "initial",
   opts?: { sessionId?: number; note?: string; changedAt?: Date }
 ): Promise<Venue | null> {
@@ -3984,3 +4021,4 @@ export async function discardActiveSession(userId: number, activeSessionId: numb
   await db.delete(activeSessions).where(and(eq(activeSessions.id, activeSessionId), eq(activeSessions.userId, userId)));
   return true;
 }
+

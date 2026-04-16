@@ -5,7 +5,7 @@ export interface PresetVenue {
   type: "online" | "live";
   logoUrl: string;
   logoFit?: "contain" | "cover";
-  defaultCurrency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY";
+  defaultCurrency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
   website?: string;
 }
 
@@ -83,6 +83,14 @@ export const PRESET_VENUES: PresetVenue[] = [
     defaultCurrency: "USD",
     website: "https://www.xpokerapp.com",
   },
+  {
+    name: "Champion Poker",
+    type: "online",
+    logoUrl: `${CDN}/championpoker.svg`,
+    logoFit: "contain",
+    defaultCurrency: "EUR",
+    website: "https://www.championpoker.com",
+  },
   // Live Poker Clubs - Brazil
   {
     name: "Monte Carlo Poker Club",
@@ -117,7 +125,7 @@ export const PRESET_VENUES: PresetVenue[] = [
     type: "live",
     logoUrl: `${CDN}/bsop.webp`,
     logoFit: "contain",
-    website: "https://www.bsoppoker.com.br",
+    website: "https://www.bsoplive.com",
   },
 ];
 
