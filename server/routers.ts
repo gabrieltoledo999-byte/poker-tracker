@@ -1,4 +1,4 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, LEGACY_COOKIE_NAMES } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -360,10 +360,25 @@ function parseImportText(rawText: string, forcedCurrency?: ImportCurrency, force
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) return null;
+
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      const token = await sdk.createSessionToken(ctx.user.openId, { name: ctx.user.name || "" });
+      ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+
+      for (const legacyName of LEGACY_COOKIE_NAMES) {
+        ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+      }
+
+      return ctx.user;
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      for (const legacyName of LEGACY_COOKIE_NAMES) {
+        ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+      }
       return { success: true } as const;
     }),
     register: publicProcedure
@@ -378,6 +393,9 @@ export const appRouter = router({
           const { token } = await loginUser({ email: input.email, password: input.password });
           const cookieOptions = getSessionCookieOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+          for (const legacyName of LEGACY_COOKIE_NAMES) {
+            ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+          }
           return { success: true, user };
         } catch (err: any) {
           console.error("[auth.register] failed:", err);
@@ -400,6 +418,9 @@ export const appRouter = router({
           const { user, token } = await loginUser(input);
           const cookieOptions = getSessionCookieOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+          for (const legacyName of LEGACY_COOKIE_NAMES) {
+            ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+          }
           return { success: true, user, needsPasswordSetup: false };
         } catch (err: any) {
           console.error("[auth.login] failed:", err);
@@ -426,6 +447,9 @@ export const appRouter = router({
           const { user, token } = await setupPasswordForExistingUser(input);
           const cookieOptions = getSessionCookieOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+          for (const legacyName of LEGACY_COOKIE_NAMES) {
+            ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+          }
           return { success: true, user };
         } catch (err: any) {
           console.error("[auth.setupPassword] failed:", err);

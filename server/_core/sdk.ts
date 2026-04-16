@@ -2,7 +2,7 @@
  * SDK simplificado — autenticação própria com JWT local.
  * Toda a lógica de OAuth do Manus foi removida.
  */
-import { COOKIE_NAME, ONE_DAY_MS } from "@shared/const";
+import { COOKIE_NAME, LEGACY_COOKIE_NAMES, ONE_DAY_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
@@ -79,7 +79,9 @@ class SDKServer {
    */
   async authenticateRequest(req: Request): Promise<User> {
     const cookies = this.parseCookies(req.headers.cookie);
-    const sessionCookie = cookies.get(COOKIE_NAME);
+    const sessionCookie =
+      cookies.get(COOKIE_NAME) ??
+      LEGACY_COOKIE_NAMES.map((name) => cookies.get(name)).find((value): value is string => Boolean(value));
     const session = await this.verifySession(sessionCookie);
 
     if (!session) {

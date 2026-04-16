@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import axios from "axios";
 import { randomBytes } from "crypto";
 import { parse as parseCookieHeader } from "cookie";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, LEGACY_COOKIE_NAMES } from "@shared/const";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { getUserByEmail, getUserByNickname, getUserByOpenId, linkUserToGoogle, upsertUser } from "../db";
@@ -92,7 +92,8 @@ export function registerOAuthRoutes(app: Express) {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", "openid email profile");
     url.searchParams.set("state", state);
-    url.searchParams.set("prompt", "select_account");
+    // Avoid forcing account picker every time; let Google reuse existing session when possible.
+    url.searchParams.set("prompt", "consent");
 
     res.redirect(url.toString());
   });
@@ -220,7 +221,11 @@ export function registerOAuthRoutes(app: Express) {
       }
 
       const token = await sdk.createSessionToken(sessionOpenId, { name });
-      res.cookie(COOKIE_NAME, token, getSessionCookieOptions(req));
+      const sessionCookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, token, sessionCookieOptions);
+      for (const legacyName of LEGACY_COOKIE_NAMES) {
+        res.clearCookie(legacyName, { ...sessionCookieOptions, maxAge: -1 });
+      }
       res.clearCookie(GOOGLE_STATE_COOKIE, cookieOptions);
       res.redirect("/");
     } catch (error) {
