@@ -40,11 +40,10 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
-  // Em produção, usamos SameSite=None + Secure para suportar cenários com proxy/domínios diferentes.
-  // Em ambiente local, mantemos Lax para facilitar desenvolvimento em localhost.
+  // Lax e o comportamento mais estavel para app no mesmo dominio, inclusive no retorno do OAuth.
   const isProduction = process.env.NODE_ENV === "production";
   const secure = isProduction ? true : isSecureRequest(req);
-  const sameSite: CookieOptions["sameSite"] = isProduction ? "none" : "lax";
+  const sameSite: CookieOptions["sameSite"] = "lax";
   const expires = new Date(Date.now() + ONE_DAY_MS);
 
   return {

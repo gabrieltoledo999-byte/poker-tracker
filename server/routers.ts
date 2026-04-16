@@ -363,12 +363,17 @@ export const appRouter = router({
     me: publicProcedure.query(async ({ ctx }) => {
       if (!ctx.user) return null;
 
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      const token = await sdk.createSessionToken(ctx.user.openId, { name: ctx.user.name || "" });
-      ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+      try {
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        const token = await sdk.createSessionToken(ctx.user.openId, { name: ctx.user.name || "" });
+        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
 
-      for (const legacyName of LEGACY_COOKIE_NAMES) {
-        ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+        for (const legacyName of LEGACY_COOKIE_NAMES) {
+          ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+        }
+      } catch (error) {
+        // Never block authenticated users if session renewal fails.
+        console.error("[auth.me] session renewal failed:", error);
       }
 
       return ctx.user;
