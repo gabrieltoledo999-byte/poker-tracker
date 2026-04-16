@@ -1,5 +1,5 @@
 import type { CookieOptions, Request } from "express";
-import { THIRTY_DAYS_MS } from "@shared/const";
+import { ONE_DAY_MS } from "@shared/const";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -48,7 +48,7 @@ export function getSessionCookieOptions(
 
   return {
     httpOnly: true,
-    maxAge: THIRTY_DAYS_MS,
+    maxAge: ONE_DAY_MS,
     path: "/",
     sameSite: "lax",
     secure,

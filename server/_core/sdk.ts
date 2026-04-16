@@ -2,7 +2,7 @@
  * SDK simplificado — autenticação própria com JWT local.
  * Toda a lógica de OAuth do Manus foi removida.
  */
-import { COOKIE_NAME, THIRTY_DAYS_MS } from "@shared/const";
+import { COOKIE_NAME, ONE_DAY_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
@@ -40,7 +40,7 @@ class SDKServer {
     options: { expiresInMs?: number; name?: string } = {}
   ): Promise<string> {
     const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? THIRTY_DAYS_MS;
+    const expiresInMs = options.expiresInMs ?? ONE_DAY_MS;
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
