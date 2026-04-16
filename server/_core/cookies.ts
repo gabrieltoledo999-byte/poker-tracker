@@ -24,7 +24,7 @@ function isSecureRequest(req: Request) {
 
 export function getSessionCookieOptions(
   req: Request
-): Pick<CookieOptions, "domain" | "httpOnly" | "maxAge" | "path" | "sameSite" | "secure"> {
+): Pick<CookieOptions, "domain" | "expires" | "httpOnly" | "maxAge" | "path" | "sameSite" | "secure"> {
   // const hostname = req.hostname;
   // const shouldSetDomain =
   //   hostname &&
@@ -40,17 +40,19 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
-  // Em produção (Railway), forçamos secure: true — o Railway sempre usa HTTPS.
-  // sameSite: "lax" funciona com redirects OAuth e não exige secure obrigatório.
-  // sameSite: "none" exige secure: true — se secure falhar, o browser rejeita silenciosamente.
+  // Em produção, usamos SameSite=None + Secure para suportar cenários com proxy/domínios diferentes.
+  // Em ambiente local, mantemos Lax para facilitar desenvolvimento em localhost.
   const isProduction = process.env.NODE_ENV === "production";
   const secure = isProduction ? true : isSecureRequest(req);
+  const sameSite: CookieOptions["sameSite"] = isProduction ? "none" : "lax";
+  const expires = new Date(Date.now() + ONE_DAY_MS);
 
   return {
     httpOnly: true,
     maxAge: ONE_DAY_MS,
+    expires,
     path: "/",
-    sameSite: "lax",
+    sameSite,
     secure,
   };
 }
