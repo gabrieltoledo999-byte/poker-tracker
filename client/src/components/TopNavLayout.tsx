@@ -14,7 +14,6 @@ import {
   ListChecks,
   Settings,
   MapPin,
-  Wallet,
   Sun,
   Moon,
   Trophy,
@@ -23,6 +22,9 @@ import {
   ChevronRight,
   Sparkles,
   ShieldCheck,
+  ClipboardList,
+  Hand,
+  Calculator,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
@@ -32,13 +34,20 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const FEED_LAST_SEEN_KEY_PREFIX = "feed-last-seen-ms";
+const MOBILE_DRAWER_EDGE_HITBOX_PX = 60;
+const MOBILE_DRAWER_SWIPE_MIN_DISTANCE_PX = 56;
+const MOBILE_DRAWER_SWIPE_MAX_VERTICAL_DRIFT_PX = 48;
+const UNDER_CONSTRUCTION_PATHS = new Set(["/gto", "/icm-calculator"]);
+const UNDER_CONSTRUCTION_GIF_URL = "https://media.tenor.com/4S4xWJ0mVxkAAAAi/under-construction.gif";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Início", path: "/" },
   { icon: ListChecks, label: "Sessões", path: "/sessions" },
-  { icon: Wallet, label: "Fundos", path: "/funds" },
   { icon: Trophy, label: "Ranking", path: "/ranking" },
   { icon: MapPin, label: "Locais", path: "/venues" },
+  { icon: ClipboardList, label: "GTO", path: "/gto" },
+  { icon: Hand, label: "Revisor de Mãos", path: "/hand-reviewer" },
+  { icon: Calculator, label: "Calculadora de ICM", path: "/icm-calculator" },
   { icon: Sparkles, label: "Comunidade", path: "/feed" },
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
@@ -64,6 +73,8 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedLastSeenMs, setFeedLastSeenMs] = useState(0);
+  const mobileOpenSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const mobileCloseSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const { theme, toggleTheme } = useTheme();
   const { data: latestFeedPosts = [] } = trpc.feed.list.useQuery(
     { limit: 30, offset: 0 },
@@ -207,6 +218,22 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     onSuccess: () => { window.location.href = "/login"; },
   });
 
+  const canOpenDrawerFromSwipe = (deltaX: number, deltaY: number) => {
+    return (
+      deltaX >= MOBILE_DRAWER_SWIPE_MIN_DISTANCE_PX &&
+      Math.abs(deltaY) <= MOBILE_DRAWER_SWIPE_MAX_VERTICAL_DRIFT_PX &&
+      Math.abs(deltaX) > Math.abs(deltaY)
+    );
+  };
+
+  const canCloseDrawerFromSwipe = (deltaX: number, deltaY: number) => {
+    return (
+      deltaX <= -MOBILE_DRAWER_SWIPE_MIN_DISTANCE_PX &&
+      Math.abs(deltaY) <= MOBILE_DRAWER_SWIPE_MAX_VERTICAL_DRIFT_PX &&
+      Math.abs(deltaX) > Math.abs(deltaY)
+    );
+  };
+
   if (loading) return <SplashScreen />;
 
   if (!user) {
@@ -254,7 +281,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                 key={item.path}
                 onClick={() => setLocation(item.path)}
                 className={`
-                  group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl px-5 py-4 text-left text-base font-medium
+                  group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl px-5 py-4 text-left text-sm font-medium
                   transition-all duration-300
                   ${isActive
                     ? "bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow-lg"
@@ -272,6 +299,17 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                 <Icon className="relative z-10 h-5 w-5 shrink-0 text-2xl transition-transform duration-300 group-hover:scale-110" />
                 <span className="relative z-10 transition-colors duration-300">{item.label}</span>
                 <span className="relative z-10 ml-auto flex items-center gap-1.5">
+                  {UNDER_CONSTRUCTION_PATHS.has(item.path) && (
+                    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[9px] font-semibold text-zinc-200">
+                      <img
+                        src={UNDER_CONSTRUCTION_GIF_URL}
+                        alt="Em breve"
+                        className="h-3.5 w-3.5 rounded-full object-cover"
+                        loading="lazy"
+                      />
+                      🚧 em breve
+                    </span>
+                  )}
                   {item.path === "/chat" && unreadChatCount > 0 && (
                     <span
                       className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
@@ -378,11 +416,70 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
         </div>
       </div>
 
+      {!mobileOpen && (
+        <div
+          className="md:hidden fixed left-0 top-16 bottom-6 z-40 w-16 pointer-events-auto"
+          aria-hidden="true"
+          onTouchStart={(event) => {
+            const touch = event.touches[0];
+            if (!touch || touch.clientX > MOBILE_DRAWER_EDGE_HITBOX_PX) {
+              mobileOpenSwipeStartRef.current = null;
+              return;
+            }
+
+            mobileOpenSwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+          }}
+          onTouchEnd={(event) => {
+            const start = mobileOpenSwipeStartRef.current;
+            mobileOpenSwipeStartRef.current = null;
+
+            if (!start) return;
+
+            const touch = event.changedTouches[0];
+            if (!touch) return;
+
+            const deltaX = touch.clientX - start.x;
+            const deltaY = touch.clientY - start.y;
+
+            if (canOpenDrawerFromSwipe(deltaX, deltaY)) {
+              setMobileOpen(true);
+            }
+          }}
+        />
+      )}
+
       {/* ── Mobile Drawer ── */}
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <div className="relative w-72 bg-card h-full flex flex-col shadow-2xl">
+          <div
+            className="relative w-72 bg-card h-full flex flex-col shadow-2xl"
+            onTouchStart={(event) => {
+              const touch = event.touches[0];
+              if (!touch) {
+                mobileCloseSwipeStartRef.current = null;
+                return;
+              }
+
+              mobileCloseSwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+            }}
+            onTouchEnd={(event) => {
+              const start = mobileCloseSwipeStartRef.current;
+              mobileCloseSwipeStartRef.current = null;
+
+              if (!start) return;
+
+              const touch = event.changedTouches[0];
+              if (!touch) return;
+
+              const deltaX = touch.clientX - start.x;
+              const deltaY = touch.clientY - start.y;
+
+              if (canCloseDrawerFromSwipe(deltaX, deltaY)) {
+                setMobileOpen(false);
+              }
+            }}
+          >
             <div className="flex h-16 items-center justify-between px-5 border-b border-border/30">
               <div
                 className="group flex h-full cursor-pointer items-center"
@@ -423,7 +520,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                     key={item.path}
                     onClick={() => { setLocation(item.path); setMobileOpen(false); }}
                     className={`
-                      group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl px-5 py-4 text-left text-base font-medium
+                      group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl px-5 py-4 text-left text-sm font-medium
                       transition-all duration-300
                       ${isActive
                         ? "bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow-lg"
@@ -439,6 +536,17 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                     <Icon className="h-5 w-5 shrink-0 text-2xl transition-transform duration-300 group-hover:scale-110" />
                     <span>{item.label}</span>
                     <span className="ml-auto flex items-center gap-1.5">
+                      {UNDER_CONSTRUCTION_PATHS.has(item.path) && (
+                        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[9px] font-semibold text-zinc-200">
+                          <img
+                            src={UNDER_CONSTRUCTION_GIF_URL}
+                            alt="Em breve"
+                            className="h-3.5 w-3.5 rounded-full object-cover"
+                            loading="lazy"
+                          />
+                          🚧 em breve
+                        </span>
+                      )}
                       {item.path === "/chat" && unreadChatCount > 0 && (
                         <span
                           className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"

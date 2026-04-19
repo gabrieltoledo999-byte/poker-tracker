@@ -626,21 +626,23 @@ export default function Venues() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Salas & Sites</h1>
-          <p className="text-muted-foreground text-sm">Gerencie onde você joga e acompanhe seu saldo em ordem de uso real</p>
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_28%),linear-gradient(135deg,_rgba(6,16,14,0.98),_rgba(10,28,24,0.95))] p-5 text-white shadow-2xl sm:p-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Salas & Sites</h1>
+            <p className="mt-1 text-sm text-zinc-300">Cadastre, edite e organize os lugares onde você joga.</p>
+          </div>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-emerald-400 text-slate-950 hover:bg-emerald-300"><Plus className="h-4 w-4 mr-2" />Novo Local</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader><DialogTitle>Novo Local</DialogTitle></DialogHeader>
+              <VenueForm onSubmit={(d) => createMutation.mutate(d)} onCancel={() => setIsCreateOpen(false)} isLoading={createMutation.isPending} />
+            </DialogContent>
+          </Dialog>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2" />Novo Local</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>Novo Local</DialogTitle></DialogHeader>
-            <VenueForm onSubmit={(d) => createMutation.mutate(d)} onCancel={() => setIsCreateOpen(false)} isLoading={createMutation.isPending} />
-          </DialogContent>
-        </Dialog>
-      </div>
+      </section>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "online" | "live")}>

@@ -125,7 +125,7 @@ export const PRESET_VENUES: PresetVenue[] = [
     type: "live",
     logoUrl: `${CDN}/bsop.webp`,
     logoFit: "contain",
-    website: "https://www.bsoplive.com",
+    website: "https://bsop.com.br/",
   },
 ];
 

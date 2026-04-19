@@ -978,6 +978,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       breakEvenSessions: 0,
       bestSession: null,
       worstSession: null,
+      trophyCount: 0,
       maxFieldSize: null,
       avgFieldSize: null,
       avgProfit: 0,
@@ -993,6 +994,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       type: sessionTables.type,
       gameFormat: sessionTables.gameFormat,
       cashOut: sessionTables.cashOut,
+      finalPosition: sessionTables.finalPosition,
     })
     .from(sessionTables)
     .where(
@@ -1003,12 +1005,17 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       )
     );
 
-  const tablesBySession = new Map<number, Array<{ type: "online" | "live"; gameFormat: GameFormat; cashOut: number | null }>>();
+  const tablesBySession = new Map<number, Array<{ type: "online" | "live"; gameFormat: GameFormat; cashOut: number | null; finalPosition: number | null }>>();
   for (const t of allTables) {
     if (!t.sessionId) continue;
     const sid = Number(t.sessionId);
     if (!tablesBySession.has(sid)) tablesBySession.set(sid, []);
-    tablesBySession.get(sid)!.push({ type: t.type as "online" | "live", gameFormat: t.gameFormat as GameFormat, cashOut: t.cashOut ?? 0 });
+    tablesBySession.get(sid)!.push({
+      type: t.type as "online" | "live",
+      gameFormat: t.gameFormat as GameFormat,
+      cashOut: t.cashOut ?? 0,
+      finalPosition: t.finalPosition ?? null,
+    });
   }
 
   const hasTableFilter = Boolean(type || gameFormat);
@@ -1018,6 +1025,10 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     matchedTables: number;
     matchedItmTables: number;
     matchedItmEligibleTables: number;
+    matchedBestFinalPosition: number | null;
+    matchedFinalPositionSum: number;
+    matchedFinalPositionCount: number;
+    matchedTrophyCount: number;
     totalTables: number;
   }> = [];
 
@@ -1027,12 +1038,19 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
 
     if (!hasTableFilter) {
       const itmEligibleTables = tables.filter((t) => t.gameFormat !== "cash_game");
+      const validFinalPositions = tables
+        .map((t) => t.finalPosition)
+        .filter((fp): fp is number => typeof fp === "number" && fp > 0);
       includedSessions.push({
         session,
         share: 1,
         matchedTables: totalTables,
         matchedItmTables: itmEligibleTables.filter((t) => (t.cashOut ?? 0) > 0).length,
         matchedItmEligibleTables: itmEligibleTables.length,
+        matchedBestFinalPosition: validFinalPositions.length > 0 ? Math.min(...validFinalPositions) : null,
+        matchedFinalPositionSum: validFinalPositions.reduce((acc, fp) => acc + fp, 0),
+        matchedFinalPositionCount: validFinalPositions.length,
+        matchedTrophyCount: validFinalPositions.filter((fp) => fp === 1).length,
         totalTables,
       });
       continue;
@@ -1044,12 +1062,19 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       if (gameFormat && session.gameFormat !== gameFormat) matchedByLegacyFields = false;
       if (matchedByLegacyFields) {
         const itmEligible = session.gameFormat !== "cash_game";
+        const fp = typeof session.finalPosition === "number" && session.finalPosition > 0
+          ? session.finalPosition
+          : null;
         includedSessions.push({
           session,
           share: 1,
           matchedTables: 1,
           matchedItmTables: itmEligible && session.cashOut > 0 ? 1 : 0,
           matchedItmEligibleTables: itmEligible ? 1 : 0,
+          matchedBestFinalPosition: fp,
+          matchedFinalPositionSum: fp ?? 0,
+          matchedFinalPositionCount: fp ? 1 : 0,
+          matchedTrophyCount: fp === 1 ? 1 : 0,
           totalTables: 1,
         });
       }
@@ -1066,6 +1091,9 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     const itmEligibleMatched = matched.filter((t) => t.gameFormat !== "cash_game");
     const matchedItmTables = itmEligibleMatched.filter((t) => (t.cashOut ?? 0) > 0).length;
     const matchedItmEligibleTables = itmEligibleMatched.length;
+    const validFinalPositions = matched
+      .map((t) => t.finalPosition)
+      .filter((fp): fp is number => typeof fp === "number" && fp > 0);
 
     if (matchedTables <= 0) continue;
     includedSessions.push({
@@ -1074,6 +1102,10 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       matchedTables,
       matchedItmTables,
       matchedItmEligibleTables,
+      matchedBestFinalPosition: validFinalPositions.length > 0 ? Math.min(...validFinalPositions) : null,
+      matchedFinalPositionSum: validFinalPositions.reduce((acc, fp) => acc + fp, 0),
+      matchedFinalPositionCount: validFinalPositions.length,
+      matchedTrophyCount: validFinalPositions.filter((fp) => fp === 1).length,
       totalTables,
     });
   }
@@ -1090,6 +1122,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       losingSessions: 0,
       breakEvenSessions: 0,
       itmCount: 0,
+      trophyCount: 0,
       bestSession: null,
       worstSession: null,
       maxFieldSize: null,
@@ -1106,6 +1139,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
   let totalTables = 0;
   let itmCount = 0;
   let itmEligibleTables = 0;
+  let trophyCount = 0;
   let winningSessions = 0;
   let losingSessions = 0;
   let breakEvenSessions = 0;
@@ -1133,11 +1167,13 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     itmCount += row.matchedItmTables;
     itmEligibleTables += row.matchedItmEligibleTables;
 
-    const fp = row.session.finalPosition;
-    if (typeof fp === "number" && fp > 0) {
-      bestFinalPosition = bestFinalPosition === null ? fp : Math.min(bestFinalPosition, fp);
-      finalPositionSum += fp;
-      finalPositionCount += 1;
+    if (typeof row.matchedBestFinalPosition === "number" && row.matchedBestFinalPosition > 0) {
+      bestFinalPosition = bestFinalPosition === null
+        ? row.matchedBestFinalPosition
+        : Math.min(bestFinalPosition, row.matchedBestFinalPosition);
+      finalPositionSum += row.matchedFinalPositionSum;
+      finalPositionCount += row.matchedFinalPositionCount;
+      trophyCount += row.matchedTrophyCount;
     }
 
     const fs = (row.session as any).fieldSize;
@@ -1175,6 +1211,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
     losingSessions,
     breakEvenSessions,
     itmCount,
+    trophyCount,
     bestSession,
     worstSession,
     bestFinalPosition,
@@ -2617,6 +2654,8 @@ export async function getLeaderboard(currentUserId: number, friendsOnly: boolean
         avatarUrl: user.avatarUrl,
         roi,
         winRate: stats.winRate ?? 0,
+        trophyCount: stats.trophyCount ?? 0,
+        wonTournaments: stats.trophyCount ?? 0,
         bestSession: bestSessionProfit,
         worstSession: worstSessionProfit,
         totalSessions: stats.totalSessions ?? 0,

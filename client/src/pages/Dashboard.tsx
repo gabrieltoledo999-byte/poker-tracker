@@ -1079,7 +1079,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="pointer-events-none absolute inset-x-3 bottom-3 top-[34%] rounded-2xl z-0" style={{ backgroundColor: chartColors.backgroundColor }}>
+                  <div className="pointer-events-none absolute inset-x-3 bottom-3 top-[58%] md:top-[52%] rounded-2xl z-0" style={{ backgroundColor: chartColors.backgroundColor }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={heroPlotData} margin={{ top: 6, right: 6, left: 6, bottom: 6 }}>
                         <defs>

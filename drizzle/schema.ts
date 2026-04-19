@@ -11,7 +11,7 @@ export const users = mysqlTable("users", {
   passwordHash: varchar("passwordHash", { length: 255 }),
   avatarUrl: mediumtext("avatarUrl"),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "coach", "reviewer", "admin", "developer", "system_ai_service"]).default("user").notNull(),
   // Invite system
   inviteCode: varchar("inviteCode", { length: 32 }).unique(),
   invitedBy: int("invitedBy"),
@@ -512,4 +512,373 @@ export const sessionTables = mysqlTable("session_tables", {
 
 export type SessionTable = typeof sessionTables.$inferSelect;
 export type InsertSessionTable = typeof sessionTables.$inferInsert;
+
+/**
+ * Explicit user consent for centralized poker memory.
+ */
+export const userConsents = mysqlTable("user_consents", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  consentVersion: varchar("consentVersion", { length: 32 }).notNull(),
+  allowDataStorage: int("allowDataStorage").notNull().default(0),
+  allowSharedInternalAnalysis: int("allowSharedInternalAnalysis").notNull().default(0),
+  allowAiTrainingUsage: int("allowAiTrainingUsage").notNull().default(0),
+  allowDeveloperAccess: int("allowDeveloperAccess").notNull().default(0),
+  allowFieldAggregation: int("allowFieldAggregation").notNull().default(0),
+  grantedAt: timestamp("grantedAt").defaultNow().notNull(),
+  revokedAt: timestamp("revokedAt"),
+  active: int("active").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserConsent = typeof userConsents.$inferSelect;
+export type InsertUserConsent = typeof userConsents.$inferInsert;
+
+/**
+ * Owner-managed access grants used by coach/reviewer roles.
+ */
+export const userDataAccessGrants = mysqlTable("user_data_access_grants", {
+  id: int("id").autoincrement().primaryKey(),
+  ownerUserId: int("ownerUserId").notNull(),
+  viewerUserId: int("viewerUserId").notNull(),
+  allowHandReview: int("allowHandReview").notNull().default(1),
+  allowTrainerAccess: int("allowTrainerAccess").notNull().default(0),
+  allowGtoAccess: int("allowGtoAccess").notNull().default(0),
+  allowFieldComparison: int("allowFieldComparison").notNull().default(0),
+  active: int("active").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserDataAccessGrant = typeof userDataAccessGrants.$inferSelect;
+export type InsertUserDataAccessGrant = typeof userDataAccessGrants.$inferInsert;
+
+/**
+ * Auditable trail for data access.
+ */
+export const dataAccessAuditLogs = mysqlTable("data_access_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  actorUserId: int("actorUserId"),
+  targetUserId: int("targetUserId").notNull(),
+  actorRole: varchar("actorRole", { length: 40 }),
+  accessScope: varchar("accessScope", { length: 64 }).notNull(),
+  accessMethod: varchar("accessMethod", { length: 32 }).notNull().default("trpc"),
+  reason: text("reason"),
+  outcome: mysqlEnum("outcome", ["allowed", "denied"]).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DataAccessAuditLog = typeof dataAccessAuditLogs.$inferSelect;
+export type InsertDataAccessAuditLog = typeof dataAccessAuditLogs.$inferInsert;
+
+/**
+ * Centralized imported tournaments.
+ */
+export const centralTournaments = mysqlTable("central_tournaments", {
+  id: int("id").autoincrement().primaryKey(),
+  externalTournamentId: varchar("externalTournamentId", { length: 191 }),
+  userId: int("userId").notNull(),
+  site: varchar("site", { length: 64 }).notNull(),
+  format: varchar("format", { length: 32 }).notNull().default("tournament"),
+  buyIn: int("buyIn").notNull().default(0),
+  fee: int("fee").notNull().default(0),
+  totalCost: int("totalCost").notNull().default(0),
+  currency: mysqlEnum("currency", ["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]).notNull().default("BRL"),
+  abiValue: int("abiValue").notNull().default(0),
+  abiBucket: varchar("abiBucket", { length: 32 }).notNull().default("micro"),
+  playerAbiSnapshot: int("playerAbiSnapshot").notNull().default(0),
+  importedAt: timestamp("importedAt").defaultNow().notNull(),
+  totalHands: int("totalHands").notNull().default(0),
+  finalPosition: int("finalPosition"),
+  wasEliminated: int("wasEliminated").notNull().default(0),
+  eliminationHandId: int("eliminationHandId"),
+  rawSourceId: varchar("rawSourceId", { length: 191 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CentralTournament = typeof centralTournaments.$inferSelect;
+export type InsertCentralTournament = typeof centralTournaments.$inferInsert;
+
+/**
+ * Parsed poker hands as persistent memory.
+ */
+export const centralHands = mysqlTable("central_hands", {
+  id: int("id").autoincrement().primaryKey(),
+  externalHandId: varchar("externalHandId", { length: 191 }),
+  tournamentId: int("tournamentId").notNull(),
+  userId: int("userId").notNull(),
+  handNumber: varchar("handNumber", { length: 64 }),
+  datetimeOriginal: timestamp("datetimeOriginal"),
+  buttonSeat: int("buttonSeat"),
+  heroSeat: int("heroSeat"),
+  heroPosition: varchar("heroPosition", { length: 16 }),
+  smallBlind: int("smallBlind").default(0),
+  bigBlind: int("bigBlind").default(0),
+  ante: int("ante").default(0),
+  board: text("board"),
+  heroCards: varchar("heroCards", { length: 32 }),
+  totalPot: int("totalPot"),
+  rake: int("rake"),
+  result: int("result"),
+  showdown: int("showdown").notNull().default(0),
+  rawText: text("rawText"),
+  parsedJson: mediumtext("parsedJson"),
+  handContextJson: mediumtext("handContextJson"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CentralHand = typeof centralHands.$inferSelect;
+export type InsertCentralHand = typeof centralHands.$inferInsert;
+
+/**
+ * Granular action-level representation of each hand.
+ */
+export const centralHandActions = mysqlTable("central_hand_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  handId: int("handId").notNull(),
+  tournamentId: int("tournamentId").notNull(),
+  userId: int("userId").notNull(),
+  street: mysqlEnum("street", ["preflop", "flop", "turn", "river", "showdown", "summary"]).notNull(),
+  actionOrder: int("actionOrder").notNull().default(0),
+  playerName: varchar("playerName", { length: 120 }).notNull(),
+  seat: int("seat"),
+  position: varchar("position", { length: 16 }),
+  actionType: mysqlEnum("actionType", ["fold", "check", "call", "bet", "raise", "all_in", "post_blind", "post_ante", "straddle", "show", "muck", "collect", "other"]).notNull(),
+  amount: int("amount"),
+  toAmount: int("toAmount"),
+  stackBefore: int("stackBefore"),
+  stackAfter: int("stackAfter"),
+  potBefore: int("potBefore"),
+  potAfter: int("potAfter"),
+  isAllIn: int("isAllIn").notNull().default(0),
+  isForced: int("isForced").notNull().default(0),
+  facingActionType: varchar("facingActionType", { length: 32 }),
+  facingSizeBb: int("facingSizeBb"),
+  heroInHand: int("heroInHand").notNull().default(0),
+  showdownVisible: int("showdownVisible").notNull().default(0),
+  contextJson: mediumtext("contextJson"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CentralHandAction = typeof centralHandActions.$inferSelect;
+export type InsertCentralHandAction = typeof centralHandActions.$inferInsert;
+
+/**
+ * User stats per tournament.
+ */
+export const playerTournamentStats = mysqlTable("player_tournament_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  tournamentId: int("tournamentId").notNull(),
+  handsPlayed: int("handsPlayed").notNull().default(0),
+  vpip: int("vpip").notNull().default(0),
+  pfr: int("pfr").notNull().default(0),
+  threeBet: int("threeBet").notNull().default(0),
+  cbetFlop: int("cbetFlop").notNull().default(0),
+  cbetTurn: int("cbetTurn").notNull().default(0),
+  foldToCbet: int("foldToCbet").notNull().default(0),
+  bbDefense: int("bbDefense").notNull().default(0),
+  stealAttempt: int("stealAttempt").notNull().default(0),
+  aggressionFactor: int("aggressionFactor").notNull().default(0),
+  limpRate: int("limpRate").notNull().default(0),
+  wtsd: int("wtsd").notNull().default(0),
+  wsd: int("wsd").notNull().default(0),
+  averageStackBb: int("averageStackBb").notNull().default(0),
+  finalPosition: int("finalPosition"),
+  abiBucket: varchar("abiBucket", { length: 32 }).notNull().default("micro"),
+  totalCost: int("totalCost").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlayerTournamentStats = typeof playerTournamentStats.$inferSelect;
+export type InsertPlayerTournamentStats = typeof playerTournamentStats.$inferInsert;
+
+/**
+ * Historical aggregate stats per user.
+ */
+export const playerAggregateStats = mysqlTable("player_aggregate_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  sampleHands: int("sampleHands").notNull().default(0),
+  sampleTournaments: int("sampleTournaments").notNull().default(0),
+  vpipAvg: int("vpipAvg").notNull().default(0),
+  pfrAvg: int("pfrAvg").notNull().default(0),
+  threeBetAvg: int("threeBetAvg").notNull().default(0),
+  cbetFlopAvg: int("cbetFlopAvg").notNull().default(0),
+  cbetTurnAvg: int("cbetTurnAvg").notNull().default(0),
+  foldToCbetAvg: int("foldToCbetAvg").notNull().default(0),
+  bbDefenseAvg: int("bbDefenseAvg").notNull().default(0),
+  stealAttemptAvg: int("stealAttemptAvg").notNull().default(0),
+  aggressionFactorAvg: int("aggressionFactorAvg").notNull().default(0),
+  itmRate: int("itmRate").notNull().default(0),
+  avgFinishPosition: int("avgFinishPosition").notNull().default(0),
+  averageAbi: int("averageAbi").notNull().default(0),
+  medianAbi: int("medianAbi").notNull().default(0),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlayerAggregateStats = typeof playerAggregateStats.$inferSelect;
+export type InsertPlayerAggregateStats = typeof playerAggregateStats.$inferInsert;
+
+/**
+ * Position-driven user stats.
+ */
+export const playerPositionStats = mysqlTable("player_position_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  position: mysqlEnum("position", ["UTG", "UTG1", "UTG2", "LJ", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"]).notNull().default("UNKNOWN"),
+  handsPlayed: int("handsPlayed").notNull().default(0),
+  vpip: int("vpip").notNull().default(0),
+  pfr: int("pfr").notNull().default(0),
+  winRateBb100: int("winRateBb100").notNull().default(0),
+  chipEv: int("chipEv").notNull().default(0),
+  netChips: int("netChips").notNull().default(0),
+  foldToOpen: int("foldToOpen").notNull().default(0),
+  callOpen: int("callOpen").notNull().default(0),
+  raiseFirstIn: int("raiseFirstIn").notNull().default(0),
+  threeBet: int("threeBet").notNull().default(0),
+  bbDefenseWhenApplicable: int("bbDefenseWhenApplicable").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlayerPositionStats = typeof playerPositionStats.$inferSelect;
+export type InsertPlayerPositionStats = typeof playerPositionStats.$inferInsert;
+
+/**
+ * Leak detections for future trainer/reviewer modules.
+ */
+export const playerLeakFlags = mysqlTable("player_leak_flags", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  leakCode: varchar("leakCode", { length: 80 }).notNull(),
+  severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).notNull().default("medium"),
+  confidence: int("confidence").notNull().default(0),
+  description: text("description").notNull(),
+  evidenceJson: mediumtext("evidenceJson"),
+  firstDetectedAt: timestamp("firstDetectedAt").defaultNow().notNull(),
+  lastDetectedAt: timestamp("lastDetectedAt").defaultNow().notNull(),
+  active: int("active").notNull().default(1),
+});
+
+export type PlayerLeakFlag = typeof playerLeakFlags.$inferSelect;
+export type InsertPlayerLeakFlag = typeof playerLeakFlags.$inferInsert;
+
+/**
+ * Aggregated population tendencies for field intelligence.
+ */
+export const fieldAggregateStats = mysqlTable("field_aggregate_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  filterScope: varchar("filterScope", { length: 80 }).notNull(),
+  site: varchar("site", { length: 64 }),
+  stakeLevel: varchar("stakeLevel", { length: 64 }),
+  format: varchar("format", { length: 32 }),
+  position: varchar("position", { length: 16 }),
+  sampleHands: int("sampleHands").notNull().default(0),
+  avgVpip: int("avgVpip").notNull().default(0),
+  avgPfr: int("avgPfr").notNull().default(0),
+  avgThreeBet: int("avgThreeBet").notNull().default(0),
+  avgBbDefense: int("avgBbDefense").notNull().default(0),
+  avgCbetFlop: int("avgCbetFlop").notNull().default(0),
+  avgFoldToCbet: int("avgFoldToCbet").notNull().default(0),
+  avgSteal: int("avgSteal").notNull().default(0),
+  avgOpenSizeBb: int("avgOpenSizeBb").notNull().default(0),
+  avgCallOpenRate: int("avgCallOpenRate").notNull().default(0),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FieldAggregateStats = typeof fieldAggregateStats.$inferSelect;
+export type InsertFieldAggregateStats = typeof fieldAggregateStats.$inferInsert;
+
+/**
+ * Showdown ground-truth records extracted from replay.
+ */
+export const showdownRecords = mysqlTable("showdown_records", {
+  id: int("id").autoincrement().primaryKey(),
+  handId: int("handId").notNull(),
+  tournamentId: int("tournamentId").notNull(),
+  userId: int("userId").notNull(),
+  playerName: varchar("playerName", { length: 120 }).notNull(),
+  seat: int("seat"),
+  position: varchar("position", { length: 16 }),
+  holeCards: varchar("holeCards", { length: 64 }),
+  finalHandDescription: text("finalHandDescription"),
+  wonPot: int("wonPot").notNull().default(0),
+  amountWon: int("amountWon"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ShowdownRecord = typeof showdownRecords.$inferSelect;
+export type InsertShowdownRecord = typeof showdownRecords.$inferInsert;
+
+/**
+ * User aggregate segmented by ABI bucket.
+ */
+export const playerStatsByAbi = mysqlTable("player_stats_by_abi", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  abiBucket: varchar("abiBucket", { length: 32 }).notNull(),
+  tournaments: int("tournaments").notNull().default(0),
+  handsPlayed: int("handsPlayed").notNull().default(0),
+  vpip: int("vpip"),
+  pfr: int("pfr"),
+  threeBet: int("threeBet"),
+  cbetFlop: int("cbetFlop"),
+  bbDefense: int("bbDefense"),
+  avgFinishPosition: int("avgFinishPosition"),
+  itmRate: int("itmRate"),
+  roiEstimate: int("roiEstimate"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlayerStatsByAbi = typeof playerStatsByAbi.$inferSelect;
+export type InsertPlayerStatsByAbi = typeof playerStatsByAbi.$inferInsert;
+
+/**
+ * Field aggregate segmented by ABI bucket.
+ */
+export const fieldAggregateStatsByAbi = mysqlTable("field_aggregate_stats_by_abi", {
+  id: int("id").autoincrement().primaryKey(),
+  site: varchar("site", { length: 64 }).notNull(),
+  abiBucket: varchar("abiBucket", { length: 32 }).notNull(),
+  sampleTournaments: int("sampleTournaments").notNull().default(0),
+  sampleHands: int("sampleHands").notNull().default(0),
+  avgVpip: int("avgVpip"),
+  avgPfr: int("avgPfr"),
+  avgThreeBet: int("avgThreeBet"),
+  avgCbetFlop: int("avgCbetFlop"),
+  avgBbDefense: int("avgBbDefense"),
+  avgSteal: int("avgSteal"),
+  avgOpenSizeBb: int("avgOpenSizeBb"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FieldAggregateStatsByAbi = typeof fieldAggregateStatsByAbi.$inferSelect;
+export type InsertFieldAggregateStatsByAbi = typeof fieldAggregateStatsByAbi.$inferInsert;
+
+/**
+ * User aggregate segmented by ABI bucket and position.
+ */
+export const playerStatsByPositionAndAbi = mysqlTable("player_stats_by_position_and_abi", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  abiBucket: varchar("abiBucket", { length: 32 }).notNull(),
+  position: varchar("position", { length: 16 }).notNull(),
+  handsPlayed: int("handsPlayed").notNull().default(0),
+  vpip: int("vpip"),
+  pfr: int("pfr"),
+  threeBet: int("threeBet"),
+  netChips: int("netChips"),
+  bb100: int("bb100"),
+  stealAttempt: int("stealAttempt"),
+  foldTo3Bet: int("foldTo3Bet"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlayerStatsByPositionAndAbi = typeof playerStatsByPositionAndAbi.$inferSelect;
+export type InsertPlayerStatsByPositionAndAbi = typeof playerStatsByPositionAndAbi.$inferInsert;
 

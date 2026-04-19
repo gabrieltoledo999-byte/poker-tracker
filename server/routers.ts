@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { sdk } from "./_core/sdk";
 import { eq } from "drizzle-orm";
 import { users } from "../drizzle/schema";
 import { getDb } from "./db";
@@ -65,6 +66,17 @@ import {
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getRateToBrl, getAllRates, refreshRates } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
 import { registerUser, loginUser, setupPasswordForExistingUser } from "./auth";
+import { isGGHandHistory, ggHandHistoryToSessionData } from "./parsers/ggIntegration";
+import {
+  analyzeReplayTournament,
+  getAbiDashboard,
+  getActiveConsent,
+  getPlayerHistoricalProfile,
+  getTournamentOverview,
+  grantConsent,
+  importReplayToCentralMemory,
+  revokeConsent,
+} from "./centralMemory";
 
 // Game format enum for validation
 const gameFormatEnum = z.enum([
@@ -93,6 +105,83 @@ const onboardingProfileInput = z.object({
   playsMultiPlatform: z.boolean().optional(),
   showInGlobalRanking: z.boolean().optional(),
   showInFriendsRanking: z.boolean().optional(),
+});
+
+const replayHandInput = z.object({
+  handRef: z.string().min(1).max(120),
+  externalHandId: z.string().max(191).optional(),
+  handNumber: z.string().max(64).optional(),
+  datetimeOriginal: z.date().optional(),
+  buttonSeat: z.number().int().optional(),
+  heroSeat: z.number().int().optional(),
+  heroPosition: z.string().max(16).optional(),
+  smallBlind: z.number().int().min(0).optional(),
+  bigBlind: z.number().int().min(0).optional(),
+  ante: z.number().int().min(0).optional(),
+  board: z.string().max(200).optional(),
+  heroCards: z.string().max(32).optional(),
+  totalPot: z.number().int().optional(),
+  rake: z.number().int().optional(),
+  result: z.number().int().optional(),
+  showdown: z.boolean().optional(),
+  rawText: z.string().optional(),
+  parsedJson: z.string().optional(),
+  handContextJson: z.string().optional(),
+});
+
+const replayActionInput = z.object({
+  handRef: z.string().min(1).max(120),
+  street: z.enum(["preflop", "flop", "turn", "river", "showdown", "summary"]),
+  actionOrder: z.number().int().min(0),
+  playerName: z.string().min(1).max(120),
+  seat: z.number().int().optional(),
+  position: z.string().max(16).optional(),
+  actionType: z.enum(["fold", "check", "call", "bet", "raise", "all_in", "post_blind", "post_ante", "straddle", "show", "muck", "collect", "other"]),
+  amount: z.number().int().optional(),
+  toAmount: z.number().int().optional(),
+  stackBefore: z.number().int().optional(),
+  stackAfter: z.number().int().optional(),
+  potBefore: z.number().int().optional(),
+  potAfter: z.number().int().optional(),
+  isAllIn: z.boolean().optional(),
+  isForced: z.boolean().optional(),
+  facingActionType: z.string().max(32).optional(),
+  facingSizeBb: z.number().int().optional(),
+  heroInHand: z.boolean().optional(),
+  showdownVisible: z.boolean().optional(),
+  contextJson: z.string().optional(),
+});
+
+const replayShowdownInput = z.object({
+  handRef: z.string().min(1).max(120),
+  playerName: z.string().min(1).max(120),
+  seat: z.number().int().optional(),
+  position: z.string().max(16).optional(),
+  holeCards: z.string().max(64).optional(),
+  finalHandDescription: z.string().max(255).optional(),
+  wonPot: z.boolean().optional(),
+  amountWon: z.number().int().optional(),
+});
+
+const replayImportInput = z.object({
+  tournament: z.object({
+    externalTournamentId: z.string().max(191).optional(),
+    heroName: z.string().min(1).max(120).optional(),
+    site: z.string().min(1).max(64),
+    format: z.string().min(1).max(32),
+    buyIn: z.number().int().min(0),
+    fee: z.number().int().min(0).optional(),
+    currency: currencyEnum,
+    importedAt: z.date().optional(),
+    totalHands: z.number().int().min(0).optional(),
+    finalPosition: z.number().int().positive().optional(),
+    wasEliminated: z.boolean().optional(),
+    eliminationHandRef: z.string().max(120).optional(),
+    rawSourceId: z.string().max(191).optional(),
+  }),
+  hands: z.array(replayHandInput).max(10000),
+  actions: z.array(replayActionInput).max(120000),
+  showdowns: z.array(replayShowdownInput).max(50000).default([]),
 });
 
 function isAcceptedAvatarUrl(value: string): boolean {
@@ -311,6 +400,28 @@ function parseTournamentName(text: string): string | undefined {
 }
 
 function parseImportText(rawText: string, forcedCurrency?: ImportCurrency, forcedType?: ImportType): ParsedImportItem[] {
+  // ─ Detector hand history do GG
+  if (isGGHandHistory(rawText)) {
+    const sessionData = ggHandHistoryToSessionData(rawText);
+    if (sessionData) {
+      return [{
+        sourceText: rawText,
+        type: "online",
+        gameFormat: "cash_game",
+        currency: forcedCurrency ?? "BRL",
+        buyIn: sessionData.buyIn,
+        cashOut: sessionData.cashOut,
+        durationMinutes: 0,
+        sessionDate: new Date(),
+        venueName: "GG Poker",
+        stakes: sessionData.stakes,
+        notes: sessionData.notes,
+        warnings: sessionData.warnings,
+      }];
+    }
+  }
+
+  // ─ Fallback: parseador genérico para sessões em texto
   const chunks = rawText
     .split(/\n\s*\n|\n(?=\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})|\n(?=\d{4}[\/\-]\d{2}[\/\-]\d{2})/)
     .map((part) => part.trim())
@@ -1762,6 +1873,95 @@ export const appRouter = router({
       .input(z.object({ postId: z.number().int(), emoji: z.string().max(8) }))
       .mutation(async ({ ctx, input }) => {
         return await togglePostReaction(input.postId, ctx.user.id, input.emoji);
+      }),
+  }),
+
+  memory: router({
+    consent: router({
+      get: protectedProcedure.query(async ({ ctx }) => {
+        return await getActiveConsent(ctx.user.id);
+      }),
+      grant: protectedProcedure
+        .input(z.object({
+          consentVersion: z.string().min(1).max(32),
+          allowDataStorage: z.boolean(),
+          allowSharedInternalAnalysis: z.boolean(),
+          allowAiTrainingUsage: z.boolean(),
+          allowDeveloperAccess: z.boolean(),
+          allowFieldAggregation: z.boolean(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          return await grantConsent(ctx.user.id, input);
+        }),
+      revoke: protectedProcedure.mutation(async ({ ctx }) => {
+        return await revokeConsent(ctx.user.id);
+      }),
+    }),
+    importReplay: protectedProcedure
+      .input(replayImportInput)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await importReplayToCentralMemory(ctx.user.id, input);
+        } catch (error: any) {
+          if (String(error?.message) === "CONSENT_REQUIRED") {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Consentimento explícito é obrigatório para armazenar replay e estatísticas compartilhadas.",
+            });
+          }
+          if (String(error?.message) === "DUPLICATE_REPLAY") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Replay duplicado detectado. Este torneio já existe no histórico do jogador.",
+            });
+          }
+          throw error;
+        }
+      }),
+    analyzeReplay: protectedProcedure
+      .input(replayImportInput)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const consent = await getActiveConsent(ctx.user.id);
+          if (!consent || consent.allowDataStorage !== 1) {
+            throw new Error("CONSENT_REQUIRED");
+          }
+          return await analyzeReplayTournament(input);
+        } catch (error: any) {
+          if (String(error?.message) === "CONSENT_REQUIRED") {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Consentimento explícito é obrigatório para usar o Revisor de Mãos.",
+            });
+          }
+          if (String(error?.message) === "HERO_REQUIRED") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Nome do herói é obrigatório para análise do torneio.",
+            });
+          }
+          throw error;
+        }
+      }),
+    playerHistoricalProfile: protectedProcedure.query(async ({ ctx }) => {
+      return await getPlayerHistoricalProfile(ctx.user.id);
+    }),
+    abiDashboard: protectedProcedure
+      .input(z.object({ lastN: z.number().int().min(1).max(200).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        return await getAbiDashboard(ctx.user.id, input?.lastN ?? 20);
+      }),
+    tournamentOverview: protectedProcedure
+      .input(z.object({ tournamentId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await getTournamentOverview(input.tournamentId, ctx.user.id);
+        } catch (error: any) {
+          if (String(error?.message) === "FORBIDDEN") {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para visualizar este replay." });
+          }
+          throw error;
+        }
       }),
   }),
 

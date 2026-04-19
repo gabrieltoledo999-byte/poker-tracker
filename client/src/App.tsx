@@ -10,16 +10,20 @@ import Sessions from "./pages/Sessions";
 import Settings from "./pages/Settings";
 import Venues from "./pages/Venues";
 import Invites from "./pages/Invites";
-import Funds from "./pages/Funds";
 import Ranking from "./pages/Ranking";
 import Feed from "./pages/Feed";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
 import Admin from "./pages/Admin";
+import Gto from "./pages/Gto";
+import HandReviewer from "./pages/HandReviewer";
+import HandReviewerReplay from "./pages/HandReviewerReplay";
+import IcmCalculator from "./pages/IcmCalculator";
 function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/hand-review/replay/:sessionId" component={HandReviewerReplay} />
       <Route>
         <TopNavLayout>
           <Switch>
@@ -27,7 +31,10 @@ function Router() {
             <Route path="/sessions" component={Sessions} />
             <Route path="/venues" component={Venues} />
             <Route path="/invites" component={Invites} />
-            <Route path="/funds" component={Funds} />
+            <Route path="/gto" component={Gto} />
+            <Route path="/hand-reviewer" component={HandReviewer} />
+            <Route path="/hand-review/import" component={HandReviewer} />
+            <Route path="/icm-calculator" component={IcmCalculator} />
             <Route path="/social" component={Feed} />
             <Route path="/chat" component={Chat} />
             <Route path="/ranking" component={Ranking} />

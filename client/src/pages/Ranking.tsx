@@ -35,8 +35,8 @@ function LeaderboardTable({
 }: {
   data: any[];
   isLoading: boolean;
-  sortBy: "roi" | "winRate" | "bestSession" | "worstSession";
-  onSortChange: (s: "roi" | "winRate" | "bestSession" | "worstSession") => void;
+  sortBy: "roi" | "winRate" | "trophyCount" | "bestSession" | "worstSession";
+  onSortChange: (s: "roi" | "winRate" | "trophyCount" | "bestSession" | "worstSession") => void;
 }) {
   if (isLoading) {
     return (
@@ -61,6 +61,7 @@ function LeaderboardTable({
   const sorted = [...data].sort((a, b) => {
     if (sortBy === "roi") return b.roi - a.roi;
     if (sortBy === "winRate") return b.winRate - a.winRate;
+    if (sortBy === "trophyCount") return (b.trophyCount ?? 0) - (a.trophyCount ?? 0);
     if (sortBy === "bestSession") return b.bestSession - a.bestSession;
     return b.worstSession - a.worstSession; // maior (menos negativo) = melhor colocação
   });
@@ -77,6 +78,12 @@ function LeaderboardTable({
       label: "ITM Rate",
       value: (p: any) => formatPercent(p.winRate),
       colorClass: () => "",
+    },
+    {
+      key: "trophyCount" as const,
+      label: "Troféus",
+      value: (p: any) => String(p.trophyCount ?? 0),
+      colorClass: () => "text-amber-500",
     },
     {
       key: "bestSession" as const,
@@ -98,7 +105,7 @@ function LeaderboardTable({
     <div className="space-y-2">
       {/* Sort buttons */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {(["roi", "winRate", "bestSession", "worstSession"] as const).map((key) => (
+        {(["roi", "winRate", "trophyCount", "bestSession", "worstSession"] as const).map((key) => (
           <Button
             key={key}
             size="sm"
@@ -108,6 +115,7 @@ function LeaderboardTable({
           >
             {key === "roi" && <><Target className="h-3 w-3 mr-1" /> ROI</>}
             {key === "winRate" && <><TrendingUp className="h-3 w-3 mr-1" /> ITM Rate</>}
+            {key === "trophyCount" && <><Trophy className="h-3 w-3 mr-1" /> Troféus</>}
             {key === "bestSession" && <><Trophy className="h-3 w-3 mr-1" /> Melhor Sessão</>}
             {key === "worstSession" && <><Trophy className="h-3 w-3 mr-1" /> Pior Sessão</>}
           </Button>
@@ -144,7 +152,7 @@ function LeaderboardTable({
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate">{player.name ?? "Jogador"}</p>
               <p className="text-xs text-muted-foreground">
-                {player.totalSessions} sessões • {player.totalTables ?? 0} mesas
+                {player.totalSessions} sessões • {player.totalTables ?? 0} mesas • {player.trophyCount ?? 0} troféus
               </p>
             </div>
 
@@ -168,7 +176,7 @@ function LeaderboardTable({
 
 export default function Ranking() {
   const utils = trpcClient.useUtils();
-  const [sortBy, setSortBy] = useState<"roi" | "winRate" | "bestSession" | "worstSession">("roi");
+  const [sortBy, setSortBy] = useState<"roi" | "winRate" | "trophyCount" | "bestSession" | "worstSession">("roi");
   const [showInGlobalRanking, setShowInGlobalRanking] = useState(false);
   const [showInFriendsRanking, setShowInFriendsRanking] = useState(false);
   const [activeTab, setActiveTab] = useState<"global" | "friends">("global");
@@ -221,15 +229,15 @@ export default function Ranking() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Trophy className="h-6 w-6 text-primary" />
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(234,179,8,0.18),_transparent_26%),linear-gradient(135deg,_rgba(20,12,6,0.98),_rgba(34,20,10,0.95))] p-5 text-white shadow-2xl sm:p-6">
+        <h1 className="text-2xl font-black tracking-tight flex items-center gap-2 sm:text-3xl">
+          <Trophy className="h-6 w-6 text-amber-300" />
           Ranking
         </h1>
-        <p className="text-muted-foreground">
-          Compare apenas métricas de performance com consentimento explícito: ROI, ITM Rate, melhor sessão e pior sessão.
+        <p className="mt-1 text-sm text-zinc-300">
+          Compare métricas de performance com consentimento explícito.
         </p>
-      </div>
+      </section>
 
       <div className="grid gap-4">
       <Card className={!consentAnswered ? "border-amber-500/40 bg-amber-50/40" : undefined}>

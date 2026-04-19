@@ -2501,6 +2501,8 @@ export default function Sessions() {
   const [feedImageBase64, setFeedImageBase64] = useState<string | null>(null);
   const [feedImageMime, setFeedImageMime] = useState("image/jpeg");
   const [isFeedImageDragActive, setIsFeedImageDragActive] = useState(false);
+  const [optimisticSessionStartedAt, setOptimisticSessionStartedAt] = useState<Date | null>(null);
+  const [optimisticElapsed, setOptimisticElapsed] = useState("00:00:00");
   const feedImageInputRef = useRef<HTMLInputElement>(null);
 
   const { data: activeSession, isLoading: loadingActive } = trpc.sessions.getActive.useQuery(undefined, {
@@ -2525,12 +2527,35 @@ export default function Sessions() {
   });
 
   const startMutation = trpc.sessions.startActive.useMutation({
+    onMutate: () => {
+      // Start counting immediately on click, without waiting for network round-trip.
+      setOptimisticSessionStartedAt(new Date());
+    },
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
       toast("Sessão iniciada!", { description: "Timer rodando. Adicione suas mesas." });
     },
-    onError: (err) => toast.error("Erro", { description: err.message }),
+    onError: (err) => {
+      setOptimisticSessionStartedAt(null);
+      setOptimisticElapsed("00:00:00");
+      toast.error("Erro", { description: err.message });
+    },
   });
+
+  useEffect(() => {
+    if (!optimisticSessionStartedAt) return;
+    setOptimisticElapsed(formatDuration(optimisticSessionStartedAt));
+    const interval = window.setInterval(() => {
+      setOptimisticElapsed(formatDuration(optimisticSessionStartedAt));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [optimisticSessionStartedAt]);
+
+  useEffect(() => {
+    if (!activeSession) return;
+    setOptimisticSessionStartedAt(null);
+    setOptimisticElapsed("00:00:00");
+  }, [activeSession]);
 
   const importPreviewMutation = trpc.sessions.importPreview.useMutation({
     onError: (err) => toast.error("Falha ao analisar texto", { description: err.message }),
@@ -2945,27 +2970,34 @@ export default function Sessions() {
       {moneyRainVisible && <MoneyRainOverlay onDone={() => setMoneyRainVisible(false)} />}
 
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Sessões</h1>
-          <p className="text-sm text-muted-foreground">Gerencie suas sessões de poker</p>
-        </div>
-        <div className="grid grid-cols-1 sm:flex items-stretch sm:items-center gap-2 w-full sm:w-auto">
-          <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setShowPlayStyleOnboarding(true)}>
-            Configurar ABI
-          </Button>
-          {!activeSession && (
-            <Button
-              onClick={() => startMutation.mutate({})}
-              disabled={startMutation.isPending}
-              className="gap-2 w-full sm:w-auto"
-            >
-              <Timer className="h-4 w-4" />
-              {startMutation.isPending ? "Iniciando..." : "Nova Sessão"}
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_28%),linear-gradient(135deg,_rgba(10,10,10,0.96),_rgba(20,22,34,0.94))] p-5 text-white shadow-2xl sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Sessões</h1>
+            <p className="mt-1 text-sm text-zinc-300">Gerencie suas sessões de poker com foco e clareza.</p>
+            <div className="mt-3 flex items-center gap-2">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-rose-300/70 bg-rose-500/40 text-[10px] font-black text-white shadow-[0_0_20px_rgba(244,63,94,0.35)]">25</span>
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-300/70 bg-cyan-500/40 text-[10px] font-black text-white shadow-[0_0_24px_rgba(34,211,238,0.35)]">100</span>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-amber-300/70 bg-amber-500/40 text-[10px] font-black text-white shadow-[0_0_28px_rgba(245,158,11,0.35)]">500</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:flex items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            <Button type="button" variant="outline" className="w-full sm:w-auto border-white/20 bg-white/10 text-white hover:bg-white/20" onClick={() => setShowPlayStyleOnboarding(true)}>
+              Configurar ABI
             </Button>
-          )}
+            {!activeSession && (
+              <Button
+                onClick={() => startMutation.mutate({})}
+                disabled={startMutation.isPending || !!optimisticSessionStartedAt}
+                className="gap-2 w-full sm:w-auto bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+              >
+                <Timer className="h-4 w-4" />
+                {startMutation.isPending || optimisticSessionStartedAt ? "Iniciando..." : "Nova Sessão"}
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
         <Button
@@ -3013,9 +3045,7 @@ export default function Sessions() {
       )}
 
       {/* Active session */}
-      {loadingActive ? (
-        <div className="h-24 rounded-xl bg-muted/30 animate-pulse" />
-      ) : activeSession ? (
+      {activeSession ? (
         <Card className="border-primary/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -3033,6 +3063,29 @@ export default function Sessions() {
             />
           </CardContent>
         </Card>
+      ) : optimisticSessionStartedAt ? (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              Iniciando Sessão
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/20 to-primary/5 p-4">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-semibold">Cronômetro</span>
+                <div className="flex items-center gap-2 font-mono text-base font-bold text-primary sm:text-lg">
+                  <Timer className="h-5 w-5" />
+                  {optimisticElapsed}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Conectando sessão no servidor...</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : loadingActive ? (
+        <div className="h-24 rounded-xl bg-muted/30 animate-pulse" />
       ) : (
         <div className="text-center py-10 border border-dashed border-border rounded-xl">
           <Timer className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
@@ -3040,9 +3093,9 @@ export default function Sessions() {
           <p className="text-sm text-muted-foreground mt-1 mb-4">
             Clique em "Nova Sessão" para iniciar o timer e adicionar suas mesas.
           </p>
-          <Button onClick={() => startMutation.mutate({})} disabled={startMutation.isPending}>
+          <Button onClick={() => startMutation.mutate({})} disabled={startMutation.isPending || !!optimisticSessionStartedAt}>
             <Timer className="h-4 w-4 mr-2" />
-            Iniciar Sessão
+            {startMutation.isPending || optimisticSessionStartedAt ? "Iniciando..." : "Iniciar Sessão"}
           </Button>
         </div>
       )}
