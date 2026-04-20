@@ -802,6 +802,7 @@ export async function getUserSessions(
   const tableRows = await db
     .select({
       sessionId: sessionTables.sessionId,
+      type: sessionTables.type,
       buyIn: sessionTables.buyIn,
       cashOut: sessionTables.cashOut,
       currency: sessionTables.currency,
@@ -836,6 +837,8 @@ export async function getUserSessions(
     maxFieldSize: number | null;
     finalPositionSum: number;
     finalPositionCount: number;
+    hasOnlineTables: boolean;
+    hasLiveTables: boolean;
   }>();
 
   for (const row of tableRows) {
@@ -855,6 +858,8 @@ export async function getUserSessions(
         maxFieldSize: null,
         finalPositionSum: 0,
         finalPositionCount: 0,
+        hasOnlineTables: false,
+        hasLiveTables: false,
       });
     }
 
@@ -870,6 +875,8 @@ export async function getUserSessions(
     agg.worstTableProfit = agg.worstTableProfit === null ? profit : Math.min(agg.worstTableProfit, profit);
     if (row.venueId != null) agg.venueIds.add(row.venueId);
     agg.gameFormats.add(row.gameFormat);
+    if (row.type === "online") agg.hasOnlineTables = true;
+    if (row.type === "live") agg.hasLiveTables = true;
     if (!agg.primaryTournamentName && row.tournamentName && row.tournamentName.trim()) {
       agg.primaryTournamentName = row.tournamentName.trim();
     }
@@ -916,6 +923,11 @@ export async function getUserSessions(
       isMultiTable: (agg?.tableCount ?? 0) > 1,
       isMultiVenue: (agg?.venueIds.size ?? 0) > 1,
       isMultiFormat: (agg?.gameFormats.size ?? 0) > 1,
+      hasOnlineTables: agg?.hasOnlineTables ?? (s.type === "online"),
+      hasLiveTables: agg?.hasLiveTables ?? (s.type === "live"),
+      effectiveType: agg
+        ? (agg.hasOnlineTables && agg.hasLiveTables ? "mixed" : agg.hasOnlineTables ? "online" : "live")
+        : s.type,
     };
   });
 

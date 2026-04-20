@@ -1859,7 +1859,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
 }
 
 // ─── Session History Card ──────────────────────────────────────────────────────
-function SessionCard({ session }: { session: any }) {
+function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all" | "online" | "live" }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editTableId, setEditTableId] = useState<number | null>(null);
@@ -2128,11 +2128,16 @@ function SessionCard({ session }: { session: any }) {
             </div>
           </div>
 
-          {tables && tables.length > 0 && (
+          {tables && tables.length > 0 && (() => {
+            const visibleTables = typeFilter && typeFilter !== "all"
+              ? tables.filter((t) => t.type === typeFilter)
+              : tables;
+            if (visibleTables.length === 0) return null;
+            return (
             <div className="space-y-1">
               {(() => {
                 const venueNames = Array.from(new Set(
-                  tables
+                  visibleTables
                     .map((t) => venues?.find(v => v.id === t.venueId)?.name)
                     .filter((name): name is string => Boolean(name))
                 ));
@@ -2143,8 +2148,8 @@ function SessionCard({ session }: { session: any }) {
                   </p>
                 );
               })()}
-              <p className="text-xs text-muted-foreground font-medium">Mesas ({tables.length})</p>
-              {tables.map((t) => {
+              <p className="text-xs text-muted-foreground font-medium">Mesas ({visibleTables.length}{visibleTables.length !== tables.length ? ` de ${tables.length}` : ""})</p>
+              {visibleTables.map((t) => {
                 const tfmt = GAME_FORMATS.find(f => f.value === t.gameFormat);
                 const tp = (t.cashOut ?? 0) - t.buyIn;
                 const tDuration = calcTableDuration(t.startedAt, t.endedAt);
@@ -2182,7 +2187,7 @@ function SessionCard({ session }: { session: any }) {
                 );
               })}
             </div>
-          )}
+          ); })()}
 
           {session.notes && (
             <p className="text-xs text-muted-foreground italic">"{session.notes}"</p>
@@ -2914,7 +2919,12 @@ export default function Sessions() {
   const filteredSessions = useMemo(() => {
     if (!sessions) return [];
     return sessions.filter((s) => {
-      if (historyTypeFilter !== "all" && s.type !== historyTypeFilter) return false;
+      if (historyTypeFilter !== "all") {
+        const hasOnline = (s as any).hasOnlineTables ?? (s.type === "online");
+        const hasLive = (s as any).hasLiveTables ?? (s.type === "live");
+        if (historyTypeFilter === "online" && !hasOnline) return false;
+        if (historyTypeFilter === "live" && !hasLive) return false;
+      }
 
       if (historyVenueFilter !== "all") {
         const currentVenueId = s.venueId != null ? String(s.venueId) : "";
@@ -3532,7 +3542,7 @@ export default function Sessions() {
               </div>
               {filteredSessions.length > 0 ? (
                 filteredSessions.map((session) => (
-                  <SessionCard key={session.id} session={session} />
+                  <SessionCard key={session.id} session={session} typeFilter={historyTypeFilter} />
                 ))
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm border border-dashed border-border rounded-xl">
