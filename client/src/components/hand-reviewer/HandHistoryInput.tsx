@@ -60,14 +60,14 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(160deg,rgba(8,12,22,0.96),rgba(10,18,34,0.92))] p-3 text-white shadow-xl md:p-4">
+    <section className="overflow-hidden rounded-2xl border border-border/70 bg-card p-3 text-foreground shadow-xl dark:border-white/10 dark:bg-[linear-gradient(160deg,rgba(8,12,22,0.96),rgba(10,18,34,0.92))] dark:text-white md:p-4">
       <div className="mb-2 flex items-center gap-2">
         <div className="rounded-xl bg-cyan-400/15 p-2 text-cyan-200">
           <Bot className="h-5 w-5" />
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100/90">Entrada inteligente</p>
-          <p className="text-[11px] text-zinc-300">Cole hand history, descrição, ou arraste um arquivo.</p>
+          <p className="text-[11px] text-muted-foreground dark:text-zinc-300">Cole hand history, descrição, ou arraste um arquivo.</p>
         </div>
       </div>
 
@@ -78,21 +78,21 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
         className={`relative rounded-xl border-2 border-dashed transition-colors ${isDragging ? "border-cyan-400 bg-cyan-400/10" : "border-transparent"}`}
       >
         {isDragging && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-slate-950/80">
-            <FileText className="h-8 w-8 text-cyan-300" />
-            <p className="text-sm font-semibold text-cyan-200">Solte o arquivo aqui</p>
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-background/95 dark:bg-slate-950/80">
+            <FileText className="h-8 w-8 text-cyan-600 dark:text-cyan-300" />
+            <p className="text-sm font-semibold text-cyan-700 dark:text-cyan-200">Solte o arquivo aqui</p>
           </div>
         )}
         <Textarea
           value={props.value}
           onChange={event => props.onChange(event.target.value)}
-          className="h-24 resize-none overflow-y-auto border-white/20 bg-slate-950/45 font-mono text-[11px] leading-5 text-zinc-100 placeholder:text-zinc-400"
+          className="h-24 resize-none overflow-y-auto border-input bg-background font-mono text-[11px] leading-5 text-foreground placeholder:text-muted-foreground dark:border-white/20 dark:bg-slate-950/45 dark:text-zinc-100 dark:placeholder:text-zinc-400"
           placeholder="Cole aqui sua hand history ou arraste um arquivo .txt / .log"
         />
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold text-cyan-100/90">Plataforma do torneio:</span>
+        <span className="text-[11px] font-semibold text-cyan-700 dark:text-cyan-100/90">Plataforma do torneio:</span>
         {([
           { value: "AUTO", label: "Auto" },
           { value: "POKERSTARS", label: "PokerStars" },
@@ -102,7 +102,7 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
             key={option.value}
             type="button"
             onClick={() => props.onPlatformChange(option.value)}
-            className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition ${props.selectedPlatform === option.value ? "border-cyan-300/70 bg-cyan-400/20 text-cyan-100" : "border-white/20 bg-white/5 text-white/70 hover:bg-white/10"}`}
+            className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition ${props.selectedPlatform === option.value ? "border-cyan-300/70 bg-cyan-500/15 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100" : "border-border/70 bg-background text-muted-foreground hover:bg-accent dark:border-white/20 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10"}`}
           >
             {option.label}
           </button>
@@ -110,7 +110,7 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
       </div>
 
       {props.value.trim().length > 0 && (
-        <div className="mt-2 rounded-lg border border-cyan-300/25 bg-cyan-400/8 px-2.5 py-1.5 text-[11px] text-cyan-100/90">
+        <div className="mt-2 rounded-lg border border-cyan-300/40 bg-cyan-500/10 px-2.5 py-1.5 text-[11px] text-cyan-800 dark:border-cyan-300/25 dark:bg-cyan-400/8 dark:text-cyan-100/90">
           Transcript carregado{detectedTournamentId ? ` • Torneio #${detectedTournamentId}` : ""}
           {detectedHands > 0 ? ` • ${detectedHands} mãos detectadas` : ""}
           {` • Plataforma: ${props.selectedPlatform}`}
@@ -126,7 +126,7 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
       />
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={handleOpenFile}>
+        <Button size="sm" variant="outline" className="border-border/70 bg-background text-foreground hover:bg-accent dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10" onClick={handleOpenFile}>
           <Upload className="mr-2 h-4 w-4" />
           Importar arquivo
         </Button>
