@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -119,9 +119,17 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
   const [showComments, setShowComments] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGestureLike, setShowGestureLike] = useState(false);
-  const lastTapRef = useRef(0);
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const likeFlashTimeoutRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    return () => {
+      if (likeFlashTimeoutRef.current) {
+        window.clearTimeout(likeFlashTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const toggleLike = trpc.feed.toggleLike.useMutation({
     onMutate: async () => {
@@ -216,26 +224,35 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
     return target instanceof Element && Boolean(target.closest('[data-no-double-like="true"]'));
   };
 
-  const handleDoubleClickLike = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleDoubleClickLike = (event: React.MouseEvent<HTMLElement>) => {
     if (shouldIgnoreGestureTarget(event.target)) return;
     triggerGestureLike();
   };
 
-  const handleTouchEndLike = (event: React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchEndLike = (event: React.TouchEvent<HTMLElement>) => {
     if (shouldIgnoreGestureTarget(event.target)) return;
 
-    const now = Date.now();
-    const delta = now - lastTapRef.current;
-    lastTapRef.current = now;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
 
-    if (delta > 0 && delta < 280) {
+    const now = Date.now();
+    const previousTap = lastTapRef.current;
+    lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
+
+    if (!previousTap) return;
+
+    const delta = now - previousTap.time;
+    const deltaX = Math.abs(touch.clientX - previousTap.x);
+    const deltaY = Math.abs(touch.clientY - previousTap.y);
+
+    if (delta > 0 && delta < 420 && deltaX < 28 && deltaY < 28) {
       triggerGestureLike();
-      lastTapRef.current = 0;
+      lastTapRef.current = null;
     }
   };
 
   return (
-    <article className="social-post p-4 md:p-5">
+    <article className="social-post p-4 md:p-5" onDoubleClick={handleDoubleClickLike} onTouchEnd={handleTouchEndLike}>
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-3">
@@ -262,6 +279,7 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
             <Button
               size="icon"
               variant="ghost"
+              data-no-double-like="true"
               className="h-8 w-8 text-muted-foreground hover:text-destructive"
               onClick={() => deletePost.mutate({ id: post.id })}
             >
@@ -274,8 +292,6 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
         {(post.content?.trim() || post.imageUrl) && (
           <div
             className="relative mb-3 select-none"
-            onDoubleClick={handleDoubleClickLike}
-            onTouchEnd={handleTouchEndLike}
           >
             {post.content?.trim() && (
               <p className="text-sm leading-relaxed whitespace-pre-wrap break-words mb-3">
