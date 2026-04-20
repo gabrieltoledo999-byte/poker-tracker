@@ -212,7 +212,7 @@ export default function HandReviewerReplay() {
 
   if (!parsedTournament || !selectedHand || !currentStep) {
     return (
-      <div className="mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1700px] flex-col gap-3 overflow-hidden px-2 py-3 md:mt-1 md:px-3">
+      <div className="hand-review-replay mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1700px] flex-col gap-3 overflow-hidden px-2 py-3 md:mt-1 md:px-3">
         <Card className="border-border/60 bg-card/70">
           <CardHeader>
             <CardTitle>Replay nao carregado</CardTitle>
@@ -228,7 +228,7 @@ export default function HandReviewerReplay() {
 
   return (
     <div
-      className="mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1900px] flex-col gap-0 overflow-hidden pb-4 md:mt-1"
+      className="hand-review-replay mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1900px] flex-col gap-0 overflow-hidden pb-4 md:mt-1"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >

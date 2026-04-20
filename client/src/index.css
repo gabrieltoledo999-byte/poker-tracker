@@ -467,6 +467,40 @@
       0 0 10px color-mix(in oklab, var(--secondary) 36%, transparent),
       0 0 20px color-mix(in oklab, var(--primary) 20%, transparent);
   }
+
+  /* Light-theme compatibility layer for Hand Reviewer/Replayer screens that still
+     contain explicit dark utility classes from the first implementation pass. */
+  :is(html:not(.dark)) .tokyo-reviewer,
+  :is(html:not(.dark)) .hand-review-replay {
+    color: var(--foreground);
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-white/"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-white/"] {
+    color: color-mix(in oklab, var(--foreground) 74%, transparent) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer .text-white,
+  :is(html:not(.dark)) .hand-review-replay .text-white {
+    color: var(--foreground) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-cyan-100"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-cyan-100"] {
+    color: color-mix(in oklab, var(--primary) 66%, var(--foreground)) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-slate-950/"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-black/"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-slate-950/"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-black/"] {
+    background-color: color-mix(in oklab, var(--card) 92%, var(--background)) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-white/"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-white/"] {
+    border-color: color-mix(in oklab, var(--border) 86%, var(--foreground) 14%) !important;
+  }
 }
 
 @keyframes tokyo-float {
