@@ -1010,7 +1010,10 @@ export async function getPlayerHistoricalProfile(userId: number) {
       }
     }
 
-    const handNet = usedActionData ? handNetFromActions : Number(hand.result ?? 0);
+    const storedHandResult = Number(hand.result);
+    const hasStoredResult = Number.isFinite(storedHandResult);
+    // Keep `result` as source of truth when available; action reconstruction is fallback for legacy/incomplete rows.
+    const handNet = hasStoredResult ? storedHandResult : (usedActionData ? handNetFromActions : 0);
     const handBigBlind = Number(hand.bigBlind ?? 0);
     const handNetBb = handBigBlind > 0 ? handNet / handBigBlind : 0;
     const position = String(hand.heroPosition ?? "UNKNOWN").trim() || "UNKNOWN";
@@ -1115,8 +1118,8 @@ export async function getPlayerHistoricalProfile(userId: number) {
         updatedAt: new Date(),
       }));
 
-  const posSortedByGain = [...normalizedPositionStats].sort((a, b) => Number(b.netChips ?? 0) - Number(a.netChips ?? 0));
-  const posSortedByLoss = [...normalizedPositionStats].sort((a, b) => Number(a.netChips ?? 0) - Number(b.netChips ?? 0));
+  const posSortedByGain = [...normalizedPositionStats].sort((a, b) => Number(b.netBb ?? 0) - Number(a.netBb ?? 0));
+  const posSortedByLoss = [...normalizedPositionStats].sort((a, b) => Number(a.netBb ?? 0) - Number(b.netBb ?? 0));
 
   const recentCosts = tournaments.slice(0, 5).map((t) => Number(t.totalCost ?? 0));
   const previousCosts = tournaments.slice(5, 10).map((t) => Number(t.totalCost ?? 0));

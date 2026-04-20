@@ -610,7 +610,7 @@ export default function HandReviewer() {
     const suggestions: string[] = [];
     const h = playerHistoryQuery.data;
 
-    if (h?.positions?.leastProfitable && Number(h.positions.leastProfitable.netChips ?? 0) < 0) {
+    if (h?.positions?.leastProfitable && Number(h.positions.leastProfitable.netBb ?? 0) < 0) {
       suggestions.push(`Foco estrutural em ${h.positions.leastProfitable.position}: posição menos lucrativa no histórico.`);
     }
     if (h?.summary) {
