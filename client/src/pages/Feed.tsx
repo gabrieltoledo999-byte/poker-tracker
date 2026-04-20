@@ -311,9 +311,7 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
 
             {showGestureLike && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="rounded-full bg-black/18 p-5 backdrop-blur-[1px] animate-in zoom-in-75 fade-in duration-200">
-                  <Heart className="h-16 w-16 fill-rose-500 text-rose-500 drop-shadow-[0_8px_20px_rgba(244,63,94,0.45)]" />
-                </div>
+                <Heart className="h-16 w-16 animate-in zoom-in-75 fade-in duration-200 fill-rose-500 text-rose-500 drop-shadow-[0_8px_20px_rgba(244,63,94,0.45)]" />
               </div>
             )}
           </div>
