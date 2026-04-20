@@ -895,6 +895,36 @@ export async function getPlayerHistoricalProfile(userId: number) {
     .where(eq(centralTournaments.userId, userId))
     .orderBy(desc(centralTournaments.importedAt));
 
+  const centralTournamentCount = tournaments.length;
+  const centralHandsCount = tournaments.reduce((acc, t) => acc + Number(t.totalHands ?? 0), 0);
+
+  const aggregateTournamentCount = Number(aggregate?.sampleTournaments ?? 0);
+  const aggregateHandsCount = Number(aggregate?.sampleHands ?? 0);
+  const aggregateOutOfSync =
+    !!aggregate
+    && (
+      (aggregateTournamentCount > 0 && aggregateTournamentCount !== centralTournamentCount)
+      || (aggregateHandsCount > 0 && aggregateHandsCount !== centralHandsCount)
+    );
+
+  if (aggregateOutOfSync) {
+    console.log("[getPlayerHistoricalProfile] Aggregate mismatch detected. Refreshing...", {
+      aggregateTournamentCount,
+      aggregateHandsCount,
+      centralTournamentCount,
+      centralHandsCount,
+    });
+
+    await refreshUserAbiAggregates(userId);
+
+    [aggregate] = await db
+      .select()
+      .from(playerAggregateStats)
+      .where(eq(playerAggregateStats.userId, userId))
+      .orderBy(desc(playerAggregateStats.updatedAt))
+      .limit(1);
+  }
+
   const handsForPosition = await db
     .select({
       id: centralHands.id,
@@ -1035,22 +1065,22 @@ export async function getPlayerHistoricalProfile(userId: number) {
 
   const tournamentStatsCount = Number(tournamentMetricAverages?.totalTournaments ?? 0);
   const tournamentHandsSum = Number(tournamentMetricAverages?.totalHands ?? 0);
-  const fallbackTournamentCount = tournaments.length;
-  const fallbackHandsCount = tournaments.reduce((acc, t) => acc + Number(t.totalHands ?? 0), 0);
+  const fallbackTournamentCount = centralTournamentCount;
+  const fallbackHandsCount = centralHandsCount;
 
   const totalTournaments = Number(
-    aggregate?.sampleTournaments && Number(aggregate.sampleTournaments) > 0
-      ? aggregate.sampleTournaments
-      : tournamentStatsCount > 0
-        ? tournamentStatsCount
-        : fallbackTournamentCount,
+    fallbackTournamentCount > 0
+      ? fallbackTournamentCount
+      : aggregate?.sampleTournaments && Number(aggregate.sampleTournaments) > 0
+        ? aggregate.sampleTournaments
+        : tournamentStatsCount,
   );
   const totalHands = Number(
-    aggregate?.sampleHands && Number(aggregate.sampleHands) > 0
-      ? aggregate.sampleHands
-      : tournamentHandsSum > 0
-        ? tournamentHandsSum
-        : fallbackHandsCount,
+    fallbackHandsCount > 0
+      ? fallbackHandsCount
+      : aggregate?.sampleHands && Number(aggregate.sampleHands) > 0
+        ? aggregate.sampleHands
+        : tournamentHandsSum,
   );
 
   console.log("[getPlayerHistoricalProfile] Summary:", { totalTournaments, totalHands, tournaments: tournaments.length });
