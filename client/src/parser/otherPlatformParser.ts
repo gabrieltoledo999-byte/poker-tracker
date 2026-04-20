@@ -324,6 +324,17 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
     9;
   const buttonSeat = toNumber(lines.find(line => /is the button/i.test(line))?.match(/Seat #?(\d+)/i)?.[1]) || 1;
 
+  const POSITION_LABELS: Record<number, string[]> = {
+    2: ["BTN", "BB"],
+    3: ["BTN", "SB", "BB"],
+    4: ["BTN", "SB", "BB", "UTG"],
+    5: ["BTN", "SB", "BB", "UTG", "CO"],
+    6: ["BTN", "SB", "BB", "UTG", "HJ", "CO"],
+    7: ["BTN", "SB", "BB", "UTG", "MP", "HJ", "CO"],
+    8: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "HJ", "CO"],
+    9: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "MP+1", "HJ", "CO"],
+  };
+
   const seats = lines
     .filter(line => /^Seat\s+\d+:.*in chips\)/i.test(line))
     .map(line => {
@@ -332,6 +343,18 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
       const startingStack = toNumber(line.match(/\(([^)]+) in chips\)/i)?.[1]);
       return { seatNumber, playerName, startingStack, isSittingOut: /sitting out/i.test(line) };
     });
+
+  // Compute position map using same logic as PokerStars parser
+  const orderedSeats = [...seats]
+    .sort((a, b) => {
+      const da = (a.seatNumber - buttonSeat + maxPlayers) % maxPlayers;
+      const db = (b.seatNumber - buttonSeat + maxPlayers) % maxPlayers;
+      return da - db;
+    })
+    .map(s => s.seatNumber);
+  const posLabels = POSITION_LABELS[Math.min(Math.max(orderedSeats.length, 2), 9)] ?? POSITION_LABELS[9];
+  const positionBySeat = new Map<number, string>();
+  orderedSeats.forEach((sn, idx) => positionBySeat.set(sn, posLabels[idx] ?? `P${idx + 1}`));
 
   const dealtWithCards = lines.find(line => /^Dealt to\s+.+?\s+\[[^\]]+\]/i.test(line));
   const explicitHeroSeatName = seats.find(seat => /^Hero$/i.test(seat.playerName))?.playerName;
@@ -403,16 +426,31 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
   const heroResult: "won" | "lost" | "folded" = heroWonBySummary ? "won" : (heroFoldedBySummary ? "folded" : "lost");
 
   const seatMap = new Map(seats.map(seat => [seat.seatNumber, seat]));
+
+  // Refine positions: override SB/BB from blind post actions
+  for (const action of normalizedActions) {
+    if (action.action === "post_small_blind") {
+      const seat = seats.find(s => (aliasByOriginalName.get(s.playerName) ?? s.playerName) === action.player);
+      if (seat) positionBySeat.set(seat.seatNumber, "SB");
+    }
+    if (action.action === "post_big_blind") {
+      const seat = seats.find(s => (aliasByOriginalName.get(s.playerName) ?? s.playerName) === action.player);
+      if (seat) positionBySeat.set(seat.seatNumber, "BB");
+    }
+  }
+  positionBySeat.set(buttonSeat, "BTN");
+
   const parsedSeats = seats.map(seat => ({
     seatNumber: seat.seatNumber,
     playerName: seatAliasByNumber.get(seat.seatNumber) ?? seat.playerName,
     startingStack: seat.startingStack,
     isSittingOut: seat.isSittingOut,
     isHero: (seatAliasByNumber.get(seat.seatNumber) ?? seat.playerName) === heroName,
-    position: seat.seatNumber === buttonSeat ? "BTN" : "",
+    position: positionBySeat.get(seat.seatNumber) ?? "",
   }));
 
   const heroSeat = parsedSeats.find(seat => seat.isHero)?.seatNumber ?? null;
+  const heroPosition = heroSeat != null ? (positionBySeat.get(heroSeat) ?? "") : "";
   const heroStartingStack = parsedSeats.find(seat => seat.isHero)?.startingStack ?? 0;
   const calculations = calculateHandMetrics({
     actions: normalizedActions,
@@ -432,7 +470,7 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
     handId,
     heroName,
     heroSeat,
-    heroPosition: heroSeat === buttonSeat ? "BTN" : "",
+    heroPosition: heroPosition,
     heroCards,
     tableName: lines.find(line => /^Table\s+'/.test(line))?.match(/^Table\s+'([^']+)'/i)?.[1] ?? "",
     maxPlayers,

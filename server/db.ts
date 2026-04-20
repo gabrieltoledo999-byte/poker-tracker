@@ -1183,7 +1183,7 @@ export async function getSessionStats(userId: number, type?: "online" | "live", 
       fieldSizeCount += 1;
     }
 
-    if (row.matchedItmTables > 0) winningSessions++;
+    if (profit > 0) winningSessions++;
     else if (profit < 0) losingSessions++;
     else breakEvenSessions++;
 
@@ -1636,7 +1636,7 @@ export async function getStatsByGameFormat(userId: number) {
     formatStats[format].totalProfit += profit;
     formatStats[format].totalBuyIn += session.buyIn;
     formatStats[format].totalDuration += session.durationMinutes;
-    if (session.cashOut > 0) formatStats[format].winningSessions++;
+    if (profit > 0) formatStats[format].winningSessions++;
   }
   
   // Calculate averages

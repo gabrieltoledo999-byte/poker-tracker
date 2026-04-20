@@ -307,24 +307,112 @@ function parseSeatLine(
   };
 }
 
-/**
- * Calculate positions based on button and seat number
- */
-function calculatePosition(buttonSeat: number, seatNumber: number, maxPlayers: number): string {
-  const offset = (seatNumber - buttonSeat + maxPlayers) % maxPlayers;
-  if (maxPlayers === 2) {
-    return offset === 0 ? "BTN" : "BB";
+const POSITION_LABELS: Record<number, string[]> = {
+  2: ["BTN", "BB"],
+  3: ["BTN", "SB", "BB"],
+  4: ["BTN", "SB", "BB", "UTG"],
+  5: ["BTN", "SB", "BB", "UTG", "CO"],
+  6: ["BTN", "SB", "BB", "UTG", "HJ", "CO"],
+  7: ["BTN", "SB", "BB", "UTG", "MP", "HJ", "CO"],
+  8: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "HJ", "CO"],
+  9: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "MP+1", "HJ", "CO"],
+};
+
+function computePositionMap(
+  seats: Array<{ seatNumber: number }>,
+  buttonSeat: number,
+  maxPlayers: number,
+): Map<number, string> {
+  const ordered = [...seats]
+    .sort((a, b) => {
+      const da = (a.seatNumber - buttonSeat + maxPlayers) % maxPlayers;
+      const db = (b.seatNumber - buttonSeat + maxPlayers) % maxPlayers;
+      return da - db;
+    })
+    .map(s => s.seatNumber);
+
+  const labels = POSITION_LABELS[Math.min(Math.max(ordered.length, 2), 9)] ?? POSITION_LABELS[9];
+  const map = new Map<number, string>();
+  ordered.forEach((seatNumber, index) => {
+    map.set(seatNumber, labels[index] ?? `P${index + 1}`);
+  });
+  return map;
+}
+
+function calculateGgHandMetrics(hand: {
+  actions: PokerAction[];
+  heroName: string;
+  heroStartingStack: number;
+  seats: Array<{ playerName: string; startingStack: number }>;
+  summaryHeroCollected: number;
+}) {
+  const potByStreet: Record<"preflop" | "flop" | "turn" | "river", number> = {
+    preflop: 0, flop: 0, turn: 0, river: 0,
+  };
+
+  let pot = 0;
+  let heroInvested = 0;
+  let currentStreet: "preflop" | "flop" | "turn" | "river" = "preflop";
+  let streetContrib = new Map<string, number>();
+  const heroLower = hand.heroName.toLowerCase().trim();
+
+  for (const action of hand.actions) {
+    const streetKey = action.street === "preflop" || action.street === "flop" || action.street === "turn" || action.street === "river" ? action.street : null;
+    if (!streetKey) continue;
+
+    if (streetKey !== currentStreet) {
+      currentStreet = streetKey;
+      streetContrib = new Map<string, number>();
+      potByStreet[streetKey] = pot;
+    }
+
+    const playerKey = action.player.toLowerCase().trim();
+    let delta = 0;
+
+    if (
+      action.action === "post_ante" ||
+      action.action === "post_small_blind" ||
+      action.action === "post_big_blind" ||
+      action.action === "bet" ||
+      action.action === "call"
+    ) {
+      delta = action.amount ?? 0;
+      streetContrib.set(playerKey, (streetContrib.get(playerKey) ?? 0) + delta);
+    } else if (action.action === "raise") {
+      const target = action.toAmount ?? 0;
+      const already = streetContrib.get(playerKey) ?? 0;
+      delta = Math.max(target - already, 0);
+      streetContrib.set(playerKey, target);
+    } else if (action.action === "returned_uncalled_bet") {
+      delta = -(action.amount ?? 0);
+    }
+
+    pot += delta;
+    if (playerKey === heroLower && delta !== 0) {
+      heroInvested = Math.max(heroInvested + delta, 0);
+    }
+
+    potByStreet[currentStreet] = pot;
   }
-  if (offset === 0) return "BTN";
-  if (offset === 1) return "SB";
-  if (offset === 2) return "BB";
-  if (maxPlayers <= 4) {
-    return offset === 3 ? "CO" : "UTG";
-  }
-  if (offset === 3) return "CO";
-  if (offset === 4) return "HJ";
-  if (offset === 5) return "UTG";
-  return `UTG+${offset - 5}`;
+
+  const largestOpponent = hand.seats
+    .filter(s => s.playerName.toLowerCase().trim() !== heroLower)
+    .reduce((max, s) => Math.max(max, s.startingStack), 0);
+  const effectiveStackStart = Math.min(hand.heroStartingStack || 0, largestOpponent || hand.heroStartingStack || 0);
+  const heroNetEstimate = hand.summaryHeroCollected - heroInvested;
+  const heroEndingStackEstimate = hand.heroStartingStack > 0 ? hand.heroStartingStack + heroNetEstimate : null;
+  const sprFlop = potByStreet.flop > 0 ? effectiveStackStart / potByStreet.flop : null;
+
+  return {
+    potByStreet,
+    heroInvested,
+    effectiveStackStart,
+    sprFlop,
+    sprByStreet: { preflop: null, flop: sprFlop, turn: null, river: null },
+    potOddsByStreet: [] as Array<{ street: PokerStreet; amountToCall: number; potBeforeCall: number; potOdds: number }>,
+    heroNetEstimate,
+    heroEndingStackEstimate,
+  };
 }
 
 export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null {
@@ -349,10 +437,13 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
     if (!/^Seat\s+\d+:/i.test(line)) continue;
 
     const seat = parseSeatLine(line, lines);
-    if (seat) {
-      seat.position = calculatePosition(tableInfo.buttonSeat, seat.seatNumber, tableInfo.maxPlayers);
-      seats.push(seat);
-    }
+    if (seat) seats.push(seat);
+  }
+
+  // Assign positions using proper label map
+  const positionMap = computePositionMap(seats, tableInfo.buttonSeat, tableInfo.maxPlayers);
+  for (const seat of seats) {
+    seat.position = positionMap.get(seat.seatNumber) ?? "";
   }
 
   if (seats.length === 0) return null;
@@ -397,22 +488,42 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
     }
   }
 
+  // Parse board cards from street markers
+  const flopLine = lines.find(l => /\*\*\*\s*FLOP\s*\*\*\*/i.test(l));
+  const boardFlop = flopLine ? parseCards(flopLine.match(/\[([^\]]+)\]/)?.[0]) : [];
+  const turnLine = lines.find(l => /\*\*\*\s*TURN\s*\*\*\*/i.test(l));
+  const turnGroups = turnLine ? Array.from(turnLine.matchAll(/\[([^\]]+)\]/g)) : [];
+  const boardTurn = turnGroups.length > 1 ? parseCards(turnGroups[1][0]) : [];
+  const riverLine = lines.find(l => /\*\*\*\s*RIVER\s*\*\*\*/i.test(l));
+  const riverGroups = riverLine ? Array.from(riverLine.matchAll(/\[([^\]]+)\]/g)) : [];
+  const boardRiver = riverGroups.length > 1 ? parseCards(riverGroups[1][0]) : [];
+  const boardFull = [...boardFlop, ...boardTurn, ...boardRiver];
+
   // Parse summary
   const summaryIndex = lines.findIndex(l => /\*\*\*\s*SUMMARY\s*\*\*\*/i.test(l));
-  const totalPotLine = lines.slice(summaryIndex).find(l => /^Total pot\s+/i.test(l));
+  const summaryLines = summaryIndex >= 0 ? lines.slice(summaryIndex + 1) : [];
+  const totalPotLine = summaryLines.find(l => /^Total pot\s+/i.test(l));
   const totalPot = totalPotLine ? toNumber(totalPotLine.match(/\$?([\d.]+)/)?.[1]) : 0;
 
-  const collected = heroName
-    ? lines
-        .slice(summaryIndex)
-        .find(l => new RegExp(`^${heroName}.*collected.*\\$`, "i").test(l))
+  // Collect hero winnings from actions (more reliable than summary)
+  const heroCollectedFromActions = actions
+    .filter(a => a.player === heroName && a.action === "collect")
+    .reduce((sum, a) => sum + (a.amount ?? 0), 0);
+
+  // Fallback: check summary for collected amount
+  const collectedLine = heroName
+    ? summaryLines.find(l => new RegExp(`${heroName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*collected`, "i").test(l))
     : null;
-  const heroCollected = collected ? toNumber(collected.match(/\$?([\d.]+)/)?.[1]) : 0;
+  const heroCollectedFromSummary = collectedLine ? toNumber(collectedLine.match(/\$?([\d.]+)/)?.[1]) : 0;
+  const heroCollected = heroCollectedFromActions > 0 ? heroCollectedFromActions : heroCollectedFromSummary;
 
   const heroSeat = seats.find(s => s.playerName === heroName);
-  const heroInvested = heroSeat
-    ? heroSeat.startingStack + (heroCollected - heroSeat.startingStack)
-    : heroCollected;
+
+  // Detect showdown and uncalled bets
+  const showdown = actions.some(a => a.action === "show") || lines.some(l => /\*\*\*\s*SHOWDOWN\s*\*\*\*/i.test(l));
+  const uncalledReturned = actions
+    .filter(a => a.action === "returned_uncalled_bet")
+    .reduce((sum, a) => sum + (a.amount ?? 0), 0);
 
   const heroResult: "won" | "lost" | "folded" =
     heroCollected > 0
@@ -423,9 +534,32 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
 
   const heroShowed = lines
     .slice(summaryIndex)
-    .find(l => new RegExp(`^${heroName}.*shows`, "i").test(l))
+    .find(l => new RegExp(`${heroName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*shows`, "i").test(l))
     ?.match(/\[([^\]]+)\]/)?.[1]
     ?.split(/\s+/) ?? [];
+
+  // Villain cards from showdown
+  const villainCards = actions
+    .filter(a => a.action === "show" && a.player !== heroName)
+    .map(a => {
+      const cards = a.raw.match(/\[([^\]]+)\]/)?.[1]?.split(/\s+/).filter(Boolean) ?? [];
+      return { player: a.player, cards };
+    })
+    .filter(v => v.cards.length > 0);
+
+  // Use proper metric calculation from actions (not broken formula)
+  const calculations = calculateGgHandMetrics({
+    actions,
+    heroName,
+    heroStartingStack: heroSeat?.startingStack ?? 0,
+    seats,
+    summaryHeroCollected: heroCollected,
+  });
+
+  // Summary board fallback
+  const summaryBoardLine = summaryLines.find(l => /^Board\s+\[/i.test(l));
+  const summaryBoard = summaryBoardLine ? parseCards(summaryBoardLine.match(/\[([^\]]+)\]/)?.[0]) : [];
+  const resolvedBoard = summaryBoard.length > 0 ? summaryBoard : boardFull;
 
   return {
     tournamentId: headerInfo.tournamentId,
@@ -451,10 +585,10 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
     seats,
     actions,
     board: {
-      flop: [],
-      turn: [],
-      river: [],
-      full: [],
+      flop: boardFlop,
+      turn: boardTurn,
+      river: boardRiver,
+      full: resolvedBoard,
     },
     summary: {
       totalPot,
@@ -462,27 +596,18 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
       heroResult,
       heroCollected,
       heroShowed: heroShowed as string[],
-      villainCards: [],
+      villainCards,
       eliminationPosition: (() => {
         const elimRegex = /finished the tournament in (\d+)(?:st|nd|rd|th) place/i;
         const heroElimLine = lines.find(l => new RegExp(`${heroName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+finished the tournament in\\s+\\d+`, "i").test(l));
         const elimMatch = heroElimLine?.match(elimRegex) ?? lines.find(l => elimRegex.test(l))?.match(elimRegex);
         return elimMatch ? Number(elimMatch[1]) : null;
       })(),
-      handEndType: "showdown",
-      uncalledReturned: 0,
-      showdown: false,
+      handEndType: showdown ? "showdown" : "fold",
+      uncalledReturned,
+      showdown,
     },
-    calculations: {
-      potByStreet: { preflop: 0, flop: 0, turn: 0, river: 0 },
-      heroInvested: heroInvested,
-      effectiveStackStart: heroSeat?.startingStack ?? 0,
-      sprFlop: null,
-      sprByStreet: { preflop: null, flop: null, turn: null, river: null },
-      potOddsByStreet: [],
-      heroNetEstimate: heroCollected - heroInvested,
-      heroEndingStackEstimate: heroCollected,
-    },
+    calculations,
     aiReview: "",
     rawHand: rawText,
   };
