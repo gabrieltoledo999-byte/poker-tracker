@@ -52,7 +52,7 @@ export function PlayerSeat(props: {
   return (
     <button
       onClick={props.onClick}
-      className={`w-[122px] sm:w-[172px] overflow-visible rounded-xl sm:rounded-2xl border px-2 py-1.5 sm:px-3 sm:py-2.5 text-left transition ${tone} ${props.isSelected ? "ring-2 ring-cyan-400/40" : ""} ${props.isActing ? "scale-[1.02] shadow-[0_0_24px_rgba(34,211,238,0.25)]" : ""}`}
+      className={`w-[110px] sm:w-[172px] overflow-visible rounded-xl sm:rounded-2xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 text-left transition ${tone} ${props.isSelected ? "ring-2 ring-cyan-400/40" : ""} ${props.isActing ? "scale-[1.02] shadow-[0_0_24px_rgba(34,211,238,0.25)]" : ""}`}
     >
       <div className="mb-1 flex items-center gap-1">
         {seat.position ? (
@@ -61,9 +61,9 @@ export function PlayerSeat(props: {
           </Badge>
         ) : null}
       </div>
-      <p className="truncate text-[11px] sm:text-base font-bold">{seat.name}</p>
-      <div className="mt-1 inline-flex max-w-full items-center rounded-md border border-cyan-200/45 bg-cyan-300/16 px-1.5 py-0.5 sm:px-2 shadow-[0_0_14px_rgba(34,211,238,0.22)]">
-        <p className="truncate text-[10px] sm:text-sm font-extrabold tracking-wide text-cyan-50">{formatValue(seat.stackApprox, props.displayUnit, props.bigBlind)}</p>
+      <p className="truncate text-[10px] sm:text-base font-bold">{seat.name}</p>
+      <div className="mt-1 inline-flex max-w-full items-center rounded-md border border-cyan-200/45 bg-cyan-300/16 px-1 py-0.5 sm:px-2 shadow-[0_0_14px_rgba(34,211,238,0.22)]">
+        <p className="truncate text-[9px] sm:text-sm font-extrabold tracking-wide text-cyan-50">{formatValue(seat.stackApprox, props.displayUnit, props.bigBlind)}</p>
       </div>
 
       {heroShowedDown && (

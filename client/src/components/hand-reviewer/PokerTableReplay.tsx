@@ -78,16 +78,16 @@ function parseCard(card: string): { rank: string; suit: string; isRed: boolean }
 function FaceCard({ card }: { card: string }) {
   const parsed = parseCard(card);
   return (
-    <div className="h-14 w-10 sm:h-20 sm:w-14 rounded-lg sm:rounded-xl border-2 border-slate-300 bg-white shadow-[0_8px_18px_rgba(0,0,0,0.38)] flex flex-col items-start px-1 pt-0.5 sm:px-1.5 sm:pt-1">
-      <div className={`text-xs sm:text-base font-black leading-tight ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
-      <div className={`flex w-full flex-1 items-center justify-center text-2xl sm:text-4xl font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.suit}</div>
+    <div className="h-[50px] w-[36px] sm:h-20 sm:w-14 rounded-lg sm:rounded-xl border-2 border-slate-300 bg-white shadow-[0_8px_18px_rgba(0,0,0,0.38)] flex flex-col items-start px-1 pt-0.5 sm:px-1.5 sm:pt-1">
+      <div className={`text-[10px] sm:text-base font-black leading-tight ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
+      <div className={`flex w-full flex-1 items-center justify-center text-[20px] sm:text-4xl font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.suit}</div>
     </div>
   );
 }
 
 function BackCard() {
   return (
-    <div className="h-14 w-10 sm:h-20 sm:w-14 rounded-lg sm:rounded-xl border-2 border-cyan-200/40 bg-[linear-gradient(140deg,#5b21b6_0%,#312e81_52%,#0e7490_100%)] shadow-[0_8px_18px_rgba(0,0,0,0.42)]">
+    <div className="h-[50px] w-[36px] sm:h-20 sm:w-14 rounded-lg sm:rounded-xl border-2 border-cyan-200/40 bg-[linear-gradient(140deg,#5b21b6_0%,#312e81_52%,#0e7490_100%)] shadow-[0_8px_18px_rgba(0,0,0,0.42)]">
       <div className="m-1.5 h-[calc(100%-0.75rem)] rounded-md border border-white/35 bg-[repeating-linear-gradient(135deg,rgba(34,211,238,0.4)_0_3px,rgba(248,250,252,0)_3px_10px)]" />
     </div>
   );
@@ -431,7 +431,7 @@ export function PokerTableReplay(props: {
       </div>
 
       {props.controls && (
-        <div className="absolute bottom-2 sm:bottom-6 left-1/2 z-50 w-[calc(100%-12px)] sm:w-auto -translate-x-1/2 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/90 px-2 sm:px-3 py-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
+        <div data-no-back-swipe="true" className="absolute bottom-2 sm:bottom-6 left-1/2 z-50 w-[calc(100%-10px)] sm:w-auto -translate-x-1/2 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/90 px-1.5 sm:px-3 py-1.5 sm:py-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
           <div className="max-w-full overflow-x-auto">
             {props.controls}
           </div>
@@ -439,7 +439,7 @@ export function PokerTableReplay(props: {
       )}
 
       {props.unitToggle && (
-        <div className="absolute bottom-[74px] sm:bottom-6 left-2 sm:left-4 z-50 pointer-events-auto rounded-xl border border-white/15 bg-slate-950/88 px-1.5 sm:px-2 py-1 sm:py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-md">
+        <div data-no-back-swipe="true" className="absolute bottom-[68px] sm:bottom-6 left-2 sm:left-4 z-50 pointer-events-auto rounded-xl border border-white/15 bg-slate-950/88 px-1 sm:px-2 py-1 sm:py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-md">
           {props.unitToggle}
         </div>
       )}

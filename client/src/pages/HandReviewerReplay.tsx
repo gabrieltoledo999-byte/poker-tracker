@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, SkipBack, SkipForward } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ export default function HandReviewerReplay() {
   const [displayUnit, setDisplayUnit] = useState<DisplayUnit>("chips");
   const [handFilter, setHandFilter] = useState<HandFilter>("all");
   const [mobilePanel, setMobilePanel] = useState<"none" | "hands" | "timeline">("none");
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const loaded = loadHandReviewSession(sessionId);
@@ -123,6 +124,49 @@ export default function HandReviewerReplay() {
     setLocation(`/hand-review/import?replaySession=${sessionId}`);
   };
 
+  const goBackFromReplay = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    setLocation("/hand-review/import");
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-no-back-swipe="true"]')) {
+      swipeStartRef.current = null;
+      return;
+    }
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-no-back-swipe="true"]')) {
+      return;
+    }
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = Math.abs(touch.clientY - start.y);
+    const mobileViewport = window.innerWidth < 768;
+    const startedInLeftArea = start.x <= window.innerWidth * 0.6;
+
+    if (mobileViewport && startedInLeftArea && deltaX >= 90 && deltaY <= 70) {
+      goBackFromReplay();
+    }
+  };
+
   const goPrevHand = () => {
     if (!canPrevHand) return;
     moveToHand(selectedHandIndex - 1, 0);
@@ -183,7 +227,11 @@ export default function HandReviewerReplay() {
   }
 
   return (
-    <div className="mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1900px] flex-col gap-0 overflow-hidden pb-4 md:mt-1">
+    <div
+      className="mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1900px] flex-col gap-0 overflow-hidden pb-4 md:mt-1"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       <section className="grid min-h-0 h-full flex-1 items-stretch gap-2 md:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="hidden h-full flex-col rounded-2xl border border-white/10 bg-slate-950/65 p-2.5 md:flex" style={{ minHeight: 0 }}>
           {/* Top half — hand list */}
@@ -275,7 +323,7 @@ export default function HandReviewerReplay() {
             <Button
               size="sm"
               variant={mobilePanel === "hands" ? "default" : "outline"}
-              className="h-8 px-2 text-[11px]"
+              className="h-7 px-2 text-[10px]"
               onClick={() => setMobilePanel(prev => (prev === "hands" ? "none" : "hands"))}
             >
               Maos
@@ -283,7 +331,7 @@ export default function HandReviewerReplay() {
             <Button
               size="sm"
               variant={mobilePanel === "timeline" ? "default" : "outline"}
-              className="h-8 px-2 text-[11px]"
+              className="h-7 px-2 text-[10px]"
               onClick={() => setMobilePanel(prev => (prev === "timeline" ? "none" : "timeline"))}
             >
               Acoes
@@ -305,7 +353,7 @@ export default function HandReviewerReplay() {
             unitToggle={(
               <Button
                 size="sm"
-                className="h-8 sm:h-10 px-2.5 sm:px-3 text-xs sm:text-sm"
+                className="h-7 sm:h-10 px-2 sm:px-3 text-[10px] sm:text-sm"
                 variant={displayUnit === "bb" ? "default" : "outline"}
                 onClick={() => setDisplayUnit(prev => (prev === "bb" ? "chips" : "bb"))}
               >
@@ -343,7 +391,7 @@ export default function HandReviewerReplay() {
               );
             })()}
             controls={(
-              <div className="flex min-w-max items-center justify-end gap-1.5 sm:gap-2">
+              <div className="flex min-w-max items-center justify-end gap-1 sm:gap-2">
                 {/* Street jump buttons */}
                 {(["preflop", "flop", "turn", "river"] as PokerStreet[]).map(street => {
                   const labels: Record<string, string> = { preflop: "PreFlop", flop: "Flop", turn: "Turn", river: "River" };
@@ -358,7 +406,7 @@ export default function HandReviewerReplay() {
                       key={street}
                       size="sm"
                       variant={isActive ? "default" : "outline"}
-                      className={`h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm ${
+                      className={`h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm ${
                         isActive ? "bg-cyan-500 text-slate-950 hover:bg-cyan-400" : ""
                       }`}
                       onClick={() => jumpToStreet(street)}
@@ -372,7 +420,7 @@ export default function HandReviewerReplay() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
+                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
                   onClick={goPrevHand}
                   disabled={!canPrevHand}
                 >
@@ -382,7 +430,7 @@ export default function HandReviewerReplay() {
                 </Button>
                 <Button
                   size="sm"
-                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
+                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
                   variant="outline"
                   onClick={goPrevActionContinuous}
                   disabled={!canPrevAction && !canPrevHand}
@@ -391,7 +439,7 @@ export default function HandReviewerReplay() {
                 </Button>
                 <Button
                   size="sm"
-                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
+                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
                   variant="outline"
                   onClick={goNextActionContinuous}
                   disabled={!canNextAction && !canNextHand}
@@ -401,7 +449,7 @@ export default function HandReviewerReplay() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
+                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
                   onClick={goNextHand}
                   disabled={!canNextHand}
                 >
@@ -409,7 +457,7 @@ export default function HandReviewerReplay() {
                   <span className="hidden sm:inline">Mao+</span>
                   <span className="sm:hidden">M+</span>
                 </Button>
-                <span className="rounded-md border border-border/60 px-2 py-1 text-[10px] sm:px-2.5 sm:py-1.5 sm:text-xs text-muted-foreground">
+                <span className="rounded-md border border-border/60 px-1.5 py-1 text-[9px] sm:px-2.5 sm:py-1.5 sm:text-xs text-muted-foreground">
                   {safeActionIndex}/{handActions.length}
                 </span>
                 <Button
@@ -425,7 +473,7 @@ export default function HandReviewerReplay() {
           />
 
           {mobilePanel === "hands" && (
-            <div className="mt-2 md:hidden rounded-xl border border-white/10 bg-slate-950/70 p-2 max-h-[36vh] overflow-y-auto">
+            <div data-no-back-swipe="true" className="mt-2 md:hidden rounded-xl border border-white/10 bg-slate-950/70 p-2 max-h-[36vh] overflow-y-auto">
               <div className="mb-2 flex gap-1">
                 {(["all", "won", "lost", "folded"] as HandFilter[]).map(f => {
                   const labels: Record<HandFilter, string> = { all: "ALL", won: "WIN", lost: "LOSS", folded: "FOLD" };
@@ -479,7 +527,7 @@ export default function HandReviewerReplay() {
           )}
 
           {mobilePanel === "timeline" && (
-            <div className="mt-2 md:hidden rounded-xl border border-white/10 bg-slate-950/70 p-2 max-h-[36vh] overflow-y-auto">
+            <div data-no-back-swipe="true" className="mt-2 md:hidden rounded-xl border border-white/10 bg-slate-950/70 p-2 max-h-[36vh] overflow-y-auto">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100">
                 Timeline — Mao {selectedHandIndex + 1}
               </div>

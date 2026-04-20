@@ -118,6 +118,9 @@ const REACTIONS = ["🔥", "👏", "😂", "😮", "😢", "🎯"] as const;
 function PostCard({ post, currentUserId }: { post: any; currentUserId: number }) {
   const [showComments, setShowComments] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGestureLike, setShowGestureLike] = useState(false);
+  const lastTapRef = useRef(0);
+  const likeFlashTimeoutRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
   const toggleLike = trpc.feed.toggleLike.useMutation({
@@ -191,6 +194,46 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
     },
   });
 
+  const playGestureLikeFlash = () => {
+    setShowGestureLike(true);
+    if (likeFlashTimeoutRef.current) {
+      window.clearTimeout(likeFlashTimeoutRef.current);
+    }
+    likeFlashTimeoutRef.current = window.setTimeout(() => {
+      setShowGestureLike(false);
+      likeFlashTimeoutRef.current = null;
+    }, 650);
+  };
+
+  const triggerGestureLike = () => {
+    if (!post.likedByMe && !toggleLike.isPending) {
+      toggleLike.mutate({ postId: post.id });
+    }
+    playGestureLikeFlash();
+  };
+
+  const shouldIgnoreGestureTarget = (target: EventTarget | null) => {
+    return target instanceof Element && Boolean(target.closest('[data-no-double-like="true"]'));
+  };
+
+  const handleDoubleClickLike = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (shouldIgnoreGestureTarget(event.target)) return;
+    triggerGestureLike();
+  };
+
+  const handleTouchEndLike = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (shouldIgnoreGestureTarget(event.target)) return;
+
+    const now = Date.now();
+    const delta = now - lastTapRef.current;
+    lastTapRef.current = now;
+
+    if (delta > 0 && delta < 280) {
+      triggerGestureLike();
+      lastTapRef.current = 0;
+    }
+  };
+
   return (
     <article className="social-post p-4 md:p-5">
         {/* Header */}
@@ -228,25 +271,40 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
         </div>
 
         {/* Content */}
-        {post.content?.trim() && (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words mb-3">
-            {post.content}
-          </p>
-        )}
+        {(post.content?.trim() || post.imageUrl) && (
+          <div
+            className="relative mb-3 select-none"
+            onDoubleClick={handleDoubleClickLike}
+            onTouchEnd={handleTouchEndLike}
+          >
+            {post.content?.trim() && (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words mb-3">
+                {post.content}
+              </p>
+            )}
 
-        {/* Image */}
-        {post.imageUrl && (
-          <div className="rounded-lg overflow-hidden mb-3 bg-muted flex items-center justify-center">
-            <img
-              src={post.imageUrl}
-              alt="Imagem do post"
-              className="w-full max-h-[480px] object-contain"
-            />
+            {post.imageUrl && (
+              <div className="rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                <img
+                  src={post.imageUrl}
+                  alt="Imagem do post"
+                  className="w-full max-h-[480px] object-contain"
+                />
+              </div>
+            )}
+
+            {showGestureLike && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="rounded-full bg-black/18 p-5 backdrop-blur-[1px] animate-in zoom-in-75 fade-in duration-200">
+                  <Heart className="h-16 w-16 fill-rose-500 text-rose-500 drop-shadow-[0_8px_20px_rgba(244,63,94,0.45)]" />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Actions */}
-        <div className="space-y-2">
+        <div className="space-y-2" data-no-double-like="true">
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <button
               className={`flex items-center gap-1.5 transition-colors hover:text-rose-500 ${
@@ -323,7 +381,9 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
 
         {/* Comments */}
         {showComments && (
-          <CommentSection postId={post.id} currentUserId={currentUserId} />
+          <div data-no-double-like="true">
+            <CommentSection postId={post.id} currentUserId={currentUserId} />
+          </div>
         )}
     </article>
   );
