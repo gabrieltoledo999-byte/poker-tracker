@@ -78,16 +78,16 @@ function parseCard(card: string): { rank: string; suit: string; isRed: boolean }
 function FaceCard({ card }: { card: string }) {
   const parsed = parseCard(card);
   return (
-    <div className="h-20 w-14 rounded-xl border-2 border-slate-300 bg-white shadow-[0_8px_18px_rgba(0,0,0,0.38)] flex flex-col items-start px-1.5 pt-1">
-      <div className={`text-base font-black leading-tight ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
-      <div className={`flex w-full flex-1 items-center justify-center text-4xl font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.suit}</div>
+    <div className="h-14 w-10 sm:h-20 sm:w-14 rounded-lg sm:rounded-xl border-2 border-slate-300 bg-white shadow-[0_8px_18px_rgba(0,0,0,0.38)] flex flex-col items-start px-1 pt-0.5 sm:px-1.5 sm:pt-1">
+      <div className={`text-xs sm:text-base font-black leading-tight ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
+      <div className={`flex w-full flex-1 items-center justify-center text-2xl sm:text-4xl font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.suit}</div>
     </div>
   );
 }
 
 function BackCard() {
   return (
-    <div className="h-20 w-14 rounded-xl border-2 border-cyan-200/40 bg-[linear-gradient(140deg,#5b21b6_0%,#312e81_52%,#0e7490_100%)] shadow-[0_8px_18px_rgba(0,0,0,0.42)]">
+    <div className="h-14 w-10 sm:h-20 sm:w-14 rounded-lg sm:rounded-xl border-2 border-cyan-200/40 bg-[linear-gradient(140deg,#5b21b6_0%,#312e81_52%,#0e7490_100%)] shadow-[0_8px_18px_rgba(0,0,0,0.42)]">
       <div className="m-1.5 h-[calc(100%-0.75rem)] rounded-md border border-white/35 bg-[repeating-linear-gradient(135deg,rgba(34,211,238,0.4)_0_3px,rgba(248,250,252,0)_3px_10px)]" />
     </div>
   );
@@ -195,7 +195,7 @@ export function PokerTableReplay(props: {
   return (
     <section className={`relative h-full overflow-hidden rounded-3xl border border-white/12 bg-[radial-gradient(circle_at_20%_10%,rgba(139,92,246,0.15),transparent_34%),radial-gradient(circle_at_82%_85%,rgba(6,182,212,0.14),transparent_38%),linear-gradient(180deg,#0b1020_0%,#070b17_100%)] shadow-[0_22px_55px_rgba(2,6,23,0.5)] ${props.className ?? ""}`}>
       <div className="absolute inset-0 rounded-3xl bg-[linear-gradient(145deg,rgba(255,255,255,0.05),transparent_30%,transparent_70%,rgba(255,255,255,0.03))]" />
-      <div className="relative h-full w-full pb-20">
+      <div className="relative h-full w-full pb-28 sm:pb-20">
         <div className="pointer-events-none absolute left-1/2 top-[52.5%] h-[60%] w-[85%] -translate-x-1/2 -translate-y-1/2 rounded-[999px] bg-black/55 blur-[26px]" />
         <div
           className="absolute left-1/2 top-[48.8%] h-[67%] w-[93%] rounded-[999px] border border-indigo-200/18 bg-[radial-gradient(circle_at_50%_34%,#3a3859_0%,#1a213b_46%,#090d1a_100%)] shadow-[0_22px_38px_rgba(0,0,0,0.62),inset_0_2px_2px_rgba(255,255,255,0.16),inset_0_-8px_12px_rgba(0,0,0,0.45)]"
@@ -211,7 +211,7 @@ export function PokerTableReplay(props: {
         />
 
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[6] -translate-x-1/2 -translate-y-1/2 opacity-28">
-          <img src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png" alt="The Rail" className="h-auto w-[420px] max-w-[80vw] object-contain" />
+          <img src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png" alt="The Rail" className="h-auto w-[260px] sm:w-[420px] max-w-[82vw] sm:max-w-[80vw] object-contain" />
         </div>
 
         {/* Center area: board + single pot display (single source of truth) */}
@@ -423,7 +423,7 @@ export function PokerTableReplay(props: {
             animate={{ opacity: 1, scale: [1, 1.08, 1] }}
             transition={{ duration: 0.35, ease: "easeOut" }}
           >
-            <div className="rounded-xl border-2 border-cyan-200/85 bg-cyan-300/95 px-3.5 py-1.5 text-[12px] font-black tracking-wide text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.6)]">
+            <div className="rounded-lg sm:rounded-xl border-2 border-cyan-200/85 bg-cyan-300/95 px-2.5 sm:px-3.5 py-1 sm:py-1.5 text-[10px] sm:text-[12px] font-black tracking-wide text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.6)]">
               {actionBadgeLabel}
             </div>
           </motion.div>
@@ -431,19 +431,21 @@ export function PokerTableReplay(props: {
       </div>
 
       {props.controls && (
-        <div className="absolute bottom-6 left-1/2 z-50 -translate-x-1/2 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/90 px-3 py-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
-          {props.controls}
+        <div className="absolute bottom-2 sm:bottom-6 left-1/2 z-50 w-[calc(100%-12px)] sm:w-auto -translate-x-1/2 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/90 px-2 sm:px-3 py-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
+          <div className="max-w-full overflow-x-auto">
+            {props.controls}
+          </div>
         </div>
       )}
 
       {props.unitToggle && (
-        <div className="absolute bottom-6 left-4 z-50 pointer-events-auto rounded-xl border border-white/15 bg-slate-950/88 px-2 py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-md">
+        <div className="absolute bottom-[74px] sm:bottom-6 left-2 sm:left-4 z-50 pointer-events-auto rounded-xl border border-white/15 bg-slate-950/88 px-1.5 sm:px-2 py-1 sm:py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-md">
           {props.unitToggle}
         </div>
       )}
 
       {props.infoPanel && (
-        <div className="absolute bottom-6 right-3 z-50 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/88 p-3 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
+        <div className="hidden sm:block absolute bottom-6 right-3 z-50 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/88 p-3 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
           {props.infoPanel}
         </div>
       )}

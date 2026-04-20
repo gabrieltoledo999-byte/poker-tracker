@@ -14,14 +14,14 @@ export function BoardCards({ cards }: { cards: string[] }) {
   }
 
   return (
-    <div className="flex flex-nowrap items-center justify-center gap-1.5">
+    <div className="flex flex-nowrap items-center justify-center gap-1 sm:gap-1.5">
       {cards.map((card, idx) => {
         const parsed = parseCard(card);
         return (
-        <div key={`${card}-${idx}`} className="flex h-[78px] w-[56px] flex-col rounded-xl border-2 border-slate-300 bg-white px-1.5 py-1 shadow-[0_10px_18px_rgba(2,6,23,0.35)]">
-          <div className={`text-[14px] font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
-          <div className={`flex flex-1 items-center justify-center text-[31px] font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.suit}</div>
-          <div className={`self-end text-[14px] font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
+        <div key={`${card}-${idx}`} className="flex h-[60px] w-[42px] sm:h-[78px] sm:w-[56px] flex-col rounded-lg sm:rounded-xl border-2 border-slate-300 bg-white px-1 py-0.5 sm:px-1.5 sm:py-1 shadow-[0_10px_18px_rgba(2,6,23,0.35)]">
+          <div className={`text-[11px] sm:text-[14px] font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
+          <div className={`flex flex-1 items-center justify-center text-[24px] sm:text-[31px] font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.suit}</div>
+          <div className={`self-end text-[11px] sm:text-[14px] font-black leading-none ${parsed.isRed ? "text-red-600" : "text-slate-900"}`}>{parsed.rank}</div>
         </div>
       );})}
     </div>

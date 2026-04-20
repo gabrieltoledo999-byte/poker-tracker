@@ -33,6 +33,7 @@ export default function HandReviewerReplay() {
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [displayUnit, setDisplayUnit] = useState<DisplayUnit>("chips");
   const [handFilter, setHandFilter] = useState<HandFilter>("all");
+  const [mobilePanel, setMobilePanel] = useState<"none" | "hands" | "timeline">("none");
 
   useEffect(() => {
     const loaded = loadHandReviewSession(sessionId);
@@ -270,8 +271,30 @@ export default function HandReviewerReplay() {
         </aside>
 
         <div className="flex min-h-0 h-full flex-1 flex-col">
+          <div className="mb-2 flex items-center gap-1.5 px-1 md:hidden">
+            <Button
+              size="sm"
+              variant={mobilePanel === "hands" ? "default" : "outline"}
+              className="h-8 px-2 text-[11px]"
+              onClick={() => setMobilePanel(prev => (prev === "hands" ? "none" : "hands"))}
+            >
+              Maos
+            </Button>
+            <Button
+              size="sm"
+              variant={mobilePanel === "timeline" ? "default" : "outline"}
+              className="h-8 px-2 text-[11px]"
+              onClick={() => setMobilePanel(prev => (prev === "timeline" ? "none" : "timeline"))}
+            >
+              Acoes
+            </Button>
+            <div className="ml-auto text-[11px] text-white/65">
+              Mao {selectedHandIndex + 1} · {safeActionIndex}/{handActions.length}
+            </div>
+          </div>
+
           <PokerTableReplay
-            className="flex-1"
+            className="flex-1 min-h-0"
             step={currentStep}
             previousStep={previousStep}
             maxPlayers={selectedHand.maxPlayers}
@@ -282,7 +305,7 @@ export default function HandReviewerReplay() {
             unitToggle={(
               <Button
                 size="sm"
-                className="h-10 px-3 text-sm"
+                className="h-8 sm:h-10 px-2.5 sm:px-3 text-xs sm:text-sm"
                 variant={displayUnit === "bb" ? "default" : "outline"}
                 onClick={() => setDisplayUnit(prev => (prev === "bb" ? "chips" : "bb"))}
               >
@@ -320,7 +343,7 @@ export default function HandReviewerReplay() {
               );
             })()}
             controls={(
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex min-w-max items-center justify-end gap-1.5 sm:gap-2">
                 {/* Street jump buttons */}
                 {(["preflop", "flop", "turn", "river"] as PokerStreet[]).map(street => {
                   const labels: Record<string, string> = { preflop: "PreFlop", flop: "Flop", turn: "Turn", river: "River" };
@@ -335,7 +358,7 @@ export default function HandReviewerReplay() {
                       key={street}
                       size="sm"
                       variant={isActive ? "default" : "outline"}
-                      className={`h-11 px-4 text-sm ${
+                      className={`h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm ${
                         isActive ? "bg-cyan-500 text-slate-950 hover:bg-cyan-400" : ""
                       }`}
                       onClick={() => jumpToStreet(street)}
@@ -349,16 +372,17 @@ export default function HandReviewerReplay() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-11 px-4 text-sm"
+                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
                   onClick={goPrevHand}
                   disabled={!canPrevHand}
                 >
                   <SkipBack className="mr-1 h-4 w-4" />
-                  Mao-
+                  <span className="hidden sm:inline">Mao-</span>
+                  <span className="sm:hidden">M-</span>
                 </Button>
                 <Button
                   size="sm"
-                  className="h-11 px-4 text-sm"
+                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
                   variant="outline"
                   onClick={goPrevActionContinuous}
                   disabled={!canPrevAction && !canPrevHand}
@@ -367,7 +391,7 @@ export default function HandReviewerReplay() {
                 </Button>
                 <Button
                   size="sm"
-                  className="h-11 px-4 text-sm"
+                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
                   variant="outline"
                   onClick={goNextActionContinuous}
                   disabled={!canNextAction && !canNextHand}
@@ -377,20 +401,21 @@ export default function HandReviewerReplay() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-11 px-4 text-sm"
+                  className="h-8 sm:h-11 px-2.5 sm:px-4 text-[11px] sm:text-sm"
                   onClick={goNextHand}
                   disabled={!canNextHand}
                 >
                   <SkipForward className="mr-1 h-4 w-4" />
-                  Mao+
+                  <span className="hidden sm:inline">Mao+</span>
+                  <span className="sm:hidden">M+</span>
                 </Button>
-                <span className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+                <span className="rounded-md border border-border/60 px-2 py-1 text-[10px] sm:px-2.5 sm:py-1.5 sm:text-xs text-muted-foreground">
                   {safeActionIndex}/{handActions.length}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-11 px-4 text-sm"
+                  className="hidden sm:inline-flex h-11 px-4 text-sm"
                   onClick={goToTournamentAnalyzer}
                 >
                   Analisar torneio
@@ -398,6 +423,73 @@ export default function HandReviewerReplay() {
               </div>
             )}
           />
+
+          {mobilePanel === "hands" && (
+            <div className="mt-2 md:hidden rounded-xl border border-white/10 bg-slate-950/70 p-2 max-h-[36vh] overflow-y-auto">
+              <div className="mb-2 flex gap-1">
+                {(["all", "won", "lost", "folded"] as HandFilter[]).map(f => {
+                  const labels: Record<HandFilter, string> = { all: "ALL", won: "WIN", lost: "LOSS", folded: "FOLD" };
+                  const activeClass: Record<HandFilter, string> = {
+                    all: "bg-white/20 text-white border-white/30",
+                    won: "bg-emerald-500 text-white border-emerald-400",
+                    lost: "bg-red-600 text-white border-red-500",
+                    folded: "bg-slate-500 text-white border-slate-400",
+                  };
+                  const inactiveClass = "bg-white/5 text-white/50 border-white/10 hover:bg-white/10";
+                  return (
+                    <button
+                      key={`mobile-filter-${f}`}
+                      onClick={() => changeFilter(f)}
+                      className={`flex-1 rounded-md border px-1 py-1 text-[10px] font-bold transition ${
+                        handFilter === f ? activeClass[f] : inactiveClass
+                      }`}
+                    >
+                      {labels[f]}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-white/50 mb-2">{filteredHands.length} / {parsedTournament?.hands?.length ?? 0} maos</div>
+              <div className="space-y-1">
+                {filteredHands.map(({ hand, idx }) => {
+                  const heroCards: [string, string] = [
+                    hand.heroCards?.[0] ?? "?",
+                    hand.heroCards?.[1] ?? "?",
+                  ];
+                  return (
+                    <TournamentHandListItem
+                      key={`mobile-hand-${idx}`}
+                      handNumber={idx + 1}
+                      heroCards={heroCards}
+                      smallBlind={hand.smallBlind}
+                      bigBlind={hand.bigBlind}
+                      heroPosition={hand.heroPosition}
+                      heroResult={hand.summary.heroResult}
+                      isSelected={selectedHandIndex === idx}
+                      onClick={() => {
+                        moveToHand(idx, 0);
+                        setMobilePanel("none");
+                      }}
+                      displayUnit={displayUnit}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {mobilePanel === "timeline" && (
+            <div className="mt-2 md:hidden rounded-xl border border-white/10 bg-slate-950/70 p-2 max-h-[36vh] overflow-y-auto">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100">
+                Timeline — Mao {selectedHandIndex + 1}
+              </div>
+              <ActionTimeline
+                actions={handActions}
+                selectedActionIndex={highlightedActionIndex}
+                onSelectAction={index => setCurrentActionIndex(index + 1)}
+              />
+            </div>
+          )}
         </div>
       </section>
     </div>
