@@ -1620,24 +1620,24 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
                   {item.wins + item.losses} regs
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-2 text-left transition-colors hover:bg-emerald-500/16 disabled:opacity-40"
+                  className="min-w-0 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-left transition-colors hover:bg-emerald-500/16 disabled:opacity-40 sm:px-3.5 sm:py-3"
                   onClick={() => handleRegisterHandResult(item.key, "win")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] leading-none text-emerald-300/80">Vitórias</span>
-                  <span className="mt-2 block text-lg font-bold leading-none text-emerald-300">{item.wins}</span>
+                  <span className="block truncate text-[9px] font-semibold tracking-[0.04em] leading-tight text-emerald-300/80 sm:text-[11px] sm:tracking-[0.08em] sm:uppercase sm:whitespace-nowrap">Vitórias</span>
+                  <span className="mt-2 block text-xl font-bold leading-none text-emerald-300 sm:text-2xl">{item.wins}</span>
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-2 text-left transition-colors hover:bg-rose-500/16 disabled:opacity-40"
+                  className="min-w-0 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2.5 text-left transition-colors hover:bg-rose-500/16 disabled:opacity-40 sm:px-3.5 sm:py-3"
                   onClick={() => handleRegisterHandResult(item.key, "loss")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] leading-none text-rose-300/80">Perdas</span>
-                  <span className="mt-2 block text-lg font-bold leading-none text-rose-300">{item.losses}</span>
+                  <span className="block truncate text-[9px] font-semibold tracking-[0.04em] leading-tight text-rose-300/80 sm:text-[11px] sm:tracking-[0.08em] sm:uppercase sm:whitespace-nowrap">Perdas</span>
+                  <span className="mt-2 block text-xl font-bold leading-none text-rose-300 sm:text-2xl">{item.losses}</span>
                 </button>
               </div>
             </div>
