@@ -6,5 +6,6 @@ dockerfilePath = "Dockerfile"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 # Overrides the broken "npx drizzle-kit migrate" pre-deploy set via Railway UI.
+# drizzle-kit is a devDependency and is NOT in the production bundle.
 # Migrations run inside the server (runSafeMigrations) on startup.
-preDeployCommand = ""
+preDeployCommand = ["echo", "skip-predeploy-migrations-run-on-startup"]
