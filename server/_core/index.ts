@@ -1,4 +1,8 @@
 import "dotenv/config";
+import dns from "dns";
+// Force IPv6-first resolution so Railway private DNS (mysql.railway.internal → IPv6 ULA)
+// is used instead of a stale IPv4 A-record that isn't routable.
+try { dns.setDefaultResultOrder("ipv6first"); } catch {}
 import express from "express";
 import { createServer } from "http";
 import net from "net";

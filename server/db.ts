@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql2 from "mysql2/promise";
 import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters, userBlocks, messages, Message, messageReactions } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAllRates } from "./currency";
@@ -53,7 +54,15 @@ async function withDbRetry<T>(operation: (db: ReturnType<typeof drizzle>) => Pro
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Build an explicit mysql2 pool so we can force IPv6 (family: 6) for Railway
+      // private networking, where mysql.railway.internal is only reachable via IPv6 ULA.
+      const pool = mysql2.createPool({
+        uri: process.env.DATABASE_URL,
+        // @ts-expect-error mysql2 accepts net.connect options including `family`
+        family: 6,
+        connectionLimit: 10,
+      });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
