@@ -19,7 +19,7 @@ async function runSafeMigrations() {
 
   let conn: mysql2.Connection | null = null;
   try {
-    const connectWithRetry = async (attempts = 3): Promise<mysql2.Connection> => {
+    const connectWithRetry = async (attempts = 20, delayMs = 3000): Promise<mysql2.Connection> => {
       let lastError: unknown;
 
       for (let i = 0; i < attempts; i++) {
@@ -29,13 +29,21 @@ async function runSafeMigrations() {
           lastError = error;
           const code = String((error as any)?.code ?? "").toUpperCase();
           const message = String((error as any)?.message ?? "").toLowerCase();
-          const isConnectionLost = code === "PROTOCOL_CONNECTION_LOST" || message.includes("connection lost");
+          const retriable =
+            code === "PROTOCOL_CONNECTION_LOST" ||
+            code === "ECONNREFUSED" ||
+            code === "ETIMEDOUT" ||
+            code === "ENOTFOUND" ||
+            code === "EAI_AGAIN" ||
+            message.includes("connection lost") ||
+            message.includes("connect");
 
-          if (!isConnectionLost || i === attempts - 1) {
+          if (!retriable || i === attempts - 1) {
             throw error;
           }
 
-          console.warn(`[migrations] Database connection lost on startup. Retrying (${i + 1}/${attempts})...`);
+          console.warn(`[migrations] DB not ready (${code || "?"}). Retry ${i + 1}/${attempts} in ${delayMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
         }
       }
 
@@ -64,6 +72,11 @@ async function runSafeMigrations() {
       "ALTER TABLE `users` ADD COLUMN `rankingConsentAnsweredAt` timestamp NULL",
       // passwordHash (legacy email auth – may already exist)
       "ALTER TABLE `users` ADD COLUMN `passwordHash` varchar(255)",
+      // invite system (0022_friend_requests era)
+      "ALTER TABLE `users` ADD COLUMN `inviteCode` varchar(32)",
+      "ALTER TABLE `users` ADD COLUMN `invitedBy` int",
+      "ALTER TABLE `users` ADD COLUMN `inviteCount` int NOT NULL DEFAULT 0",
+      "CREATE UNIQUE INDEX `users_inviteCode_unique` ON `users` (`inviteCode`)",
       "ALTER TABLE `session_tables` ADD COLUMN `clubName` varchar(120)",
       "ALTER TABLE `session_tables` ADD COLUMN `tournamentName` varchar(160)",
       "ALTER TABLE `session_tables` ADD COLUMN `fieldSize` int",
@@ -541,9 +554,6 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
-  await runSafeMigrations();
-  await mergeDuplicateVenues();
-
   const app = express();
   const server = createServer(app);
   // Trust Railway's reverse proxy so req.protocol reflects HTTPS correctly
@@ -577,6 +587,11 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Run migrations and venue merge in background so healthcheck can pass
+    // even if the DB is still booting. Errors are logged but don't crash the server.
+    runSafeMigrations()
+      .then(() => mergeDuplicateVenues())
+      .catch(err => console.error("[startup] Background DB setup failed:", err));
   });
 }
 
