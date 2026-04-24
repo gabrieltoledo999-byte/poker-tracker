@@ -7,58 +7,41 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import mysql2 from "mysql2/promise";
+import { sql as drizzleSql } from "drizzle-orm";
+import { getDb } from "../db";
 
 /**
  * Applies missing schema columns to the production database on startup.
  * Uses try/catch on each ALTER so existing columns (ER_DUP_FIELDNAME) are safely skipped.
  */
 async function runSafeMigrations() {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) return;
+  if (!process.env.DATABASE_URL) return;
 
-  let pool: mysql2.Pool | null = null;
   try {
-    const connectWithRetry = async (attempts = 20, delayMs = 3000): Promise<mysql2.Pool> => {
+    const connectWithRetry = async (attempts = 20, delayMs = 3000) => {
       let lastError: unknown;
-
       for (let i = 0; i < attempts; i++) {
         try {
-          const p = mysql2.createPool({
-            uri: dbUrl,
-            connectionLimit: 1,
-            connectTimeout: 15000,
-            enableKeepAlive: true,
-          });
+          const db = await getDb();
+          if (!db) throw new Error("Drizzle db not available");
           // Validate connectivity before returning.
-          await p.query("SELECT 1");
-          return p;
+          await db.execute(drizzleSql`SELECT 1`);
+          return db;
         } catch (error) {
           lastError = error;
           const code = String((error as any)?.code ?? "").toUpperCase();
-          const message = String((error as any)?.message ?? "").toLowerCase();
-          const retriable =
-            code === "PROTOCOL_CONNECTION_LOST" ||
-            code === "ECONNREFUSED" ||
-            code === "ETIMEDOUT" ||
-            code === "ENOTFOUND" ||
-            code === "EAI_AGAIN" ||
-            message.includes("connection lost") ||
-            message.includes("connect");
-
-          if (!retriable || i === attempts - 1) {
-            throw error;
-          }
-
+          if (i === attempts - 1) throw error;
           console.warn(`[migrations] DB not ready (${code || "?"}). Retry ${i + 1}/${attempts} in ${delayMs}ms...`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
       }
-
       throw lastError;
     };
 
-    pool = await connectWithRetry();
+    const db = await connectWithRetry();
+    const runSql = async (statement: string) => {
+      return db.execute(drizzleSql.raw(statement));
+    };
 
     const alterStatements = [
       "ALTER TABLE `users` MODIFY COLUMN `role` enum('user','coach','reviewer','admin','developer','system_ai_service') NOT NULL DEFAULT 'user'",
@@ -408,9 +391,9 @@ async function runSafeMigrations() {
     ];
 
     // Run CREATE statements first (so tables exist before we try to ALTER them)
-    for (const sql of createStatements) {
+    for (const statement of createStatements) {
       try {
-        await pool.query(sql);
+        await runSql(statement);
       } catch (err: any) {
         // 1061 = ER_DUP_KEYNAME (index already exists), safe to ignore.
         if (err?.errno !== 1061) {
@@ -420,9 +403,9 @@ async function runSafeMigrations() {
     }
 
     // Then run ALTER statements (tables now exist)
-    for (const sql of alterStatements) {
+    for (const statement of alterStatements) {
       try {
-        await pool.query(sql);
+        await runSql(statement);
       } catch (err: any) {
         // 1060 = ER_DUP_FIELDNAME – column already exists, safe to ignore
         if (err?.errno !== 1060) {
@@ -433,21 +416,20 @@ async function runSafeMigrations() {
 
     console.log("[migrations] Safe migrations complete.");
 
-      // Backfill initialBuyIn for existing rows that don't have it yet
-      try {
-        const [result] = await pool.query(
-          "UPDATE `session_tables` SET `initialBuyIn` = `buyIn` WHERE `initialBuyIn` IS NULL"
-        ) as any[];
-        if (result?.affectedRows > 0) {
-          console.log(`[migrations] Backfilled initialBuyIn for ${result.affectedRows} session_table row(s).`);
-        }
-      } catch (err: any) {
-        console.warn("[migrations] Could not backfill initialBuyIn:", err?.message);
+    // Backfill initialBuyIn for existing rows that don't have it yet
+    try {
+      const result: any = await runSql(
+        "UPDATE `session_tables` SET `initialBuyIn` = `buyIn` WHERE `initialBuyIn` IS NULL"
+      );
+      const affected = Array.isArray(result) ? result[0]?.affectedRows : result?.affectedRows;
+      if (affected > 0) {
+        console.log(`[migrations] Backfilled initialBuyIn for ${affected} session_table row(s).`);
       }
+    } catch (err: any) {
+      console.warn("[migrations] Could not backfill initialBuyIn:", err?.message);
+    }
   } catch (err) {
     console.error("[migrations] Failed to run safe migrations:", err);
-  } finally {
-    if (pool) await pool.end().catch(() => {});
   }
 }
 
