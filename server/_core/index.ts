@@ -17,14 +17,22 @@ async function runSafeMigrations() {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) return;
 
-  let conn: mysql2.Connection | null = null;
+  let pool: mysql2.Pool | null = null;
   try {
-    const connectWithRetry = async (attempts = 20, delayMs = 3000): Promise<mysql2.Connection> => {
+    const connectWithRetry = async (attempts = 20, delayMs = 3000): Promise<mysql2.Pool> => {
       let lastError: unknown;
 
       for (let i = 0; i < attempts; i++) {
         try {
-          return await mysql2.createConnection(dbUrl);
+          const p = mysql2.createPool({
+            uri: dbUrl,
+            connectionLimit: 1,
+            connectTimeout: 15000,
+            enableKeepAlive: true,
+          });
+          // Validate connectivity before returning.
+          await p.query("SELECT 1");
+          return p;
         } catch (error) {
           lastError = error;
           const code = String((error as any)?.code ?? "").toUpperCase();
@@ -50,7 +58,7 @@ async function runSafeMigrations() {
       throw lastError;
     };
 
-    conn = await connectWithRetry();
+    pool = await connectWithRetry();
 
     const alterStatements = [
       "ALTER TABLE `users` MODIFY COLUMN `role` enum('user','coach','reviewer','admin','developer','system_ai_service') NOT NULL DEFAULT 'user'",
@@ -402,7 +410,7 @@ async function runSafeMigrations() {
     // Run CREATE statements first (so tables exist before we try to ALTER them)
     for (const sql of createStatements) {
       try {
-        await conn.execute(sql);
+        await pool.query(sql);
       } catch (err: any) {
         // 1061 = ER_DUP_KEYNAME (index already exists), safe to ignore.
         if (err?.errno !== 1061) {
@@ -414,7 +422,7 @@ async function runSafeMigrations() {
     // Then run ALTER statements (tables now exist)
     for (const sql of alterStatements) {
       try {
-        await conn.execute(sql);
+        await pool.query(sql);
       } catch (err: any) {
         // 1060 = ER_DUP_FIELDNAME – column already exists, safe to ignore
         if (err?.errno !== 1060) {
@@ -427,7 +435,7 @@ async function runSafeMigrations() {
 
       // Backfill initialBuyIn for existing rows that don't have it yet
       try {
-        const [result] = await conn.execute(
+        const [result] = await pool.query(
           "UPDATE `session_tables` SET `initialBuyIn` = `buyIn` WHERE `initialBuyIn` IS NULL"
         ) as any[];
         if (result?.affectedRows > 0) {
@@ -439,7 +447,7 @@ async function runSafeMigrations() {
   } catch (err) {
     console.error("[migrations] Failed to run safe migrations:", err);
   } finally {
-    if (conn) await conn.end().catch(() => {});
+    if (pool) await pool.end().catch(() => {});
   }
 }
 
