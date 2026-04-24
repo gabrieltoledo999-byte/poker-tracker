@@ -262,7 +262,9 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      console.error("[OAuth] Google callback failed:", error);
+      const axiosData = axios.isAxiosError(error) ? JSON.stringify(error.response?.data) : "";
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[OAuth] Google callback failed: ${errMsg} | axiosData: ${axiosData}`);
       res.clearCookie(GOOGLE_STATE_COOKIE, cookieOptions);
       redirectWithError(res, "Falha ao entrar com Google. Tente novamente.");
     }
