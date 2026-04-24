@@ -260,10 +260,14 @@ function getMetricStatus(key: MetricKey, value: number | null | undefined): "bel
   return "ok";
 }
 
-function metricStatusBadge(status: "below" | "ok" | "above"): string {
-  if (status === "below") return "↓ Baixo";
-  if (status === "above") return "↑ Alto";
-  return "✓ Dentro da faixa";
+function metricStatusBadge(status: "below" | "ok" | "above") {
+  if (status === "below") {
+    return <span className="font-bold text-red-400">↓ Baixo</span>;
+  }
+  if (status === "above") {
+    return <span className="font-bold text-amber-300">↑ Alto</span>;
+  }
+  return <span className="font-bold text-emerald-400">✓ Dentro da faixa</span>;
 }
 
 function metricStatusText(key: MetricKey, value: number | null | undefined): string {
