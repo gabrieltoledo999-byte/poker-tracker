@@ -34,20 +34,37 @@ function getGoogleOAuthCredentials() {
   return { clientId, clientSecret };
 }
 
-function getBaseUrl(req: Request) {
-  const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() || req.protocol;
-  const host = req.get("host");
+function getBaseUrl(req: Request): string {
+  // Variável de ambiente explícita tem prioridade absoluta (ex: Railway → https://www.therailapp.com.br)
+  const envBase = process.env.APP_BASE_URL?.trim().replace(/\/$/, "");
+  if (envBase) return envBase;
+
+  // Fallback: detecta pelo header x-forwarded-proto + host
+  const proto =
+    (req.headers["x-forwarded-proto"] as string | undefined)
+      ?.split(",")[0]
+      ?.trim() || req.protocol;
+  const host = req.get("host") || "localhost:3000";
   return `${proto}://${host}`;
 }
 
-function getGoogleRedirectUri(req: Request) {
+function getGoogleRedirectUri(req: Request): string {
   return `${getBaseUrl(req)}/api/oauth/google/callback`;
 }
 
 function oauthStateCookieOptions(req: Request) {
+  // O cookie de estado OAuth precisa de SameSite=Lax para sobreviver ao redirect do Google.
+  // Não herda getSessionCookieOptions para evitar conflitos com o flag secure em produção.
+  const isSecure =
+    req.protocol === "https" ||
+    (req.headers["x-forwarded-proto"] as string | undefined)
+      ?.split(",")[0]
+      ?.trim() === "https";
   return {
-    ...getSessionCookieOptions(req),
+    httpOnly: true,
+    path: "/",
     sameSite: "lax" as const,
+    secure: isSecure,
     maxAge: OAUTH_COOKIE_MAX_AGE_MS,
   };
 }
@@ -86,14 +103,16 @@ export function registerOAuthRoutes(app: Express) {
     res.cookie(GOOGLE_STATE_COOKIE, state, oauthStateCookieOptions(req));
 
     const redirectUri = getGoogleRedirectUri(req);
+    console.log(`[OAuth] Iniciando Google OAuth → redirect_uri: ${redirectUri}`);
+
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", "openid email profile");
     url.searchParams.set("state", state);
-    // Avoid forcing account picker every time; let Google reuse existing session when possible.
-    url.searchParams.set("prompt", "consent");
+    url.searchParams.set("prompt", "select_account");
+    url.searchParams.set("access_type", "online");
 
     res.redirect(url.toString());
   });
@@ -105,6 +124,7 @@ export function registerOAuthRoutes(app: Express) {
       const error = String(req.query.error || "");
       if (error) {
         const reason = String(req.query.error_description || "A autorizacao foi cancelada.");
+        console.warn(`[OAuth] Google retornou erro: ${error} — ${reason}`);
         redirectWithError(res, reason);
         return;
       }
@@ -114,6 +134,7 @@ export function registerOAuthRoutes(app: Express) {
       const stateCookie = getCookieValue(req, GOOGLE_STATE_COOKIE);
 
       if (!code || !state || !stateCookie || state !== stateCookie) {
+        console.warn(`[OAuth] State mismatch — state: ${state}, cookie: ${stateCookie}`);
         redirectWithError(res, "Falha de seguranca no login Google. Tente novamente.");
         return;
       }
