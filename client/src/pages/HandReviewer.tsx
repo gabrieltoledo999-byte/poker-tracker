@@ -262,12 +262,24 @@ function getMetricStatus(key: MetricKey, value: number | null | undefined): "bel
 
 function metricStatusBadge(status: "below" | "ok" | "above") {
   if (status === "below") {
-    return <span className="font-bold text-red-400">↓ Baixo</span>;
+    return (
+      <span className="font-bold text-white/90">
+        <span className="text-red-400">↓</span> Baixo
+      </span>
+    );
   }
   if (status === "above") {
-    return <span className="font-bold text-amber-300">↑ Alto</span>;
+    return (
+      <span className="font-bold text-white/90">
+        <span className="text-amber-300">↑</span> Alto
+      </span>
+    );
   }
-  return <span className="font-bold text-emerald-400">✓ Dentro da faixa</span>;
+  return (
+    <span className="font-bold text-white/90">
+      <span className="text-emerald-400">✓</span> Dentro da faixa
+    </span>
+  );
 }
 
 function metricStatusText(key: MetricKey, value: number | null | undefined): string {
