@@ -261,9 +261,9 @@ function getMetricStatus(key: MetricKey, value: number | null | undefined): "bel
 }
 
 function metricStatusBadge(status: "below" | "ok" | "above"): string {
-  if (status === "below") return "Baixo";
-  if (status === "above") return "Alto";
-  return "Dentro da faixa";
+  if (status === "below") return "↓ Baixo";
+  if (status === "above") return "↑ Alto";
+  return "✓ Dentro da faixa";
 }
 
 function metricStatusText(key: MetricKey, value: number | null | undefined): string {

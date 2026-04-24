@@ -1606,7 +1606,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
             <RotateCcw className="mr-1 h-3 w-3" /> Desfazer último toque
           </Button>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
           {([
             { key: "kk", wins: handPatternStats?.kk?.wins ?? 0, losses: handPatternStats?.kk?.losses ?? 0 },
             { key: "jj", wins: handPatternStats?.jj?.wins ?? 0, losses: handPatternStats?.jj?.losses ?? 0 },
@@ -1614,28 +1614,30 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
             { key: "ak", wins: handPatternStats?.ak?.wins ?? 0, losses: handPatternStats?.ak?.losses ?? 0 },
           ] as const).map((item) => (
             <div key={item.key} className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-2">
                 <span className="text-sm font-bold uppercase tracking-[0.18em] text-white/80">{item.key}</span>
-                <span className="text-[11px] uppercase tracking-[0.14em] text-white/40">Registro rápido</span>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
+                  {item.wins + item.losses} regs
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-left transition-colors hover:bg-emerald-500/16 disabled:opacity-40"
+                  className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-2 text-left transition-colors hover:bg-emerald-500/16 disabled:opacity-40"
                   onClick={() => handleRegisterHandResult(item.key, "win")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
-                  <span className="block text-[11px] uppercase tracking-[0.14em] text-emerald-300/80">Vitórias</span>
-                  <span className="mt-1 block text-lg font-bold text-emerald-300">{item.wins}</span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] leading-none text-emerald-300/80">Vitórias</span>
+                  <span className="mt-2 block text-lg font-bold leading-none text-emerald-300">{item.wins}</span>
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-left transition-colors hover:bg-rose-500/16 disabled:opacity-40"
+                  className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-2 text-left transition-colors hover:bg-rose-500/16 disabled:opacity-40"
                   onClick={() => handleRegisterHandResult(item.key, "loss")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
-                  <span className="block text-[11px] uppercase tracking-[0.14em] text-rose-300/80">Perdas</span>
-                  <span className="mt-1 block text-lg font-bold text-rose-300">{item.losses}</span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] leading-none text-rose-300/80">Perdas</span>
+                  <span className="mt-2 block text-lg font-bold leading-none text-rose-300">{item.losses}</span>
                 </button>
               </div>
             </div>
