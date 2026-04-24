@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HandHistoryInput } from "@/components/hand-reviewer/HandHistoryInput";
@@ -28,7 +28,7 @@ import {
   YAxis,
 } from "recharts";
 
-type MetricKey = "vpip" | "pfr" | "threeBet" | "cbetFlop" | "cbetTurn" | "foldToCbet" | "bbDefense" | "attemptToSteal" | "aggressionFactor" | "wtsd" | "wsd";
+type MetricKey = "vpip" | "pfr" | "threeBet" | "cbetFlop" | "cbetTurn" | "foldToCbet" | "bbDefense" | "attemptToSteal" | "aggressionFactor" | "wtsd" | "wsd" | "rfi" | "coldCall" | "squeeze" | "resteal" | "foldToSteal" | "foldTo3Bet" | "cbetIp" | "cbetOop" | "floatFlop" | "checkRaiseFlop" | "allInAdjBb100";
 
 type ConfidenceLevel = "low" | "moderate" | "medium" | "high" | "very_high";
 
@@ -39,16 +39,31 @@ type OpportunityCounts = {
   foldToCbet: number;
   bbDefense: number;
   steal: number;
+  aggressionActions?: number;
+  aggressionCalls?: number;
+  rfi?: number;
+  coldCall?: number;
+  squeeze?: number;
+  resteal?: number;
+  foldToSteal?: number;
+  foldTo3Bet?: number;
+  cbetIp?: number;
+  cbetOop?: number;
+  floatFlop?: number;
+  checkRaiseFlop?: number;
+  allInAdjOpportunities?: number;
+  allInAdjSample?: number;
+  allInAdjSkipped?: number;
 };
 
 const HAND_REVIEW_CONSENT_VERSION = "v1.0";
 
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; emoji: string; color: string }> = {
-  low:       { label: "Baixa",          emoji: "🔴", color: "text-red-400" },
-  moderate:  { label: "Moderada",       emoji: "🟠", color: "text-orange-300" },
-  medium:    { label: "Média",          emoji: "🟡", color: "text-yellow-300" },
-  high:      { label: "Alta",           emoji: "🟢", color: "text-emerald-400" },
-  very_high: { label: "Muito alta",     emoji: "🟢🟢", color: "text-emerald-300" },
+  low:       { label: "Baixa",          emoji: "ðŸ”´", color: "text-red-400" },
+  moderate:  { label: "Moderada",       emoji: "ðŸŸ ", color: "text-orange-300" },
+  medium:    { label: "MÃ©dia",          emoji: "ðŸŸ¡", color: "text-yellow-300" },
+  high:      { label: "Alta",           emoji: "ðŸŸ¢", color: "text-emerald-400" },
+  very_high: { label: "Muito alta",     emoji: "ðŸŸ¢ðŸŸ¢", color: "text-emerald-300" },
 };
 
 function getHandsConfidenceLevel(hands: number): ConfidenceLevel {
@@ -67,6 +82,7 @@ function getConfidenceLevel(key: MetricKey, opp: OpportunityCounts): ConfidenceL
     case "wtsd":
     case "wsd":
     case "aggressionFactor":
+    case "allInAdjBb100":
       return getHandsConfidenceLevel(h);
     case "threeBet":
       return getHandsConfidenceLevel(h);
@@ -110,6 +126,24 @@ function getConfidenceLevel(key: MetricKey, opp: OpportunityCounts): ConfidenceL
       if (o < 300) return "high";
       return "very_high";
     }
+    case "rfi":
+    case "coldCall":
+    case "squeeze":
+    case "resteal":
+    case "foldToSteal":
+    case "foldTo3Bet":
+    case "cbetIp":
+    case "cbetOop":
+    case "floatFlop":
+    case "checkRaiseFlop": {
+      const oppKey = key as keyof OpportunityCounts;
+      const o = Number((opp as any)[oppKey] ?? 0);
+      if (o < 20) return "low";
+      if (o < 40) return "moderate";
+      if (o < 80) return "medium";
+      if (o < 150) return "high";
+      return "very_high";
+    }
     default:
       return getHandsConfidenceLevel(h);
   }
@@ -142,9 +176,9 @@ function GeneralConfidenceIndicator({ level, hands }: { level: ConfidenceLevel; 
         <button
           type="button"
           className="inline-flex flex-col items-end gap-1 rounded-lg border border-cyan-300/30 bg-slate-950/45 px-2.5 py-2 text-left"
-          aria-label="Nível geral de confiança"
+          aria-label="NÃ­vel geral de confianÃ§a"
         >
-          <span className={`text-[11px] font-semibold ${cfg.color}`}>{cfg.emoji} Confiança geral: {cfg.label}</span>
+          <span className={`text-[11px] font-semibold ${cfg.color}`}>{cfg.emoji} ConfianÃ§a geral: {cfg.label}</span>
           <div className="relative h-1.5 w-36 rounded-full bg-gradient-to-r from-red-500 via-yellow-400 to-emerald-400">
             <span
               className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border border-white/60 bg-slate-950 shadow-[0_0_0_2px_rgba(2,6,23,0.8)]"
@@ -154,10 +188,10 @@ function GeneralConfidenceIndicator({ level, hands }: { level: ConfidenceLevel; 
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" align="end" className="max-w-[320px] text-left text-xs">
-        <p className="font-semibold">Nível geral de confiança da análise</p>
-        <p className="mt-1">Baseado no total de mãos da amostra atual ({hands} mãos).</p>
-        <p className="mt-1">Faixas gerais (mãos): baixa &lt; 7.000 · moderada 7.000-10.999 · média 11.000-18.999 · alta 19.000-26.999 · muito alta 27.000+.</p>
-        <p className="mt-1 text-amber-700">Métricas específicas podem exigir mais oportunidades para confirmar padrão.</p>
+        <p className="font-semibold">NÃ­vel geral de confianÃ§a da anÃ¡lise</p>
+        <p className="mt-1">Baseado no total de mÃ£os da amostra atual ({hands} mÃ£os).</p>
+        <p className="mt-1">Faixas gerais (mÃ£os): baixa &lt; 7.000 Â· moderada 7.000-10.999 Â· mÃ©dia 11.000-18.999 Â· alta 19.000-26.999 Â· muito alta 27.000+.</p>
+        <p className="mt-1 text-amber-700">MÃ©tricas especÃ­ficas podem exigir mais oportunidades para confirmar padrÃ£o.</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -166,12 +200,12 @@ function GeneralConfidenceIndicator({ level, hands }: { level: ConfidenceLevel; 
 function TabConfidenceHeader({ hands, level }: { hands: number; level: ConfidenceLevel }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="inline-flex items-center gap-2 text-xs text-white/70">
-        <img src="/logos/h2-favicon.png" alt="Logo" className="h-5 w-5 rounded-sm" />
-        <span>Painel estatístico</span>
+      <div className="inline-flex items-center gap-2 text-xs font-semibold text-white/80">
+        <span aria-hidden>ðŸ“Š</span>
+        <span>Painel estatÃ­stico</span>
       </div>
       <div className="flex items-center justify-between gap-2 sm:justify-end">
-        <span className="text-xs text-white/70">{hands} mãos analisadas</span>
+        <span className="text-xs text-white/70">{hands} mÃ£os analisadas</span>
         <GeneralConfidenceIndicator level={level} hands={hands} />
       </div>
     </div>
@@ -179,17 +213,28 @@ function TabConfidenceHeader({ hands, level }: { hands: number; level: Confidenc
 }
 
 const BENCHMARKS: Record<MetricKey, { min: number; max: number; label: string; interpretation: string }> = {
-  vpip: { min: 18, max: 28, label: "VPIP", interpretation: "Participação voluntária de mãos no pote." },
-  pfr: { min: 14, max: 24, label: "PFR", interpretation: "Agressão pré-flop via raise." },
-  threeBet: { min: 5, max: 10, label: "3-Bet", interpretation: "Re-raise pré-flop contra open." },
-  cbetFlop: { min: 55, max: 75, label: "C-Bet Flop", interpretation: "Continuação de agressão no flop." },
-  cbetTurn: { min: 40, max: 60, label: "C-Bet Turn", interpretation: "Segundo barril no turn após agressão prévia." },
-  foldToCbet: { min: 40, max: 55, label: "Fold to C-Bet", interpretation: "Frequência de fold contra c-bet." },
+  vpip: { min: 18, max: 28, label: "VPIP", interpretation: "ParticipaÃ§Ã£o voluntÃ¡ria de mÃ£os no pote." },
+  pfr: { min: 14, max: 24, label: "PFR", interpretation: "AgressÃ£o prÃ©-flop via raise." },
+  threeBet: { min: 5, max: 10, label: "3-Bet", interpretation: "Re-raise prÃ©-flop contra open." },
+  cbetFlop: { min: 55, max: 75, label: "C-Bet Flop", interpretation: "ContinuaÃ§Ã£o de agressÃ£o no flop." },
+  cbetTurn: { min: 40, max: 60, label: "C-Bet Turn", interpretation: "Segundo barril no turn apÃ³s agressÃ£o prÃ©via." },
+  foldToCbet: { min: 40, max: 55, label: "Fold to C-Bet", interpretation: "FrequÃªncia de fold contra c-bet." },
   bbDefense: { min: 35, max: 55, label: "Defesa de BB", interpretation: "Defesa do big blind quando atacado." },
-  attemptToSteal: { min: 30, max: 50, label: "Attempt to Steal", interpretation: "Tentativa de roubo em posição final." },
-  aggressionFactor: { min: 2, max: 3.5, label: "Aggression Factor", interpretation: "Razão entre ações agressivas e calls." },
-  wtsd: { min: 25, max: 35, label: "WTSD", interpretation: "Frequência de ida ao showdown." },
-  wsd: { min: 50, max: 60, label: "WSD", interpretation: "Vitória quando chega ao showdown." },
+  attemptToSteal: { min: 30, max: 50, label: "Attempt to Steal", interpretation: "Tentativa de roubo em posiÃ§Ã£o final." },
+  aggressionFactor: { min: 2, max: 3.5, label: "Aggression Factor", interpretation: "RazÃ£o entre aÃ§Ãµes agressivas e calls." },
+  wtsd: { min: 25, max: 35, label: "WTSD", interpretation: "FrequÃªncia de ida ao showdown." },
+  wsd: { min: 50, max: 60, label: "WSD", interpretation: "VitÃ³ria quando chega ao showdown." },
+  rfi: { min: 20, max: 32, label: "RFI", interpretation: "Raise first in: abriu o pote com raise." },
+  coldCall: { min: 2, max: 8, label: "Cold Call", interpretation: "Pagou um raise sem ter investido antes." },
+  squeeze: { min: 4, max: 10, label: "Squeeze", interpretation: "3-bet contra raise + caller(s)." },
+  resteal: { min: 8, max: 18, label: "Resteal", interpretation: "3-bet em blind contra tentativa de roubo." },
+  foldToSteal: { min: 50, max: 70, label: "Fold to Steal", interpretation: "Fold no blind contra raise em posiÃ§Ã£o final." },
+  foldTo3Bet: { min: 50, max: 65, label: "Fold to 3-Bet", interpretation: "Fold ao open-raise quando sofre 3-bet." },
+  cbetIp: { min: 60, max: 80, label: "C-Bet IP", interpretation: "C-bet flop em posiÃ§Ã£o." },
+  cbetOop: { min: 45, max: 65, label: "C-Bet OOP", interpretation: "C-bet flop fora de posiÃ§Ã£o." },
+  floatFlop: { min: 8, max: 18, label: "Float Flop", interpretation: "Pagou c-bet flop IP e atacou turn." },
+  checkRaiseFlop: { min: 6, max: 14, label: "Check-Raise Flop", interpretation: "Check + raise no flop." },
+  allInAdjBb100: { min: 0, max: 9999, label: "All-in Adj BB/100", interpretation: "Win-rate em BB/100 removendo a sorte dos all-ins prÃ©-showdown." },
 };
 
 const SPECIFIC_PATTERN_SAMPLE_DATA = [
@@ -202,7 +247,7 @@ const SPECIFIC_PATTERN_SAMPLE_DATA = [
 const WINRATE_SAMPLE_DATA = [
   { confidence: "Baixa (70%)", lowVariance: 974, typicalVariance: 1954, highVariance: 3894 },
   { confidence: "Moderada (80%)", lowVariance: 1475, typicalVariance: 2960, highVariance: 5899 },
-  { confidence: "Média (90%)", lowVariance: 2436, typicalVariance: 4888, highVariance: 9742 },
+  { confidence: "MÃ©dia (90%)", lowVariance: 2436, typicalVariance: 4888, highVariance: 9742 },
   { confidence: "Alta (95%)", lowVariance: 3458, typicalVariance: 6939, highVariance: 13830 },
   { confidence: "Muito Alta (99%)", lowVariance: 5973, typicalVariance: 11986, highVariance: 23889 },
 ];
@@ -216,20 +261,20 @@ function getMetricStatus(key: MetricKey, value: number | null | undefined): "bel
 }
 
 function metricStatusBadge(status: "below" | "ok" | "above"): string {
-  if (status === "below") return "🔴 Baixo";
-  if (status === "above") return "🔴 Alto";
-  return "🟢 Dentro da faixa";
+  if (status === "below") return "ðŸ”´ Baixo";
+  if (status === "above") return "ðŸ”´ Alto";
+  return "ðŸŸ¢ Dentro da faixa";
 }
 
 function metricStatusText(key: MetricKey, value: number | null | undefined): string {
   const status = getMetricStatus(key, value);
   if (status === "below") {
-    return "Abaixo da faixa comum. Vale revisar spots em que essa ação está faltando.";
+    return "Abaixo da faixa comum. Vale revisar spots em que essa aÃ§Ã£o estÃ¡ faltando.";
   }
   if (status === "above") {
-    return "Acima da faixa comum. Pode haver excesso de agressão ou seleção ampla de spots.";
+    return "Acima da faixa comum. Pode haver excesso de agressÃ£o ou seleÃ§Ã£o ampla de spots.";
   }
-  return "Dentro da faixa comum para referência prática de regs sólidos.";
+  return "Dentro da faixa comum para referÃªncia prÃ¡tica de regs sÃ³lidos.";
 }
 
 function normalizeName(value: string | undefined): string {
@@ -457,11 +502,11 @@ export default function HandReviewer() {
 
   const consentGrantMutation = trpc.memory.consent.grant.useMutation({
     onSuccess: () => {
-      toast.success("Consentimento registrado. Revisor de Mãos liberado.");
+      toast.success("Consentimento registrado. Revisor de MÃ£os liberado.");
       utils.memory.consent.get.invalidate();
     },
     onError: (error) => {
-      toast.error("Não foi possível registrar o consentimento", { description: error.message });
+      toast.error("NÃ£o foi possÃ­vel registrar o consentimento", { description: error.message });
     },
   });
 
@@ -484,7 +529,7 @@ export default function HandReviewer() {
   const analyzeMutation = trpc.memory.analyzeReplay.useMutation({
     onSuccess: () => {
       setActiveTab("tournament");
-      toast.success("Análise do torneio concluída.");
+      toast.success("AnÃ¡lise do torneio concluÃ­da.");
     },
     onError: (error) => {
       toast.error("Falha ao analisar torneio", { description: error.message });
@@ -493,12 +538,37 @@ export default function HandReviewer() {
 
   const saveToHistoryMutation = trpc.memory.importReplay.useMutation({
     onSuccess: () => {
-      toast.success("Torneio adicionado ao histórico do jogador.");
+      toast.success("Torneio adicionado ao histÃ³rico do jogador.");
       utils.memory.playerHistoricalProfile.invalidate();
       setActiveTab("player");
     },
     onError: (error) => {
-      toast.error("Falha ao salvar no histórico", { description: error.message });
+      toast.error("Falha ao salvar no histÃ³rico", { description: error.message });
+    },
+  });
+
+  const clearReplayHistoryMutation = trpc.memory.clearReplayHistory.useMutation({
+    onSuccess: () => {
+      toast.success("Histâ”œâ”‚rico do revisor limpo. Vocâ”œÂ¬ jâ”œÃ­ pode salvar novos torneios.");
+      utils.memory.playerHistoricalProfile.invalidate();
+      setLastReplayPayload(null);
+      setActiveTab("player");
+    },
+    onError: (error) => {
+      toast.error("Falha ao limpar histâ”œâ”‚rico", { description: error.message });
+    },
+  });
+
+  const compactReplayStorageMutation = trpc.memory.compactReplayStorage.useMutation({
+    onSuccess: (result) => {
+      toast.success("Armazenamento do revisor compactado.", {
+        description: `${Number(result?.compactedHands ?? 0)} mâ”œÃºos e ${Number(result?.compactedActions ?? 0)} aâ”œÂºâ”œÃes tiveram o payload pesado removido.`,
+      });
+      utils.memory.playerHistoricalProfile.invalidate();
+      setActiveTab("player");
+    },
+    onError: (error) => {
+      toast.error("Falha ao compactar armazenamento", { description: error.message });
     },
   });
 
@@ -535,14 +605,14 @@ export default function HandReviewer() {
 
     setRawInput(loaded.rawInput);
     setSelectedPlatform(loaded.parserSelection ?? "AUTO");
-    toast.success("Torneio carregado da mesa para análise.");
+    toast.success("Torneio carregado da mesa para anÃ¡lise.");
   }, []);
 
   const hasHands = parsedTournament.hands.length > 0;
 
   const handleAnalyzeTournament = () => {
     if (requiresConsent) {
-      toast.warning("Aceite o termo de consentimento para usar o Revisor de Mãos.");
+      toast.warning("Aceite o termo de consentimento para usar o Revisor de MÃ£os.");
       return;
     }
 
@@ -553,7 +623,7 @@ export default function HandReviewer() {
 
     const built = buildReplayPayload(rawInput, selectedPlatform);
     if (!built || built.parsed.hands.length === 0) {
-      toast.warning("Nenhuma mão válida detectada para análise.");
+      toast.warning("Nenhuma mÃ£o vÃ¡lida detectada para anÃ¡lise.");
       return;
     }
 
@@ -563,14 +633,14 @@ export default function HandReviewer() {
 
   const handleSaveTournamentToHistory = () => {
     if (requiresConsent) {
-      toast.warning("Aceite o termo de consentimento para salvar análises no histórico.");
+      toast.warning("Aceite o termo de consentimento para salvar anÃ¡lises no histÃ³rico.");
       return;
     }
 
     if (!lastReplayPayload) {
       const built = buildReplayPayload(rawInput, selectedPlatform);
       if (!built || built.parsed.hands.length === 0) {
-        toast.warning("Analise um torneio válido antes de salvar no histórico.");
+        toast.warning("Analise um torneio vÃ¡lido antes de salvar no histÃ³rico.");
         return;
       }
       setLastReplayPayload(built.payload);
@@ -579,6 +649,34 @@ export default function HandReviewer() {
     }
 
     saveToHistoryMutation.mutate(lastReplayPayload);
+  };
+
+  const handleClearReplayHistory = () => {
+    if (requiresConsent) {
+      toast.warning("Aceite o termo de consentimento para limpar os dados do revisor.");
+      return;
+    }
+
+    const shouldClear = window.confirm(
+      "Tem certeza que deseja limpar TODO o histâ”œâ”‚rico do Revisor de Mâ”œÃºos? Esta aâ”œÂºâ”œÃºo nâ”œÃºo pode ser desfeita.",
+    );
+    if (!shouldClear) return;
+
+    clearReplayHistoryMutation.mutate();
+  };
+
+  const handleCompactReplayStorage = () => {
+    if (requiresConsent) {
+      toast.warning("Aceite o termo de consentimento para compactar os dados do revisor.");
+      return;
+    }
+
+    const shouldCompact = window.confirm(
+      "Compactar o armazenamento remove texto bruto e JSON auxiliar das mâ”œÃºos jâ”œÃ­ salvas, mas preserva estatâ”œÂ¡sticas, aâ”œÂºâ”œÃes e histâ”œâ”‚rico â”œâ•‘til para estudo/GTO. Deseja continuar?",
+    );
+    if (!shouldCompact) return;
+
+    compactReplayStorageMutation.mutate();
   };
 
   const handleSubmitToTable = () => {
@@ -594,7 +692,7 @@ export default function HandReviewer() {
 
     const parsed = parseHandHistoryTranscript(rawInput, { preferredPlatform: selectedPlatform });
     if (parsed.hands.length === 0) {
-      toast.warning("Nenhuma mão válida detectada neste conteúdo.");
+      toast.warning("Nenhuma mÃ£o vÃ¡lida detectada neste conteÃºdo.");
       return;
     }
 
@@ -611,23 +709,25 @@ export default function HandReviewer() {
     const h = playerHistoryQuery.data;
 
     if (h?.positions?.leastProfitable && Number(h.positions.leastProfitable.netBb ?? 0) < 0) {
-      suggestions.push(`Foco estrutural em ${h.positions.leastProfitable.position}: posição menos lucrativa no histórico.`);
+      suggestions.push(`Foco estrutural em ${h.positions.leastProfitable.position}: posiÃ§Ã£o menos lucrativa no histÃ³rico.`);
     }
     if (h?.summary) {
       if (getMetricStatus("bbDefense", h.summary.bbDefenseAvg) === "below") {
         suggestions.push("Treinar defesa de BB (ranges de call/3-bet por tamanho de open e stack). ");
       }
       if (getMetricStatus("cbetTurn", h.summary.cbetTurnAvg) === "below" && getMetricStatus("cbetFlop", h.summary.cbetFlopAvg) === "above") {
-        suggestions.push("Leak clássico detectado: c-bet flop alta e turn baixa. Trabalhar plano de 2º barril.");
+        suggestions.push("Leak clÃ¡ssico detectado: c-bet flop alta e turn baixa. Trabalhar plano de 2Âº barril.");
       }
       const gap = Number(h.summary.vpipAvg ?? 0) - Number(h.summary.pfrAvg ?? 0);
-      if (gap > 8) {
-        suggestions.push("Gap VPIP-PFR alto: revisar excesso de calls pré-flop e passividade sem iniciativa.");
+      const vpipStatus = getMetricStatus("vpip", h.summary.vpipAvg);
+      const pfrStatus = getMetricStatus("pfr", h.summary.pfrAvg);
+      if (gap > 8 && (vpipStatus !== "ok" || pfrStatus !== "ok")) {
+        suggestions.push("Gap VPIP-PFR alto: revisar excesso de calls prÃ©-flop e passividade sem iniciativa.");
       }
     }
 
     if (suggestions.length === 0) {
-      suggestions.push("Base atual sem desvio crítico claro. Próximo passo: revisão por posição e por ABI para ganho marginal.");
+      suggestions.push("Base atual sem desvio crÃ­tico claro. PrÃ³ximo passo: revisÃ£o por posiÃ§Ã£o e por ABI para ganho marginal.");
     }
 
     return suggestions.slice(0, 6);
@@ -713,7 +813,7 @@ export default function HandReviewer() {
       y += 4;
 
       writeTitle("Oportunidades da Amostra");
-      writeLine(`Mãos: ${tournamentOpportunities.hands} | C-bet flop: ${tournamentOpportunities.cbetFlop} | C-bet turn: ${tournamentOpportunities.cbetTurn}`);
+      writeLine(`MÃ£os: ${tournamentOpportunities.hands} | C-bet flop: ${tournamentOpportunities.cbetFlop} | C-bet turn: ${tournamentOpportunities.cbetTurn}`);
       writeLine(`Fold to c-bet: ${tournamentOpportunities.foldToCbet} | Defesa BB: ${tournamentOpportunities.bbDefense} | Steal: ${tournamentOpportunities.steal}`);
 
       if (data.alerts.length > 0) {
@@ -758,6 +858,24 @@ export default function HandReviewer() {
     steal: 0,
   });
 
+  const historicalOpp = (playerHistoryQuery.data?.summary as any)?.opportunities as Partial<OpportunityCounts> | undefined;
+  const historicalOppSafe: OpportunityCounts = {
+    hands: Number(historicalOpp?.hands ?? playerHands ?? 0),
+    cbetFlop: Number(historicalOpp?.cbetFlop ?? 0),
+    cbetTurn: Number(historicalOpp?.cbetTurn ?? 0),
+    foldToCbet: Number(historicalOpp?.foldToCbet ?? 0),
+    bbDefense: Number(historicalOpp?.bbDefense ?? 0),
+    steal: Number(historicalOpp?.steal ?? 0),
+    aggressionActions: Number((historicalOpp as any)?.aggressionActions ?? 0),
+    aggressionCalls: Number((historicalOpp as any)?.aggressionCalls ?? 0),
+    allInAdjSample: Number((historicalOpp as any)?.allInAdjSample ?? 0),
+    allInAdjOpportunities: Number((historicalOpp as any)?.allInAdjOpportunities ?? 0),
+    allInAdjSkipped: Number((historicalOpp as any)?.allInAdjSkipped ?? 0),
+  };
+
+  const formatMadeOf = (made: number, of: number) => `${Math.max(0, Math.round(made))}/${Math.max(0, Math.round(of))}`;
+  const roundMade = (percent: number, of: number) => Math.round((Number(percent || 0) / 100) * Math.max(0, Number(of || 0)));
+
   return (
     <div className="tokyo-reviewer mx-auto w-full max-w-[1400px] flex flex-col gap-3 px-2 py-3 md:px-4 pb-10">
       <div className="tokyo-grid-overlay" />
@@ -770,47 +888,47 @@ export default function HandReviewer() {
           className="max-w-3xl border-cyan-400/30 bg-slate-950 text-slate-100"
         >
           <DialogHeader>
-            <DialogTitle className="text-cyan-100">Autorização para Análise e Armazenamento de Dados de Jogo</DialogTitle>
+            <DialogTitle className="text-cyan-100">AutorizaÃ§Ã£o para AnÃ¡lise e Armazenamento de Dados de Jogo</DialogTitle>
           </DialogHeader>
 
           <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1 text-sm">
             <p>
-              Para utilizar a funcionalidade de Revisor de Mãos, é necessário autorizar o processamento dos seus dados de jogo.
+              Para utilizar a funcionalidade de Revisor de MÃ£os, Ã© necessÃ¡rio autorizar o processamento dos seus dados de jogo.
             </p>
             <p>
-              Ao prosseguir, você concorda que suas mãos, histórico de torneios e estatísticas sejam armazenados de forma segura,
-              processados para geração de análises individuais de desempenho e utilizados para aprimoramento das funcionalidades da plataforma.
+              Ao prosseguir, vocÃª concorda que suas mÃ£os, histÃ³rico de torneios e estatÃ­sticas sejam armazenados de forma segura,
+              processados para geraÃ§Ã£o de anÃ¡lises individuais de desempenho e utilizados para aprimoramento das funcionalidades da plataforma.
             </p>
             <p>
-              Nosso compromisso é garantir proteção, integridade e confidencialidade dos seus dados, seguindo boas práticas de segurança e privacidade.
+              Nosso compromisso Ã© garantir proteÃ§Ã£o, integridade e confidencialidade dos seus dados, seguindo boas prÃ¡ticas de seguranÃ§a e privacidade.
             </p>
 
-            <div className="rounded-lg border border-cyan-400/25 bg-cyan-500/10 p-3 text-xs">
-              🔒 Seus dados são protegidos por mecanismos de segurança e não são utilizados de forma indevida ou fora do escopo da plataforma.
+            <div className="rounded-xl bg-cyan-500/8 p-3 text-xs shadow-[inset_0_1px_0_rgba(34,211,238,0.08)]">
+              ðŸ”’ Seus dados sÃ£o protegidos por mecanismos de seguranÃ§a e nÃ£o sÃ£o utilizados de forma indevida ou fora do escopo da plataforma.
             </div>
 
-            <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-              ⚠️ O uso do Revisor de Mãos está condicionado à aceitação deste termo. Caso não concorde, essa funcionalidade permanecerá indisponível.
+            <div className="rounded-xl bg-amber-500/8 p-3 text-xs text-amber-100 shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
+              âš ï¸ O uso do Revisor de MÃ£os estÃ¡ condicionado Ã  aceitaÃ§Ã£o deste termo. Caso nÃ£o concorde, essa funcionalidade permanecerÃ¡ indisponÃ­vel.
             </div>
 
-            <div className="rounded-lg border border-white/15 bg-black/25 p-3 text-xs text-white/85">
+            <div className="rounded-xl bg-white/4 p-3 text-xs text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
               <p className="mb-2 font-semibold text-cyan-100">Termos adicionais</p>
               <p className="mb-1">
-                Seus dados poderão ser utilizados de forma agregada e anonimizada para desenvolvimento de modelos analíticos e estratégias baseadas em GTO.
+                Seus dados poderÃ£o ser utilizados de forma agregada e anonimizada para desenvolvimento de modelos analÃ­ticos e estratÃ©gias baseadas em GTO.
               </p>
               <p className="mb-1">
-                Suas informações poderão ser analisadas pela equipe técnica e desenvolvedores para melhoria contínua e validação de consistência.
+                Suas informaÃ§Ãµes poderÃ£o ser analisadas pela equipe tÃ©cnica e desenvolvedores para melhoria contÃ­nua e validaÃ§Ã£o de consistÃªncia.
               </p>
               <p className="mb-1">
-                Determinados dados estatísticos poderão compor bases de funcionalidades avançadas e ecossistema analítico da plataforma.
+                Determinados dados estatÃ­sticos poderÃ£o compor bases de funcionalidades avanÃ§adas e ecossistema analÃ­tico da plataforma.
               </p>
               <p>
-                Em ambientes específicos, dados agregados poderão ser acessados por usuários com permissões avançadas, respeitando níveis de acesso e políticas internas.
+                Em ambientes especÃ­ficos, dados agregados poderÃ£o ser acessados por usuÃ¡rios com permissÃµes avanÃ§adas, respeitando nÃ­veis de acesso e polÃ­ticas internas.
               </p>
             </div>
 
             <p className="text-xs italic text-cyan-200/90">
-              Seus dados contam a sua história no jogo. Nossa missão é transformá-los em clareza, evolução e vantagem estratégica.
+              Seus dados contam a sua histÃ³ria no jogo. Nossa missÃ£o Ã© transformÃ¡-los em clareza, evoluÃ§Ã£o e vantagem estratÃ©gica.
             </p>
           </div>
 
@@ -820,7 +938,7 @@ export default function HandReviewer() {
               onClick={() => setConsentModalOpen(false)}
               disabled={consentGrantMutation.isPending}
             >
-              Não aceitar agora
+              NÃ£o aceitar agora
             </Button>
             <Button
               className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
@@ -844,9 +962,9 @@ export default function HandReviewer() {
 
       {requiresConsent && !consentModalOpen && (
         <div className="tokyo-panel rounded-xl border-amber-400/30 px-4 py-3 text-sm">
-          <p className="font-semibold text-amber-200">Revisor de Mãos indisponível sem consentimento</p>
+          <p className="font-semibold text-amber-200">Revisor de MÃ£os indisponÃ­vel sem consentimento</p>
           <p className="mt-1 text-xs text-amber-100/90">
-            Esta aba permanece disponível para leitura, mas as ações de análise, replay e armazenamento ficam bloqueadas até o aceite do termo.
+            Esta aba permanece disponÃ­vel para leitura, mas as aÃ§Ãµes de anÃ¡lise, replay e armazenamento ficam bloqueadas atÃ© o aceite do termo.
           </p>
           <div className="mt-2 flex justify-end">
             <Button size="sm" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300" onClick={() => setConsentModalOpen(true)}>
@@ -869,10 +987,10 @@ export default function HandReviewer() {
 
         <Card className="tokyo-panel rounded-2xl">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Ações da análise</CardTitle>
+            <CardTitle className="text-base">AÃ§Ãµes da anÃ¡lise</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p className="text-xs text-white/70">1) Envie para mesa para revisão mão a mão. 2) Analise o torneio. 3) Salve no histórico.</p>
+            <p className="text-xs text-white/70">1) Envie para mesa para revisÃ£o mÃ£o a mÃ£o. 2) Analise o torneio. 3) Salve no histÃ³rico.</p>
             <div className="flex flex-col gap-2">
               <Button
                 onClick={handleAnalyzeTournament}
@@ -886,7 +1004,7 @@ export default function HandReviewer() {
                 onClick={handleSaveTournamentToHistory}
                 disabled={!hasHands || saveToHistoryMutation.isPending}
               >
-                {saveToHistoryMutation.isPending ? "Salvando no histórico..." : "Adicionar este torneio aos dados do jogador"}
+                {saveToHistoryMutation.isPending ? "Salvando no histÃ³rico..." : "Adicionar este torneio aos dados do jogador"}
               </Button>
               <Button
                 variant="outline"
@@ -894,6 +1012,20 @@ export default function HandReviewer() {
                 disabled={!analyzeMutation.data || analyzeMutation.isPending}
               >
                 Baixar analise em PDF
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleClearReplayHistory}
+                disabled={clearReplayHistoryMutation.isPending}
+              >
+                {clearReplayHistoryMutation.isPending ? "Limpando histâ”œâ”‚rico..." : "Limpar histâ”œâ”‚rico do revisor"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCompactReplayStorage}
+                disabled={compactReplayStorageMutation.isPending}
+              >
+                {compactReplayStorageMutation.isPending ? "Compactando armazenamento..." : "Compactar armazenamento do revisor"}
               </Button>
             </div>
           </CardContent>
@@ -908,16 +1040,16 @@ export default function HandReviewer() {
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tournament" | "player" | "positions")}>
             <div className="overflow-x-auto pb-1">
               <TabsList className="flex min-w-max gap-1 bg-slate-950/55 border border-cyan-400/20 rounded-xl p-1 md:grid md:w-full md:min-w-0 md:grid-cols-3 md:gap-0">
-                <TabsTrigger value="tournament" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Análise do Torneio</TabsTrigger>
+                <TabsTrigger value="tournament" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">AnÃ¡lise do Torneio</TabsTrigger>
                 <TabsTrigger value="player" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Dados do Jogador</TabsTrigger>
-                <TabsTrigger value="positions" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Posições e Foco</TabsTrigger>
+                <TabsTrigger value="positions" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">PosiÃ§Ãµes e Foco</TabsTrigger>
               </TabsList>
             </div>
 
             <TabsContent value="tournament" className="mt-4 space-y-4">
               {!analyzeMutation.data && (
                 <p className="text-sm text-muted-foreground">
-                  A aba de torneio mostra apenas o torneio recém-importado. Clique em "Analisar torneio" para preencher.
+                  A aba de torneio mostra apenas o torneio recÃ©m-importado. Clique em "Analisar torneio" para preencher.
                 </p>
               )}
 
@@ -938,11 +1070,11 @@ export default function HandReviewer() {
                       <p className="tokyo-data-value font-semibold text-cyan-100">${(analyzeMutation.data.tournament.abiValue / 100).toFixed(2).replace(".", ",")}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
-                      <p className="text-xs text-white/60">Colocação final</p>
+                      <p className="text-xs text-white/60">ColocaÃ§Ã£o final</p>
                       <p className="tokyo-data-value font-semibold text-cyan-100">{analyzeMutation.data.tournament.finalPositionLabel ?? "-"}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
-                      <p className="text-xs text-white/60">Mãos analisadas</p>
+                      <p className="text-xs text-white/60">MÃ£os analisadas</p>
                       <p className="tokyo-data-value font-semibold text-cyan-100">{analyzeMutation.data.tournament.handsAnalyzed}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
@@ -954,7 +1086,7 @@ export default function HandReviewer() {
                       <p className="tokyo-data-value font-semibold text-cyan-100">{analyzeMutation.data.tournament.durationMinutes ? `${analyzeMutation.data.tournament.durationMinutes} min` : "-"}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm md:col-span-2">
-                      <p className="text-xs text-white/60">Posição mais lucrativa no torneio</p>
+                      <p className="text-xs text-white/60">PosiÃ§Ã£o mais lucrativa no torneio</p>
                       <p className="tokyo-data-value font-semibold text-cyan-100">
                         {analyzeMutation.data.tournament.bestPosition
                           ? `${analyzeMutation.data.tournament.bestPosition.position} (${formatBb((analyzeMutation.data.tournament.bestPosition as any).netBb)})`
@@ -963,65 +1095,114 @@ export default function HandReviewer() {
                     </div>
                   </div>
 
-                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="VPIP" hint="Percentual de mãos em que você entrou voluntariamente no pote." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.vpip)} · {metricStatusBadge(getMetricStatus("vpip", analyzeMutation.data.stats.vpip))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 18% - 28%</p>
-                      <p className="mt-1 text-xs text-white/60">{metricStatusText("vpip", analyzeMutation.data.stats.vpip)}</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="PFR" hint="Percentual de mãos em que você aplicou aumento pré-flop." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.pfr)} · {metricStatusBadge(getMetricStatus("pfr", analyzeMutation.data.stats.pfr))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 14% - 24%</p>
-                      <p className="mt-1 text-xs text-white/60">{metricStatusText("pfr", analyzeMutation.data.stats.pfr)}</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="3-bet" hint="Percentual de mãos em que você reaumentou pré-flop após um open." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.threeBet)} · {metricStatusBadge(getMetricStatus("threeBet", analyzeMutation.data.stats.threeBet))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 5% - 10%</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="C-bet flop" hint="Frequência em que você c-beta no flop após ser o agressor pré-flop." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.cbetFlop)} · {metricStatusBadge(getMetricStatus("cbetFlop", analyzeMutation.data.stats.cbetFlop))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 55% - 75%</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Fold to C-bet" hint="Percentual de vezes em que você foldou para c-bet no flop." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.foldToCbet)} · {metricStatusBadge(getMetricStatus("foldToCbet", analyzeMutation.data.stats.foldToCbet))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 40% - 55%</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Defesa de BB" hint="Percentual de vezes em que você continuou defendendo seu big blind em vez de foldar." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.bbDefense)} · {metricStatusBadge(getMetricStatus("bbDefense", analyzeMutation.data.stats.bbDefense))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 35% - 55%</p>
-                      <p className="mt-1 text-xs text-white/60">Amostras pequenas tendem a distorcer defesa de BB.</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Attempt to Steal" hint="Frequência de tentativa de roubo quando a ação chega em posição final." />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.attemptToSteal)} · {metricStatusBadge(getMetricStatus("attemptToSteal", analyzeMutation.data.stats.attemptToSteal))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 30% - 50%</p>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Aggression Factor" hint="Razão entre ações agressivas (bet/raise) e calls." />
-                      <p className="mt-1 font-semibold text-cyan-100">{analyzeMutation.data.stats.aggressionFactor.toFixed(2)} · {metricStatusBadge(getMetricStatus("aggressionFactor", analyzeMutation.data.stats.aggressionFactor))}</p>
-                      <p className="mt-1 text-xs text-white/60">Faixa comum: 2.0 - 3.5</p>
-                      <p className="mt-1 text-xs text-white/60">{metricStatusText("aggressionFactor", analyzeMutation.data.stats.aggressionFactor)}</p>
-                    </div>
-                  </div>
+                  {(() => {
+                    const stats = analyzeMutation.data.stats;
+                    const opp = tournamentOpportunities;
+                    const metricColor = (key: MetricKey, value: number) => {
+                      const s = getMetricStatus(key, value);
+                      if (s === "ok") return "text-emerald-400";
+                      if (s === "below") return "text-red-400";
+                      return "text-amber-400";
+                    };
+                    const sampleText = (made: number | null, of: number | null) => {
+                      if (of == null || of <= 0) return null;
+                      if (made == null) return `${of} amostras`;
+                      return `${made}/${of}`;
+                    };
+                    type CardDef = {
+                      key: MetricKey;
+                      label: string;
+                      value: number;
+                      display: string;
+                      hint: string;
+                      made: number | null;
+                      of: number | null;
+                    };
+                    const pct = (v: number) => formatPercent(v);
+                    const roundMade = (percent: number, of: number) => Math.round((percent / 100) * of);
+                    const preFlop: CardDef[] = [
+                      { key: "vpip", label: "VPIP", value: stats.vpip, display: pct(stats.vpip), hint: "MÃ£os em que vocÃª entrou voluntariamente no pote.", made: roundMade(stats.vpip, opp.hands), of: opp.hands },
+                      { key: "pfr", label: "PFR", value: stats.pfr, display: pct(stats.pfr), hint: "MÃ£os com raise prÃ©-flop.", made: roundMade(stats.pfr, opp.hands), of: opp.hands },
+                      { key: "rfi", label: "RFI", value: (stats as any).rfi ?? 0, display: pct((stats as any).rfi ?? 0), hint: "Raise first in: abriu o pote com raise.", made: opp.rfi ? roundMade((stats as any).rfi ?? 0, opp.rfi) : null, of: opp.rfi || null },
+                      { key: "coldCall", label: "COLD CALL", value: (stats as any).coldCall ?? 0, display: pct((stats as any).coldCall ?? 0), hint: "Pagou um raise prÃ©-flop sem investimento prÃ©vio.", made: opp.coldCall ? roundMade((stats as any).coldCall ?? 0, opp.coldCall) : null, of: opp.coldCall || null },
+                      { key: "threeBet", label: "3-BET", value: stats.threeBet, display: pct(stats.threeBet), hint: "Re-raise prÃ©-flop contra um open.", made: roundMade(stats.threeBet, opp.hands), of: opp.hands },
+                      { key: "squeeze", label: "SQUEEZE", value: (stats as any).squeeze ?? 0, display: pct((stats as any).squeeze ?? 0), hint: "3-bet contra raise + caller(s).", made: opp.squeeze ? roundMade((stats as any).squeeze ?? 0, opp.squeeze) : null, of: opp.squeeze || null },
+                      { key: "resteal", label: "RESTEAL", value: (stats as any).resteal ?? 0, display: pct((stats as any).resteal ?? 0), hint: "3-bet em blind contra tentativa de roubo.", made: opp.resteal ? roundMade((stats as any).resteal ?? 0, opp.resteal) : null, of: opp.resteal || null },
+                      { key: "attemptToSteal", label: "ATTEMPT TO STEAL", value: stats.attemptToSteal, display: pct(stats.attemptToSteal), hint: "Tentativa de roubo em posiÃ§Ã£o final (CO/BTN/SB).", made: opp.steal > 0 ? roundMade(stats.attemptToSteal, opp.steal) : null, of: opp.steal || null },
+                    ];
+                    const preFlopDefense: CardDef[] = [
+                      { key: "bbDefense", label: "DEFESA DE BB", value: stats.bbDefense, display: pct(stats.bbDefense), hint: "Defesa do big blind em vez de foldar.", made: opp.bbDefense > 0 ? roundMade(stats.bbDefense, opp.bbDefense) : null, of: opp.bbDefense || null },
+                      { key: "foldToSteal", label: "FOLD TO STEAL", value: (stats as any).foldToSteal ?? 0, display: pct((stats as any).foldToSteal ?? 0), hint: "Fold no blind contra raise em posiÃ§Ã£o final.", made: opp.foldToSteal ? roundMade((stats as any).foldToSteal ?? 0, opp.foldToSteal) : null, of: opp.foldToSteal || null },
+                      { key: "foldTo3Bet", label: "FOLD TO 3-BET", value: (stats as any).foldTo3Bet ?? 0, display: pct((stats as any).foldTo3Bet ?? 0), hint: "Fold ao open-raise quando sofre 3-bet.", made: opp.foldTo3Bet ? roundMade((stats as any).foldTo3Bet ?? 0, opp.foldTo3Bet) : null, of: opp.foldTo3Bet || null },
+                    ];
+                    const postFlop: CardDef[] = [
+                      { key: "cbetFlop", label: "C-BET FLOP", value: stats.cbetFlop, display: pct(stats.cbetFlop), hint: "C-bet no flop como agressor prÃ©-flop.", made: opp.cbetFlop > 0 ? roundMade(stats.cbetFlop, opp.cbetFlop) : null, of: opp.cbetFlop || null },
+                      { key: "cbetIp", label: "C-BET IP", value: (stats as any).cbetIp ?? 0, display: pct((stats as any).cbetIp ?? 0), hint: "C-bet flop em posiÃ§Ã£o.", made: opp.cbetIp ? roundMade((stats as any).cbetIp ?? 0, opp.cbetIp) : null, of: opp.cbetIp || null },
+                      { key: "cbetOop", label: "C-BET OOP", value: (stats as any).cbetOop ?? 0, display: pct((stats as any).cbetOop ?? 0), hint: "C-bet flop fora de posiÃ§Ã£o.", made: opp.cbetOop ? roundMade((stats as any).cbetOop ?? 0, opp.cbetOop) : null, of: opp.cbetOop || null },
+                      { key: "cbetTurn", label: "C-BET TURN", value: stats.cbetTurn, display: pct(stats.cbetTurn), hint: "Segundo barril no turn apÃ³s c-bet flop.", made: opp.cbetTurn > 0 ? roundMade(stats.cbetTurn, opp.cbetTurn) : null, of: opp.cbetTurn || null },
+                      { key: "foldToCbet", label: "FOLD VS C-BET", value: stats.foldToCbet, display: pct(stats.foldToCbet), hint: "Fold contra c-bet no flop.", made: opp.foldToCbet > 0 ? roundMade(stats.foldToCbet, opp.foldToCbet) : null, of: opp.foldToCbet || null },
+                      { key: "floatFlop", label: "FLOAT FLOP", value: (stats as any).floatFlop ?? 0, display: pct((stats as any).floatFlop ?? 0), hint: "Pagou c-bet flop IP e atacou o turn.", made: opp.floatFlop ? roundMade((stats as any).floatFlop ?? 0, opp.floatFlop) : null, of: opp.floatFlop || null },
+                      { key: "checkRaiseFlop", label: "CHECK-RAISE FLOP", value: (stats as any).checkRaiseFlop ?? 0, display: pct((stats as any).checkRaiseFlop ?? 0), hint: "Check + raise no flop.", made: opp.checkRaiseFlop ? roundMade((stats as any).checkRaiseFlop ?? 0, opp.checkRaiseFlop) : null, of: opp.checkRaiseFlop || null },
+                    ];
+                    const general: CardDef[] = [
+                      { key: "aggressionFactor", label: "AGGRESSION", value: stats.aggressionFactor, display: stats.aggressionFactor.toFixed(2), hint: "RazÃ£o entre aÃ§Ãµes agressivas (bet/raise) e calls pÃ³s-flop.", made: Number((opp as any).aggressionActions ?? 0), of: Number((opp as any).aggressionCalls ?? 0) },
+                      { key: "wtsd", label: "WTSD", value: stats.wtsd, display: pct(stats.wtsd), hint: "FrequÃªncia de ida ao showdown.", made: roundMade(stats.wtsd, opp.hands), of: opp.hands },
+                      { key: "wsd", label: "WSD", value: stats.wsd, display: pct(stats.wsd), hint: "VitÃ³ria quando chega ao showdown.", made: (() => { const sd = roundMade(stats.wtsd, opp.hands); return sd > 0 ? roundMade(stats.wsd, sd) : 0; })(), of: roundMade(stats.wtsd, opp.hands) },
+                      { key: "allInAdjBb100", label: "ALL-IN ADJ BB/100", value: (stats as any).allInAdjBb100 ?? 0, display: `${((stats as any).allInAdjBb100 ?? 0) >= 0 ? "+" : ""}${Number((stats as any).allInAdjBb100 ?? 0).toFixed(2)}`, hint: "Win-rate em BB/100 removendo a sorte dos all-ins prÃ©-showdown (equity Ã— pote âˆ’ investimento).", made: Number((opp as any).allInAdjSample ?? 0), of: Number((opp as any).allInAdjOpportunities ?? 0) },
+                    ];
+                    const renderCard = (c: CardDef) => (
+                      <div key={c.key} className="rounded-xl border border-white/10 bg-slate-950/70 p-3 shadow-inner">
+                        <div className="flex items-start justify-between gap-2">
+                          <MetricLabel label={c.label} hint={c.hint} />
+                        </div>
+                        <p className={`mt-2 text-2xl font-black tracking-tight ${metricColor(c.key, c.value)}`}>{c.display}</p>
+                        {sampleText(c.made, c.of) && (
+                          <p className="mt-1 text-[11px] text-white/50">{sampleText(c.made, c.of)}</p>
+                        )}
+                      </div>
+                    );
+                    return (
+                      <div className="space-y-4">
+                        <section className="space-y-2">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">PrÃ©-flop</p>
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {preFlop.map(renderCard)}
+                          </div>
+                        </section>
+                        <section className="space-y-2">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Defesa PrÃ©-flop</p>
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {preFlopDefense.map(renderCard)}
+                          </div>
+                        </section>
+                        <section className="space-y-2">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">PÃ³s-flop</p>
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {postFlop.map(renderCard)}
+                          </div>
+                        </section>
+                        <section className="space-y-2">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Geral</p>
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            {general.map(renderCard)}
+                          </div>
+                        </section>
+                      </div>
+                    );
+                  })()}
 
-                  <div className="rounded-lg border border-blue-300/20 bg-blue-500/5 p-3 text-xs text-blue-100">
-                    Esses valores são referências práticas de jogadores sólidos, não regras fixas de GTO.
+                  <div className="rounded-xl bg-blue-500/8 p-3 text-xs text-blue-100 shadow-[inset_0_1px_0_rgba(59,130,246,0.08)]">
+                    Esses valores sÃ£o referÃªncias prÃ¡ticas de jogadores sÃ³lidos, nÃ£o regras fixas de GTO.
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-lg border border-amber-300/20 bg-amber-500/5 p-3 text-sm">
+                    <div className="rounded-xl bg-amber-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
                       <p className="mb-2 font-semibold text-amber-200">Principais alertas desse torneio</p>
                       {analyzeMutation.data.alerts.length > 0
                         ? analyzeMutation.data.alerts.map((alert) => <p key={alert}>- {alert}</p>)
                         : <p className="text-white/70">Sem alertas relevantes para esta amostra.</p>}
                     </div>
-                    <div className="rounded-lg border border-emerald-300/20 bg-emerald-500/5 p-3 text-sm">
+                    <div className="rounded-xl bg-emerald-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(16,185,129,0.08)]">
                       <p className="mb-2 font-semibold text-emerald-200">Principais pontos fortes desse torneio</p>
                       {analyzeMutation.data.strengths.length > 0
                         ? analyzeMutation.data.strengths.map((strength) => <p key={strength}>- {strength}</p>)
@@ -1030,7 +1211,7 @@ export default function HandReviewer() {
                   </div>
 
                   <div className="tokyo-panel rounded-lg p-3 text-sm">
-                    <p className="mb-2 font-semibold text-cyan-100">Ganhos/perdas por posição (em BB)</p>
+                    <p className="mb-2 font-semibold text-cyan-100">Ganhos/perdas por posiÃ§Ã£o (em BB)</p>
                     {analyzeMutation.data.tournament.chipsByPosition.length > 0 ? (
                       <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
                         {analyzeMutation.data.tournament.chipsByPosition.map((item) => (
@@ -1040,7 +1221,7 @@ export default function HandReviewer() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-white/70">Sem distribuição de posição disponível.</p>
+                      <p className="text-white/70">Sem distribuiÃ§Ã£o de posiÃ§Ã£o disponÃ­vel.</p>
                     )}
                   </div>
                 </>
@@ -1050,14 +1231,14 @@ export default function HandReviewer() {
             <TabsContent value="player" className="mt-4 space-y-4">
               <TabConfidenceHeader level={playerConfidenceLevel} hands={playerHands} />
 
-              {playerHistoryQuery.isLoading && <p className="text-sm text-muted-foreground">Carregando consolidado histórico...</p>}
+              {playerHistoryQuery.isLoading && <p className="text-sm text-muted-foreground">Carregando consolidado histÃ³rico...</p>}
               
               {playerHistoryQuery.isError && (
-                <p className="text-sm text-red-400">Erro ao carregar histórico: {playerHistoryQuery.error?.message}</p>
+                <p className="text-sm text-red-400">Erro ao carregar histÃ³rico: {playerHistoryQuery.error?.message}</p>
               )}
 
               {!playerHistoryQuery.isLoading && !playerHistoryQuery.data && !playerHistoryQuery.isError && (
-                <p className="text-sm text-muted-foreground">Sem histórico consolidado ainda. Use "Adicionar este torneio aos dados do jogador" para atualizar esta aba.</p>
+                <p className="text-sm text-muted-foreground">Sem histÃ³rico consolidado ainda. Use "Adicionar este torneio aos dados do jogador" para atualizar esta aba.</p>
               )}
 
               {playerHistoryQuery.data && playerHistoryQuery.data.summary.totalTournaments > 0 && (
@@ -1068,63 +1249,70 @@ export default function HandReviewer() {
                       <p className="tokyo-data-value font-semibold text-cyan-100">{playerHistoryQuery.data.summary.totalTournaments}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
-                      <p className="text-xs text-white/60">Total de mãos analisadas</p>
+                      <p className="text-xs text-white/60">Total de mÃ£os analisadas</p>
                       <p className="tokyo-data-value font-semibold text-cyan-100">{playerHistoryQuery.data.summary.totalHands}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
-                      <MetricLabel label="ABI médio" hint="Média de buy-in + fee dos torneios históricos, com moeda explícita." />
+                      <MetricLabel label="ABI mÃ©dio" hint="MÃ©dia de buy-in + fee dos torneios histÃ³ricos, com moeda explÃ­cita." />
                       <p className="tokyo-data-value font-semibold text-cyan-100">{formatMinorMoney(playerHistoryQuery.data.summary.abiAverage, (playerHistoryQuery.data.summary as any).abiAverageCurrency)}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
-                      <p className="text-xs text-white/60">Colocação média</p>
+                      <p className="text-xs text-white/60">ColocaÃ§Ã£o mÃ©dia</p>
                       <p className="tokyo-data-value font-semibold text-cyan-100">{playerHistoryQuery.data.summary.avgPlacement || "-"}</p>
                     </div>
                     <div className="tokyo-chip rounded-lg p-3 text-sm">
-                      <p className="text-xs text-white/60">Melhor colocação</p>
-                      <p className="tokyo-data-value font-semibold text-cyan-100">{playerHistoryQuery.data.summary.bestPlacement ? `${playerHistoryQuery.data.summary.bestPlacement}º` : "-"}</p>
+                      <p className="text-xs text-white/60">Melhor colocaÃ§Ã£o</p>
+                      <p className="tokyo-data-value font-semibold text-cyan-100">{playerHistoryQuery.data.summary.bestPlacement ? `${playerHistoryQuery.data.summary.bestPlacement}Âº` : "-"}</p>
                     </div>
                   </div>
 
                   <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="VPIP médio" hint="Percentual médio de mãos em que você entra voluntariamente no pote." />
+                      <MetricLabel label="VPIP mÃ©dio" hint="Percentual mÃ©dio de mÃ£os em que vocÃª entra voluntariamente no pote." />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.vpipAvg)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.vpipAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="PFR médio" hint="Percentual médio de mãos com aumento pré-flop." />
+                      <MetricLabel label="PFR mÃ©dio" hint="Percentual mÃ©dio de mÃ£os com aumento prÃ©-flop." />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.pfrAvg)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.pfrAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="3-bet médio" hint="Frequência média de reaumento pré-flop." />
+                      <MetricLabel label="3-bet mÃ©dio" hint="FrequÃªncia mÃ©dia de reaumento prÃ©-flop." />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.threeBetAvg)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Defesa média de BB" hint="Percentual médio de defesa do big blind em spots aplicáveis." />
+                      <MetricLabel label="Defesa mÃ©dia de BB" hint="Percentual mÃ©dio de defesa do big blind em spots aplicÃ¡veis." />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.bbDefenseAvg)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0), historicalOppSafe.bbDefense), historicalOppSafe.bbDefense)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="C-bet média" hint="Frequência média de c-bet no flop." />
+                      <MetricLabel label="C-bet mÃ©dia" hint="FrequÃªncia mÃ©dia de c-bet no flop." />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.cbetFlopAvg)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0), historicalOppSafe.cbetFlop), historicalOppSafe.cbetFlop)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Attempt to Steal médio" hint="Frequência média de tentativa de steal em posição final." />
+                      <MetricLabel label="Attempt to Steal mÃ©dio" hint="FrequÃªncia mÃ©dia de tentativa de steal em posiÃ§Ã£o final." />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.attemptToStealAvg)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0), historicalOppSafe.steal), historicalOppSafe.steal)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Aggression Factor médio" hint="Razão média entre ações agressivas e calls no histórico." />
+                      <MetricLabel label="Aggression Factor mÃ©dio" hint="RazÃ£o mÃ©dia entre aÃ§Ãµes agressivas e calls no histÃ³rico." />
                       <p className="mt-1 font-semibold text-cyan-100">{Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0).toFixed(2)}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number((historicalOpp as any)?.aggressionActions ?? 0), Number((historicalOpp as any)?.aggressionCalls ?? 0))}</p>
                     </div>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="tokyo-panel rounded-lg p-3 text-sm">
-                      <p className="mb-1 font-semibold text-cyan-100">Posição mais lucrativa historicamente</p>
+                      <p className="mb-1 font-semibold text-cyan-100">PosiÃ§Ã£o mais lucrativa historicamente</p>
                       <p>
                         {playerHistoryQuery.data.positions.mostProfitable
                           ? `${playerHistoryQuery.data.positions.mostProfitable.position} (${formatBb((playerHistoryQuery.data.positions.mostProfitable as any).netBb)})`
                           : "-"}
                       </p>
-                      <p className="mt-2 mb-1 font-semibold text-cyan-100">Posição menos lucrativa historicamente</p>
+                      <p className="mt-2 mb-1 font-semibold text-cyan-100">PosiÃ§Ã£o menos lucrativa historicamente</p>
                       <p>
                         {playerHistoryQuery.data.positions.leastProfitable
                           ? `${playerHistoryQuery.data.positions.leastProfitable.position} (${formatBb((playerHistoryQuery.data.positions.leastProfitable as any).netBb)})`
@@ -1138,8 +1326,8 @@ export default function HandReviewer() {
                           <p key={leak.id}>- [{leak.severity}] {leak.description}</p>
                         ))
                         : <p className="text-white/70">Sem leaks ativos registrados.</p>}
-                      <p className="mt-3 mb-1 font-semibold text-cyan-100">Tendências recentes</p>
-                      <p>{playerHistoryQuery.data.trends.note ?? "Sem dados suficientes para tendência recente."}</p>
+                      <p className="mt-3 mb-1 font-semibold text-cyan-100">TendÃªncias recentes</p>
+                      <p>{playerHistoryQuery.data.trends.note ?? "Sem dados suficientes para tendÃªncia recente."}</p>
                     </div>
                   </div>
                 </>
@@ -1149,34 +1337,34 @@ export default function HandReviewer() {
             <TabsContent value="positions" className="mt-4 space-y-4">
               <TabConfidenceHeader level={positionsConfidenceLevel} hands={positionsHands} />
 
-              {playerHistoryQuery.isLoading && <p className="text-sm text-muted-foreground">Carregando dados de posições...</p>}
+              {playerHistoryQuery.isLoading && <p className="text-sm text-muted-foreground">Carregando dados de posiÃ§Ãµes...</p>}
 
               {!playerHistoryQuery.isLoading && !playerHistoryQuery.data && (
-                <p className="text-sm text-muted-foreground">Adicione torneios para análise de posições e foco de estudos.</p>
+                <p className="text-sm text-muted-foreground">Adicione torneios para anÃ¡lise de posiÃ§Ãµes e foco de estudos.</p>
               )}
 
               {playerHistoryQuery.data && (
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Posições jogadas historicamente</p>
+                  <p className="mb-2 font-semibold text-cyan-100">PosiÃ§Ãµes jogadas historicamente</p>
                   {playerHistoryQuery.data.positions.byPosition?.length > 0 ? (
                     <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
                       {playerHistoryQuery.data.positions.byPosition.map((item) => (
                         <div key={`pos-hist-${item.position}`}>
                           <p>
-                            {item.position}: {item.handsPlayed} mãos · <span className="font-semibold text-cyan-100">{formatBb((item as any).netBb)}</span>
+                            {item.position}: {item.handsPlayed} mÃ£os Â· <span className="font-semibold text-cyan-100">{formatBb((item as any).netBb)}</span>
                           </p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-white/70">Sem dados históricos de posição. Adicione torneios para consolidar dados.</p>
+                    <p className="text-white/70">Sem dados histÃ³ricos de posiÃ§Ã£o. Adicione torneios para consolidar dados.</p>
                   )}
                 </div>
               )}
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Onde está mais lucrativo</p>
+                  <p className="mb-2 font-semibold text-cyan-100">Onde estÃ¡ mais lucrativo</p>
                   <p>
                     {playerHistoryQuery.data?.positions?.mostProfitable
                       ? `${playerHistoryQuery.data.positions.mostProfitable.position} (${formatBb((playerHistoryQuery.data.positions.mostProfitable as any).netBb)})`
@@ -1185,7 +1373,7 @@ export default function HandReviewer() {
                 </div>
 
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Onde está menos lucrativo</p>
+                  <p className="mb-2 font-semibold text-cyan-100">Onde estÃ¡ menos lucrativo</p>
                   <p>
                     {playerHistoryQuery.data?.positions?.leastProfitable
                       ? `${playerHistoryQuery.data.positions.leastProfitable.position} (${formatBb((playerHistoryQuery.data.positions.leastProfitable as any).netBb)})`
@@ -1194,48 +1382,78 @@ export default function HandReviewer() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-emerald-300/20 bg-emerald-500/5 p-3 text-sm">
+              <div className="rounded-xl bg-emerald-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(16,185,129,0.08)]">
                 <p className="mb-2 font-semibold text-emerald-100">Foco de estudos sugerido</p>
                 {studyFocusSuggestions.map((item) => (
                   <p key={item}>- {item}</p>
                 ))}
                 <p className="mt-3 text-xs text-emerald-200/90">
-                  Em versões futuras, este bloco vai integrar treino automático por posição e por leak recorrente.
+                  Em versÃµes futuras, este bloco vai integrar treino automÃ¡tico por posiÃ§Ã£o e por leak recorrente.
                 </p>
               </div>
 
               {playerHistoryQuery.data && (
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Leitura rápida por benchmark (histórico do jogador)</p>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {(["vpip", "pfr", "threeBet", "cbetFlop", "cbetTurn", "foldToCbet", "bbDefense", "attemptToSteal", "aggressionFactor", "wtsd", "wsd"] as MetricKey[]).map((key) => {
-                      const benchmark = BENCHMARKS[key];
-                      const historicalValues: Record<MetricKey, number> = {
-                        vpip: Number(playerHistoryQuery.data.summary.vpipAvg ?? 0),
-                        pfr: Number(playerHistoryQuery.data.summary.pfrAvg ?? 0),
-                        threeBet: Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0),
-                        cbetFlop: Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0),
-                        cbetTurn: Number(playerHistoryQuery.data.summary.cbetTurnAvg ?? 0),
-                        foldToCbet: 0,
-                        bbDefense: Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0),
-                        attemptToSteal: Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0),
-                        aggressionFactor: Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0),
-                        wtsd: Number(playerHistoryQuery.data.summary.wtsdAvg ?? 0),
-                        wsd: Number(playerHistoryQuery.data.summary.wsdAvg ?? 0),
-                      };
-                      const value = Number(historicalValues[key] ?? 0);
-                      return (
-                        <div key={`benchmark-${key}`} className="tokyo-metric rounded-md p-2">
-                          <div className="font-semibold text-cyan-100">
-                            <MetricLabel label={benchmark.label} hint={benchmark.interpretation} />
-                            <span>: {key === "aggressionFactor" ? value.toFixed(2) : `${value}%`} · {metricStatusBadge(getMetricStatus(key, value))}</span>
-                          </div>
-                          <p className="text-xs text-white/70">Faixa comum: {benchmark.min}{key === "aggressionFactor" ? "" : "%"} - {benchmark.max}{key === "aggressionFactor" ? "" : "%"}</p>
-                          <p className="text-xs text-white/60">{metricStatusText(key, value)}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <p className="mb-2 font-semibold text-cyan-100">Leitura rÃ¡pida por benchmark (histÃ³rico do jogador)</p>
+                  {(() => {
+                    const historicalValues: Partial<Record<MetricKey, number>> = {
+                      vpip: Number(playerHistoryQuery.data.summary.vpipAvg ?? 0),
+                      pfr: Number(playerHistoryQuery.data.summary.pfrAvg ?? 0),
+                      threeBet: Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0),
+                      cbetFlop: Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0),
+                      cbetTurn: Number(playerHistoryQuery.data.summary.cbetTurnAvg ?? 0),
+                      foldToCbet: Number((playerHistoryQuery.data.summary as any).foldToCbetAvg ?? 0),
+                    const histOpp = ((playerHistoryQuery.data.summary as any)?.opportunities ?? {}) as Record<string, number>;
+                    const denominatorFor = (key: MetricKey): number => {
+                      if (key === "vpip" || key === "pfr" || key === "threeBet") return Number(histOpp.hands ?? 0);
+                      if (key === "cbetFlop") return Number(histOpp.cbetFlop ?? 0);
+                      if (key === "cbetTurn") return Number(histOpp.cbetTurn ?? 0);
+                      if (key === "foldToCbet") return Number(histOpp.foldToCbet ?? 0);
+                      if (key === "bbDefense") return Number(histOpp.bbDefense ?? 0);
+                      if (key === "attemptToSteal") return Number(histOpp.steal ?? 0);
+                      if (key === "wtsd" || key === "wsd") return Number(histOpp.showdownHands ?? 0);
+                      return Number(histOpp.hands ?? 0);
+                    };
+                    const sections: Array<{ title: string; keys: MetricKey[] }> = [
+                      { title: "PrÃ©-flop", keys: ["vpip", "pfr", "threeBet", "attemptToSteal"] },
+                      { title: "Defesa PrÃ©-flop", keys: ["bbDefense"] },
+                      { title: "PÃ³s-flop", keys: ["cbetFlop", "cbetTurn", "foldToCbet"] },
+                      { title: "Geral", keys: ["aggressionFactor", "wtsd", "wsd"] },
+                    ];
+                    return (
+                      <div className="space-y-3">
+                        {sections.map((section) => (
+                          <section key={section.title} className="space-y-2">
+                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">{section.title}</p>
+                            <div className="grid gap-2 md:grid-cols-2">
+                              {section.keys.map((key) => {
+                                const benchmark = BENCHMARKS[key];
+                                const value = Number(historicalValues[key] ?? 0);
+                                const of = denominatorFor(key);
+                                const made = key === "aggressionFactor"
+                                  ? Number(histOpp.aggressionActions ?? 0)
+                                  : roundMade(value, of);
+                                const ratioOf = key === "aggressionFactor"
+                                  ? Number(histOpp.aggressionCalls ?? 0)
+                                  : of;
+                                return (
+                                  <div key={`benchmark-${key}`} className="tokyo-metric rounded-md p-2">
+                                    <div className="font-semibold text-cyan-100">
+                                      <MetricLabel label={benchmark.label} hint={benchmark.interpretation} />
+                                      <span>: {key === "aggressionFactor" ? value.toFixed(2) : `${value}%`} Â· {metricStatusBadge(getMetricStatus(key, value))}</span>
+                                    </div>
+                                    <p className="text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
+                                    <p className="text-xs text-white/70">Faixa comum: {benchmark.min}{key === "aggressionFactor" ? "" : "%"} - {benchmark.max}{key === "aggressionFactor" ? "" : "%"}</p>
+                                    <p className="text-xs text-white/60">{metricStatusText(key, value)}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </TabsContent>
@@ -1243,17 +1461,17 @@ export default function HandReviewer() {
         </CardContent>
       </Card>
 
-      <div className="tokyo-panel rounded-xl px-4 py-3 text-sm">
+      <div className="rounded-2xl bg-gradient-to-b from-amber-500/6 to-transparent px-4 py-3 text-sm">
         <details className="text-xs text-amber-100/85">
-          <summary className="cursor-pointer font-semibold text-amber-200">Sobre estatística e metodologia (saiba mais)</summary>
+          <summary className="cursor-pointer font-semibold text-amber-200">Sobre estatÃ­stica e metodologia (saiba mais)</summary>
           <p className="mt-2 text-amber-100/75">
-            Conteúdo avançado com gráficos, faixas, fórmula e premissas. Expanda apenas quando quiser aprofundar.
+            ConteÃºdo avanÃ§ado com grÃ¡ficos, faixas, fÃ³rmula e premissas. Expanda apenas quando quiser aprofundar.
           </p>
-          <div className="mt-3 space-y-2 rounded-lg border border-amber-300/20 bg-black/20 p-3">
+          <div className="mt-3 space-y-2 rounded-2xl bg-black/15 p-3">
 
         <div className="grid gap-3 xl:grid-cols-2">
-          <div className="rounded-lg border border-amber-300/20 bg-black/25 p-3">
-            <p className="mb-2 text-xs font-semibold text-amber-200">Amostra para detectar padrões específicos (efeito de 5% a 10%)</p>
+          <div className="rounded-xl bg-black/20 p-3">
+            <p className="mb-2 text-xs font-semibold text-amber-200">Amostra para detectar padrÃµes especÃ­ficos (efeito de 5% a 10%)</p>
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={SPECIFIC_PATTERN_SAMPLE_DATA} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
@@ -1267,7 +1485,7 @@ export default function HandReviewer() {
                   <Legend wrapperStyle={{ color: "#fde68a", fontSize: "12px" }} />
                   <Line type="monotone" dataKey="low" name="Baixa (70%)" stroke="#60a5fa" strokeWidth={2} dot={{ r: 3 }} />
                   <Line type="monotone" dataKey="moderate" name="Moderada (80%)" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="medium" name="Média (90%)" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="medium" name="MÃ©dia (90%)" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
                   <Line type="monotone" dataKey="high" name="Alta (95%)" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
                   <Line type="monotone" dataKey="veryHigh" name="Muito Alta (99%)" stroke="#a78bfa" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
@@ -1275,8 +1493,8 @@ export default function HandReviewer() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-amber-300/20 bg-black/25 p-3">
-            <p className="mb-2 text-xs font-semibold text-amber-200">Mãos para estimar winrate (margem de erro +/-2 BB/100)</p>
+          <div className="rounded-xl bg-black/20 p-3">
+            <p className="mb-2 text-xs font-semibold text-amber-200">MÃ£os para estimar winrate (margem de erro +/-2 BB/100)</p>
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={WINRATE_SAMPLE_DATA} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
@@ -1289,13 +1507,13 @@ export default function HandReviewer() {
                     labelStyle={{ color: "#fef3c7" }}
                   />
                   <Legend wrapperStyle={{ color: "#fde68a", fontSize: "12px" }} />
-                  <Bar dataKey="lowVariance" name="Variância Baixa" fill="#4b6fa8">
+                  <Bar dataKey="lowVariance" name="VariÃ¢ncia Baixa" fill="#4b6fa8">
                     <LabelList dataKey="lowVariance" position="top" formatter={(value: number) => value.toLocaleString("pt-BR")} className="fill-amber-100 text-[10px]" />
                   </Bar>
-                  <Bar dataKey="typicalVariance" name="Variância Típica" fill="#4f9f64">
+                  <Bar dataKey="typicalVariance" name="VariÃ¢ncia TÃ­pica" fill="#4f9f64">
                     <LabelList dataKey="typicalVariance" position="top" formatter={(value: number) => value.toLocaleString("pt-BR")} className="fill-amber-100 text-[10px]" />
                   </Bar>
-                  <Bar dataKey="highVariance" name="Variância Alta" fill="#b9464c">
+                  <Bar dataKey="highVariance" name="VariÃ¢ncia Alta" fill="#b9464c">
                     <LabelList dataKey="highVariance" position="top" formatter={(value: number) => value.toLocaleString("pt-BR")} className="fill-amber-100 text-[10px]" />
                   </Bar>
                 </BarChart>
@@ -1304,57 +1522,57 @@ export default function HandReviewer() {
           </div>
         </div>
 
-        <details className="mt-3 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
-          <summary className="cursor-pointer font-semibold text-amber-200">1) Fundamentos e níveis de confiança</summary>
+        <details className="mt-3 rounded-xl bg-black/20 p-3 text-xs text-amber-100/85">
+          <summary className="cursor-pointer font-semibold text-amber-200">1) Fundamentos e nÃ­veis de confianÃ§a</summary>
           <div className="mt-2 space-y-2">
             <p>Modelo principal para winrate: n = (Z x sigma / E)^2</p>
             <p>Premissas usuais: sigma = 85 BB/100 (regular consistente), margem de erro E em BB/100.</p>
-            <div className="rounded border border-amber-300/25 bg-amber-400/5 p-2">
-              <p className="font-semibold text-amber-200">Faixas oficiais usadas no produto (por mãos)</p>
-              <p className="mt-1">Baixa: até 6.999 · Moderada: 7.000-10.999 · Média: 11.000-18.999 · Alta: 19.000-26.999 · Muito alta: 27.000+</p>
+            <div className="rounded-xl bg-amber-400/6 p-2">
+              <p className="font-semibold text-amber-200">Faixas oficiais usadas no produto (por mÃ£os)</p>
+              <p className="mt-1">Baixa: atÃ© 6.999 Â· Moderada: 7.000-10.999 Â· MÃ©dia: 11.000-18.999 Â· Alta: 19.000-26.999 Â· Muito alta: 27.000+</p>
             </div>
             <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-5">
-              <span className="rounded border border-amber-300/25 px-2 py-1">Baixa (70%): Z = 1.04</span>
-              <span className="rounded border border-amber-300/25 px-2 py-1">Moderada (80%): Z = 1.28</span>
-              <span className="rounded border border-amber-300/25 px-2 py-1">Média (90%): Z = 1.645</span>
-              <span className="rounded border border-amber-300/25 px-2 py-1">Alta (95%): Z = 1.96</span>
-              <span className="rounded border border-amber-300/25 px-2 py-1">Muito alta (99%): Z = 2.576</span>
+              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Baixa (70%): Z = 1.04</span>
+              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Moderada (80%): Z = 1.28</span>
+              <span className="rounded-lg bg-amber-400/8 px-2 py-1">MÃ©dia (90%): Z = 1.645</span>
+              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Alta (95%): Z = 1.96</span>
+              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Muito alta (99%): Z = 2.576</span>
             </div>
           </div>
         </details>
 
-        <details className="mt-2 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
-          <summary className="cursor-pointer font-semibold text-amber-200">2) Padrões de jogador (winrate/ROI)</summary>
+        <details className="mt-2 rounded-xl bg-black/20 p-3 text-xs text-amber-100/85">
+          <summary className="cursor-pointer font-semibold text-amber-200">2) PadrÃµes de jogador (winrate/ROI)</summary>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[680px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-amber-300/20 text-amber-200">
                   <th className="py-1 pr-3">Confiabilidade</th>
                   <th className="py-1 pr-3">CI</th>
-                  <th className="py-1 pr-3">Mãos (+/-2 BB/100)</th>
-                  <th className="py-1">Mãos (+/-1 BB/100)</th>
+                  <th className="py-1 pr-3">MÃ£os (+/-2 BB/100)</th>
+                  <th className="py-1">MÃ£os (+/-1 BB/100)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Baixa</td><td className="py-1 pr-3">70%</td><td className="py-1 pr-3">~1.954</td><td className="py-1">~7.815</td></tr>
                 <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Moderada</td><td className="py-1 pr-3">80%</td><td className="py-1 pr-3">~2.960</td><td className="py-1">~11.838</td></tr>
-                <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Média</td><td className="py-1 pr-3">90%</td><td className="py-1 pr-3">~4.888</td><td className="py-1">~19.552</td></tr>
+                <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">MÃ©dia</td><td className="py-1 pr-3">90%</td><td className="py-1 pr-3">~4.888</td><td className="py-1">~19.552</td></tr>
                 <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Alta</td><td className="py-1 pr-3">95%</td><td className="py-1 pr-3">~6.939</td><td className="py-1">~27.756</td></tr>
                 <tr><td className="py-1 pr-3">Muito alta</td><td className="py-1 pr-3">99%</td><td className="py-1 pr-3">~11.986</td><td className="py-1">~47.944</td></tr>
               </tbody>
             </table>
           </div>
           <p className="mt-2">
-            Nota: perfil muito agressivo pode elevar sigma para ~120 BB/100, quase dobrando a amostra exigida para a mesma precisão.
+            Nota: perfil muito agressivo pode elevar sigma para ~120 BB/100, quase dobrando a amostra exigida para a mesma precisÃ£o.
           </p>
         </details>
 
-        <details className="mt-2 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
-          <summary className="cursor-pointer font-semibold text-amber-200">3) Padrões de jogo (HUD stats por oportunidade)</summary>
+        <details className="mt-2 rounded-xl bg-black/20 p-3 text-xs text-amber-100/85">
+          <summary className="cursor-pointer font-semibold text-amber-200">3) PadrÃµes de jogo (HUD stats por oportunidade)</summary>
           <div className="mt-2 space-y-2">
-            <p>Modelo de proporção binomial: n = (Z / E)^2 x p(1-p)</p>
+            <p>Modelo de proporÃ§Ã£o binomial: n = (Z / E)^2 x p(1-p)</p>
             <p>
-              Aqui o n é em oportunidades (spots válidos), não em mãos totais.
+              Aqui o n Ã© em oportunidades (spots vÃ¡lidos), nÃ£o em mÃ£os totais.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-left">
@@ -1370,28 +1588,28 @@ export default function HandReviewer() {
                 <tbody>
                   <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Baixa (70%)</td><td className="py-1 pr-3">28</td><td className="py-1 pr-3">26</td><td className="py-1 pr-3">82</td><td className="py-1">70</td></tr>
                   <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Moderada (80%)</td><td className="py-1 pr-3">41</td><td className="py-1 pr-3">40</td><td className="py-1 pr-3">123</td><td className="py-1">105</td></tr>
-                  <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Média (90%)</td><td className="py-1 pr-3">68</td><td className="py-1 pr-3">65</td><td className="py-1 pr-3">203</td><td className="py-1">174</td></tr>
+                  <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">MÃ©dia (90%)</td><td className="py-1 pr-3">68</td><td className="py-1 pr-3">65</td><td className="py-1 pr-3">203</td><td className="py-1">174</td></tr>
                   <tr className="border-b border-amber-300/10"><td className="py-1 pr-3">Alta (95%)</td><td className="py-1 pr-3">97</td><td className="py-1 pr-3">93</td><td className="py-1 pr-3">289</td><td className="py-1">246</td></tr>
                   <tr><td className="py-1 pr-3">Muito alta (99%)</td><td className="py-1 pr-3">166</td><td className="py-1 pr-3">160</td><td className="py-1 pr-3">498</td><td className="py-1">425</td></tr>
                 </tbody>
               </table>
             </div>
             <p>
-              Exemplo: para ~97 oportunidades de flop C-bet, se o spot aparece em ~16% das mãos, são necessárias cerca de 600 mãos totais.
+              Exemplo: para ~97 oportunidades de flop C-bet, se o spot aparece em ~16% das mÃ£os, sÃ£o necessÃ¡rias cerca de 600 mÃ£os totais.
             </p>
           </div>
         </details>
 
-        <details className="mt-2 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
-          <summary className="cursor-pointer font-semibold text-amber-200">4) Regra de ouro para exploração prática</summary>
+        <details className="mt-2 rounded-xl bg-black/20 p-3 text-xs text-amber-100/85">
+          <summary className="cursor-pointer font-semibold text-amber-200">4) Regra de ouro para exploraÃ§Ã£o prÃ¡tica</summary>
           <div className="mt-2 space-y-1">
-            <p>Extremos convergem rápido: 90% em 10 spots ou 10% em 10 spots já sugerem tendência forte e explorável.</p>
-            <p>Valores próximos do meio (ex: 50%) exigem mais volume antes de classificar padrão consolidado.</p>
+            <p>Extremos convergem rÃ¡pido: 90% em 10 spots ou 10% em 10 spots jÃ¡ sugerem tendÃªncia forte e explorÃ¡vel.</p>
+            <p>Valores prÃ³ximos do meio (ex: 50%) exigem mais volume antes de classificar padrÃ£o consolidado.</p>
           </div>
         </details>
 
-        <div className="mt-2 rounded-lg border border-amber-300/25 bg-amber-400/10 p-2 text-xs font-semibold text-amber-300">
-          Resumo prático: winrate confiável pede milhares de mãos; leaks por spot podem aparecer com dezenas de oportunidades, mas confirmação forte exige amostra maior.
+        <div className="mt-2 rounded-xl bg-amber-400/8 p-2 text-xs font-semibold text-amber-300">
+          Resumo prÃ¡tico: winrate confiÃ¡vel pede milhares de mÃ£os; leaks por spot podem aparecer com dezenas de oportunidades, mas confirmaÃ§Ã£o forte exige amostra maior.
         </div>
           </div>
         </details>
@@ -1399,3 +1617,5 @@ export default function HandReviewer() {
     </div>
   );
 }
+
+

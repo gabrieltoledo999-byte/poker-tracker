@@ -1,0 +1,36 @@
+diff a/client/src/pages/HandReviewerReplay.tsx b/client/src/pages/HandReviewerReplay.tsx	(rejected hunks)
+@@ -228,11 +228,11 @@ export default function HandReviewerReplay() {
+ 
+   return (
+     <div
+-      className="hand-review-replay mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1900px] flex-col gap-0 overflow-hidden pb-4 md:mt-1"
++      className="hand-review-replay flex h-screen w-full flex-col gap-0 overflow-hidden"
+       onTouchStart={handleTouchStart}
+       onTouchEnd={handleTouchEnd}
+     >
+-      <section className="grid min-h-0 h-full flex-1 items-stretch gap-2 md:grid-cols-[300px_minmax(0,1fr)]">
++      <section className="grid min-h-0 h-full flex-1 items-stretch gap-2 md:grid-cols-[340px_minmax(0,1fr)]">
+         <aside className="hidden h-full flex-col rounded-2xl border border-white/10 bg-slate-950/65 p-2.5 md:flex" style={{ minHeight: 0 }}>
+           {/* Top half ÔÇö hand list */}
+           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+@@ -331,18 +334,15 @@ export default function HandReviewerReplay() {
+             <Button
+               size="sm"
+               variant={mobilePanel === "timeline" ? "default" : "outline"}
+-              className="h-7 px-2 text-[10px]"
++              className="h-7 px-2 text-[10px] bg-slate-950/80 backdrop-blur-sm"
+               onClick={() => setMobilePanel(prev => (prev === "timeline" ? "none" : "timeline"))}
+             >
+               Acoes
+             </Button>
+-            <div className="ml-auto text-[11px] text-white/65">
+-              Mao {selectedHandIndex + 1} ┬À {safeActionIndex}/{handActions.length}
+-            </div>
+           </div>
+ 
+           <PokerTableReplay
+-            className="flex-1 min-h-0"
++            className="flex-1 min-h-0 h-full"
+             step={currentStep}
+             previousStep={previousStep}
+             maxPlayers={selectedHand.maxPlayers}

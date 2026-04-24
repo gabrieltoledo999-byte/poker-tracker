@@ -277,6 +277,7 @@ export default function Dashboard() {
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
   const { data: allSessions } = trpc.sessions.list.useQuery({});
+  const { data: tournamentStatsRaw } = trpc.sessions.statsByTournament.useQuery();
   const { data: handPatternStats } = trpc.sessions.handPatternStats.useQuery();
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
   const { data: venueStats } = trpc.venues.statsByVenue.useQuery();
@@ -458,7 +459,7 @@ export default function Dashboard() {
       .filter((v: any) => (v.tables ?? v.sessions) > 0)
       .map((v: any) => ({
         venueId: v.venueId,
-        name: v.venueName.length > 10 ? v.venueName.substring(0, 10) + "…" : v.venueName,
+        name: v.venueName.length > 13 ? v.venueName.substring(0, 13) + "…" : v.venueName,
         fullName: v.venueName,
         roi: (v.totalBuyIn ?? 0) > 0 ? parseFloat(((v.totalProfit / v.totalBuyIn) * 100).toFixed(1)) : 0,
         winrate: v.winRate,
@@ -536,56 +537,8 @@ export default function Dashboard() {
     });
   }, [consolidated, playTypeOrder, sortVenues, venueStats]);
 
-  const tournamentStats = useMemo(() => {
-    if (!allSessions) return [];
-
-    const grouped = new Map<string, {
-      name: string;
-      sessions: number;
-      tables: number;
-      profit: number;
-      wins: number;
-      losses: number;
-    }>();
-
-    for (const session of allSessions as any[]) {
-      const name = ((session.primaryTournamentName ?? session.tournamentName ?? "") as string).trim();
-      if (!name) continue;
-
-      const profit = typeof session.totalTableProfit === "number"
-        ? session.totalTableProfit
-        : (session.cashOut ?? 0) - (session.buyIn ?? 0);
-      const tables = session.tableCount ?? session.tables?.length ?? 0;
-      const current = grouped.get(name) ?? {
-        name,
-        sessions: 0,
-        tables: 0,
-        profit: 0,
-        wins: 0,
-        losses: 0,
-      };
-
-      current.sessions += 1;
-      current.tables += tables;
-      current.profit += profit;
-      if (profit > 0) current.wins += 1;
-      if (profit < 0) current.losses += 1;
-
-      grouped.set(name, current);
-    }
-
-    return Array.from(grouped.values())
-      .map((item) => ({
-        ...item,
-        avgProfit: item.sessions > 0 ? Math.round(item.profit / item.sessions) : 0,
-        winRate: item.sessions > 0 ? Math.round((item.wins / item.sessions) * 100) : 0,
-      }))
-      .sort((a, b) => {
-        if (b.sessions !== a.sessions) return b.sessions - a.sessions;
-        return b.profit - a.profit;
-      })
-      .slice(0, 8);
-  }, [allSessions]);
+  // Tournament stats come from the new table-level endpoint (not session-level)
+  const tournamentStats = (tournamentStatsRaw ?? []).slice(0, 8);
 
   const monthlyComparison = useMemo(() => {
     const monthlyProfit = new Map<string, number>();
@@ -1367,16 +1320,16 @@ export default function Dashboard() {
                 {perfData.length > 0 && (
                   <div>
                     <p className="text-xs text-muted-foreground mb-2 font-medium">Desempenho por Plataforma</p>
-                    <div className="h-40">
+                    <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={perfData} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
+                      <BarChart data={perfData} layout="vertical" barSize={14} margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
                         <XAxis type="number" stroke={chartColors.axis} fontSize={10} tickLine={false}
                           tickFormatter={(v) => {
                             if (perfMetric === "sessions") return String(v);
                             if (perfMetric === "profit") return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
                             return `${v}%`;
                           }} />
-                        <YAxis type="category" dataKey="name" stroke={chartColors.axis} fontSize={10} tickLine={false} width={70} />
+                        <YAxis type="category" dataKey="name" stroke={chartColors.axis} fontSize={10} tickLine={false} width={95} />
                         <RechartsTooltip
                               content={({ active, payload }: any) => {
                             if (!active || !payload?.length) return null;
@@ -1395,10 +1348,7 @@ export default function Dashboard() {
                         <Bar dataKey={perfMetric === "roi" ? "roi" : perfMetric === "winrate" ? "winrate" : perfMetric === "sessions" ? "tables" : "profit"} radius={[0, 4, 4, 0]}>
                           {perfData.map((entry: any, index: number) => (
                             <Cell key={`cell-${index}`}
-                              fill={perfMetric === "sessions" ? VENUE_COLORS[index % VENUE_COLORS.length]
-                                : perfMetric === "winrate" ? (entry.winrate >= 50 ? "#10b981" : "#f59e0b")
-                                : perfMetric === "profit" ? (entry.profit >= 0 ? "#10b981" : "#ef4444")
-                                : entry.color}
+                              fill={VENUE_COLORS[index % VENUE_COLORS.length]}
                             />
                           ))}
                         </Bar>
@@ -1704,7 +1654,7 @@ export default function Dashboard() {
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <Trophy className="h-4 w-4 text-amber-500" /> Análise por Torneio
                   </CardTitle>
-                  <p className="text-xs text-muted-foreground">Sessões agrupadas pelo nome principal do torneio.</p>
+                  <p className="text-xs text-muted-foreground">Mesas agrupadas pelo nome do torneio.</p>
                 </div>
                 <Badge variant="outline" className="text-[10px]">Top {tournamentStats.length}</Badge>
               </div>
@@ -1713,6 +1663,7 @@ export default function Dashboard() {
               {tournamentStats.length > 0 ? (
                 tournamentStats.map((tournament) => {
                   const expanded = expandedTournament === tournament.name;
+                  const hasSimilar = (tournament as any).similarNames?.length > 0;
                   return (
                     <div key={tournament.name} className="rounded-lg border border-border/40 overflow-hidden">
                       <button
@@ -1721,9 +1672,16 @@ export default function Dashboard() {
                         className="w-full flex items-center justify-between px-3 py-3 text-left hover:bg-muted/20 transition-colors"
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate">{tournament.name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold truncate">{tournament.name}</p>
+                            {hasSimilar && (
+                              <span title={`Nome parecido com: ${(tournament as any).similarNames.join(", ")}`} className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                ~similar
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-muted-foreground">
-                            {tournament.sessions} sessõ{tournament.sessions === 1 ? "e" : "es"} · {tournament.tables} mesas
+                            {tournament.tables} mesa{tournament.tables === 1 ? "" : "s"} · {tournament.sessions} sessõ{tournament.sessions === 1 ? "e" : "es"}
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
@@ -1734,24 +1692,35 @@ export default function Dashboard() {
                         </div>
                       </button>
                       {expanded && (
-                        <div className="grid grid-cols-3 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
-                          <div className="rounded-md bg-background/40 px-2 py-2">
-                            <p className="text-[10px] text-muted-foreground">Média</p>
-                            <p className={`text-xs font-semibold ${tournament.avgProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                              {formatCurrencyCompact(tournament.avgProfit)}
-                            </p>
+                        <>
+                          {hasSimilar && (
+                            <div className="px-3 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-400">
+                              ⚠️ Nome parecido com: <span className="font-semibold">{(tournament as any).similarNames.join(", ")}</span>. Confirme se são o mesmo torneio.
+                            </div>
+                          )}
+                          <div className="grid grid-cols-4 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
+                            <div className="rounded-md bg-background/40 px-2 py-2">
+                              <p className="text-[10px] text-muted-foreground">Média/mesa</p>
+                              <p className={`text-xs font-semibold ${(tournament as any).avgProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                                {formatCurrencyCompact((tournament as any).avgProfit)}
+                              </p>
+                            </div>
+                            <div className="rounded-md bg-background/40 px-2 py-2">
+                              <p className="text-[10px] text-muted-foreground">ITM</p>
+                              <p className="text-xs font-semibold text-cyan-400">{(tournament as any).itmRate ?? 0}%</p>
+                            </div>
+                            <div className="rounded-md bg-background/40 px-2 py-2">
+                              <p className="text-[10px] text-muted-foreground">Troféus</p>
+                              <p className="text-xs font-semibold text-amber-400">{(tournament as any).trophies ?? 0} 🏆</p>
+                            </div>
+                            <div className="rounded-md bg-background/40 px-2 py-2">
+                              <p className="text-[10px] text-muted-foreground">Saldo</p>
+                              <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                                {formatCurrencyCompact(tournament.profit)}
+                              </p>
+                            </div>
                           </div>
-                          <div className="rounded-md bg-background/40 px-2 py-2">
-                            <p className="text-[10px] text-muted-foreground">Win rate</p>
-                            <p className="text-xs font-semibold text-cyan-400">{tournament.winRate}%</p>
-                          </div>
-                          <div className="rounded-md bg-background/40 px-2 py-2">
-                            <p className="text-[10px] text-muted-foreground">Saldo</p>
-                            <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                              {formatCurrencyCompact(tournament.profit)}
-                            </p>
-                          </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   );

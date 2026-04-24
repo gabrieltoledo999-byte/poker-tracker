@@ -350,7 +350,6 @@
   .tokyo-reviewer {
     position: relative;
     isolation: isolate;
-    overflow: hidden;
   }
 
   .tokyo-reviewer::before,
@@ -360,28 +359,28 @@
     inset: auto;
     pointer-events: none;
     z-index: -1;
-    filter: blur(2px);
+    filter: blur(72px);
   }
 
   .tokyo-reviewer::before {
-    top: -12rem;
-    right: -8rem;
-    width: 26rem;
-    height: 26rem;
+    top: -6rem;
+    right: -4rem;
+    width: 28rem;
+    height: 28rem;
     border-radius: 9999px;
-    background: radial-gradient(circle, color-mix(in oklab, var(--secondary) 42%, transparent), transparent 70%);
-    opacity: 0.65;
+    background: radial-gradient(circle, color-mix(in oklab, var(--secondary) 28%, transparent), transparent 65%);
+    opacity: 0.35;
     animation: tokyo-float 9s ease-in-out infinite;
   }
 
   .tokyo-reviewer::after {
-    bottom: -13rem;
-    left: -10rem;
-    width: 30rem;
-    height: 30rem;
+    bottom: -8rem;
+    left: -6rem;
+    width: 32rem;
+    height: 32rem;
     border-radius: 9999px;
-    background: radial-gradient(circle, color-mix(in oklab, var(--primary) 40%, transparent), transparent 72%);
-    opacity: 0.6;
+    background: radial-gradient(circle, color-mix(in oklab, var(--primary) 24%, transparent), transparent 65%);
+    opacity: 0.3;
     animation: tokyo-float 12s ease-in-out infinite reverse;
   }
 

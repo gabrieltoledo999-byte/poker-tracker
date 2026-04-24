@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,17 +101,17 @@ function formatDate(d: Date | string): string {
 function BalanceHistoryPanel({ venueId, currency }: { venueId: number; currency: Currency }) {
   const { data: history, isLoading } = trpc.venues.getBalanceHistory.useQuery({ id: venueId, limit: 30 });
 
-  if (isLoading) return <div className="py-4 text-center text-xs text-muted-foreground">Carregando histórico...</div>;
+  if (isLoading) return <div className="py-4 text-center text-xs text-white/40">Carregando histórico...</div>;
   if (!history || history.length === 0)
     return (
-      <div className="py-6 text-center text-xs text-muted-foreground">
+      <div className="py-6 text-center text-xs text-white/40">
         Nenhum ajuste registrado ainda.<br />
         <span className="opacity-60">O histórico é criado automaticamente ao editar o saldo ou registrar sessões.</span>
       </div>
     );
 
   return (
-    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+    <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
       {history.map((entry: any) => {
         const isPositive = entry.delta >= 0;
         const changeLabel =
@@ -120,28 +119,28 @@ function BalanceHistoryPanel({ venueId, currency }: { venueId: number; currency:
           entry.changeType === "initial" ? "Saldo inicial" : "Ajuste manual";
         const changeCurrency = (entry.currency || currency) as Currency;
         return (
-          <div key={entry.id} className="flex items-start gap-3 py-2 border-b border-border/20 last:border-0">
-            <div className={`mt-0.5 h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
+          <div key={entry.id} className="flex items-start gap-3 border-b border-white/10 py-2 last:border-0">
+            <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
               isPositive ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
             }`}>
               {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium">{changeLabel}</span>
-                <span className={`text-xs font-bold shrink-0 ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
+                <span className="text-xs font-medium text-white/80">{changeLabel}</span>
+                <span className={`shrink-0 text-xs font-bold ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
                   {isPositive ? "+" : ""}{formatInCurrency(entry.delta, changeCurrency)}
                 </span>
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] text-muted-foreground">
+              <div className="mt-0.5 flex items-center gap-2">
+                <span className="text-[10px] text-white/40">
                   {formatInCurrency(entry.balanceBefore, changeCurrency)} → {formatInCurrency(entry.balanceAfter, changeCurrency)}
                 </span>
               </div>
               {entry.note && (
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5 italic">"{entry.note}"</p>
+                <p className="mt-0.5 text-[10px] italic text-white/40">"{entry.note}"</p>
               )}
-              <p className="text-[10px] text-muted-foreground/50 mt-0.5">{formatDate(entry.changedAt)}</p>
+              <p className="mt-0.5 text-[10px] text-white/30">{formatDate(entry.changedAt)}</p>
             </div>
           </div>
         );
@@ -191,9 +190,9 @@ function BalanceEditor({
   return (
     <div className="space-y-4">
       {/* Current balance display */}
-      <div className="bg-muted/30 rounded-xl p-4">
-        <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wide">Saldo atual</p>
-        <p className="text-2xl font-bold">{formatInCurrency(venue.balance, venue.currency as Currency)}</p>
+      <div className="rounded-xl bg-white/5 p-4">
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-white/50">Saldo atual</p>
+        <p className="text-2xl font-bold text-cyan-100">{formatInCurrency(venue.balance, venue.currency as Currency)}</p>
         {venue.currency !== "BRL" && rate && (
           <p className="text-xs text-muted-foreground mt-1">
             ≈ {formatBrl(Math.round(venue.balance * rate))} (cotação: {CURRENCY_SYMBOLS[venue.currency as Currency]} 1 = {formatBrl(Math.round(rate * 100))})
@@ -265,7 +264,7 @@ function BalanceEditor({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full h-8 text-xs gap-1.5 text-muted-foreground"
+          className="h-8 w-full gap-1.5 text-xs text-white/50 hover:text-white/80"
           onClick={() => setShowHistory(!showHistory)}
         >
           <History className="h-3.5 w-3.5" />
@@ -273,7 +272,7 @@ function BalanceEditor({
           {showHistory ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </Button>
         {showHistory && (
-          <div className="mt-2 border border-border/30 rounded-lg p-3">
+          <div className="mt-2 rounded-lg border border-white/10 p-3">
             <BalanceHistoryPanel venueId={venue.id} currency={venue.currency as Currency} />
           </div>
         )}
@@ -432,126 +431,131 @@ function VenueCard({
   const balanceBrl = rate ? Math.round(venue.balance * rate) : venue.balance;
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="pt-4 space-y-3">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-3">
-            {venue.logoUrl ? (
-              <img src={venue.logoUrl} alt={venue.name} className="h-16 w-16 rounded-lg object-contain bg-muted p-1.5" />
-            ) : (
-              <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
-                {venue.type === "online" ? <Monitor className="h-6 w-6 text-muted-foreground" /> : <MapPin className="h-6 w-6 text-muted-foreground" />}
-              </div>
-            )}
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold">{venue.name}</h3>
-                {isPreset && <Lock className="h-3 w-3 text-muted-foreground" />}
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  {venue.type === "online" ? <Monitor className="h-3 w-3" /> : <Users className="h-3 w-3" />}
-                  {venue.type === "online" ? "Online" : "Live"}
-                </span>
-                {venue.website && (
-                  <a href={venue.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary">
-                    <Globe className="h-3 w-3" /> Site
-                  </a>
-                )}
-              </div>
+    <div className="tokyo-chip rounded-2xl p-4 space-y-3">
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3">
+          {venue.logoUrl ? (
+            <img src={venue.logoUrl} alt={venue.name} className="h-14 w-14 rounded-xl object-contain bg-white/5 p-1.5" />
+          ) : (
+            <div className="h-12 w-12 rounded-xl bg-white/5 flex items-center justify-center">
+              {venue.type === "online" ? <Monitor className="h-6 w-6 text-white/40" /> : <MapPin className="h-6 w-6 text-white/40" />}
             </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {!isPreset && (
-              <>
-                <Button variant="ghost" size="icon" onClick={onEdit}><Edit className="h-4 w-4" /></Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Excluir local?</AlertDialogTitle>
-                      <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={onDelete}>Excluir</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Balance summary row */}
-        {venue.type === "online" && (
-          <div className="bg-muted/20 rounded-lg px-3 py-2.5 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">Saldo na plataforma</p>
-              <p className="text-lg font-bold">{formatInCurrency(venue.balance, currency)}</p>
-              {currency !== "BRL" && rate && (
-                <p className="text-xs text-muted-foreground">≈ {formatBrl(balanceBrl)}</p>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-cyan-100">{venue.name}</h3>
+              {isPreset && <Lock className="h-3 w-3 text-white/30" />}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-white/50">
+              <span className="flex items-center gap-1">
+                {venue.type === "online" ? <Monitor className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                {venue.type === "online" ? "Online" : "Live"}
+              </span>
+              {venue.website && (
+                <a href={venue.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-cyan-300 transition-colors">
+                  <Globe className="h-3 w-3" /> Site
+                </a>
               )}
             </div>
-            <Button
-              size="sm"
-              variant={showBalance ? "default" : "outline"}
-              className="h-8 gap-1.5 text-xs shrink-0"
-              onClick={() => setShowBalance(!showBalance)}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              {showBalance ? "Fechar" : "Editar"}
-            </Button>
           </div>
-        )}
+        </div>
+        <div className="flex items-center gap-1">
+          {!isPreset && (
+            <>
+              <Button variant="ghost" size="icon" onClick={onEdit} className="h-8 w-8 text-white/50 hover:text-cyan-300"><Edit className="h-4 w-4" /></Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-white/50 hover:text-red-400"><Trash2 className="h-4 w-4" /></Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Excluir local?</AlertDialogTitle>
+                    <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={onDelete}>Excluir</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
+        </div>
+      </div>
 
-        {/* Balance editor (expandable) */}
-        {venue.type === "online" && showBalance && (
-          <div className="border border-border/40 rounded-xl p-4 bg-card/60">
-            <BalanceEditor
-              venue={venue}
-              rates={rates}
-              onSave={(balance, cur, note) => {
-                onBalanceSave(balance, cur, note);
-                setShowBalance(false);
-              }}
-              isSaving={isSavingBalance}
-            />
+      {/* Balance summary row */}
+      {venue.type === "online" && (
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+          <div>
+            <p className="mb-0.5 text-xs text-white/45">Saldo na plataforma</p>
+            <p className="tokyo-data-value text-lg font-bold text-cyan-100">{formatInCurrency(venue.balance, currency)}</p>
+            {currency !== "BRL" && rate && (
+              <p className="text-xs text-white/40">≈ {formatBrl(balanceBrl)}</p>
+            )}
           </div>
-        )}
+          <Button
+            size="sm"
+            onClick={() => setShowBalance(!showBalance)}
+            className={`h-8 shrink-0 gap-1.5 text-xs transition-all ${
+              showBalance
+                ? "border border-cyan-400/50 bg-cyan-400/15 text-cyan-100"
+                : "border border-white/15 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"
+            }`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {showBalance ? "Fechar" : "Editar"}
+          </Button>
+        </div>
+      )}
 
-        {/* Session stats */}
-        {hasStats && (
-          <div className="grid grid-cols-4 gap-2 text-center border-t pt-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Sessões</p>
-              <p className="font-medium">{stats.sessions}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Lucro</p>
-              <p className={`font-bold text-sm flex items-center justify-center gap-0.5 ${stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {stats.totalProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {formatBrl(stats.totalProfit)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">ITM Rate</p>
-              <p className="font-medium">{itmRate}%</p>
-              <p className="text-[11px] text-muted-foreground">{itmCount}/{playedCount}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">R$/h</p>
-              <p className={`font-medium ${stats.avgHourlyRate >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {formatBrl(stats.avgHourlyRate)}
-              </p>
-            </div>
+      {/* Balance editor (expandable) */}
+      {venue.type === "online" && showBalance && (
+        <div className="rounded-xl border border-white/10 bg-white/3 p-4">
+          <BalanceEditor
+            venue={venue}
+            rates={rates}
+            onSave={(balance, cur, note) => {
+              onBalanceSave(balance, cur, note);
+              setShowBalance(false);
+            }}
+            isSaving={isSavingBalance}
+          />
+        </div>
+      )}
+
+      {/* Session stats */}
+      {hasStats && (
+        <div className="grid grid-cols-4 gap-2 border-t border-white/10 pt-3 text-center">
+          <div>
+            <p className="text-[11px] text-white/45">Sessões</p>
+            <p className="font-semibold text-white/80">{stats.sessions}</p>
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div>
+            <p className="text-[11px] text-white/45">Lucro</p>
+            <p className={`flex items-center justify-center gap-0.5 text-sm font-bold ${
+              stats.totalProfit >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}>
+              {stats.totalProfit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+              {formatBrl(stats.totalProfit)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] text-white/45">ITM Rate</p>
+            <p className="font-semibold text-white/80">{itmRate}%</p>
+            <p className="text-[10px] text-white/30">{itmCount}/{playedCount}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-white/45">R$/h</p>
+            <p className={`font-semibold ${
+              stats.avgHourlyRate >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}>
+              {formatBrl(stats.avgHourlyRate)}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -598,6 +602,20 @@ export default function Venues() {
   }, [primaryType]);
 
   const getVenueStats = (venueId: number) => venueStats?.find((s: any) => s.venueId === venueId);
+
+  const totalOnlineInBrl = useMemo(() => {
+    if (!venues) return null;
+    return venues
+      .filter((v: any) => v.type === "online")
+      .reduce((sum: number, v: any) => {
+        if (!v.balance) return sum;
+        if (v.currency === "BRL") return sum + v.balance;
+        const rate = rates?.[v.currency as "USD" | "CAD" | "JPY" | "CNY" | "EUR"]?.rate;
+        if (!rate) return sum;
+        return sum + Math.round(v.balance * rate);
+      }, 0);
+  }, [venues, rates]);
+
   const filteredVenues = useMemo(() => {
     const typed = (venues?.filter((v: any) => v.type === activeTab) || []);
     const personalized = sortVenues(typed, (venue) => venue.id);
@@ -612,22 +630,20 @@ export default function Venues() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
+        <Skeleton className="h-28 w-full rounded-3xl bg-white/5" />
         <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32" />)}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32 rounded-2xl bg-white/5" />)}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="tokyo-reviewer mx-auto w-full max-w-6xl space-y-4 px-2 py-3 pb-10">
+      <div className="tokyo-grid-overlay" />
       {/* Header */}
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_28%),linear-gradient(135deg,_rgba(6,16,14,0.98),_rgba(10,28,24,0.95))] p-5 text-white shadow-2xl sm:p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
           <div>
             <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Salas & Sites</h1>
             <p className="mt-1 text-sm text-zinc-300">Cadastre, edite e organize os lugares onde você joga.</p>
@@ -644,16 +660,44 @@ export default function Venues() {
         </div>
       </section>
 
+      {/* Total online balance summary */}
+      {totalOnlineInBrl !== null && (
+        <div className={`tokyo-panel rounded-2xl px-5 py-4 flex items-center justify-between gap-4 transition-all ${
+          activeTab === "online" ? "opacity-100" : "opacity-40 pointer-events-none"
+        }`}>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-white/50">Total nas plataformas online</p>
+            <p className="tokyo-data-value mt-0.5 text-2xl font-black text-cyan-100">{formatBrl(totalOnlineInBrl)}</p>
+            {venues && venues.filter((v: any) => v.type === "online" && v.balance > 0).length > 1 && (
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                {venues.filter((v: any) => v.type === "online" && v.balance > 0).map((v: any) => (
+                  <span key={v.id} className="text-[11px] text-white/35">
+                    {v.name}: {formatInCurrency(v.balance, v.currency as Currency)}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <Monitor className="h-8 w-8 shrink-0 text-cyan-400/30" />
+        </div>
+      )}
+
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "online" | "live")}>
-        <TabsList>
-          {playTypeOrder.map((type) => (
-            <TabsTrigger key={type} value={type} className="flex items-center gap-2">
-              {type === "online" ? <Monitor className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-              {type === "online" ? "Online" : "Live"} ({venues?.filter((v: any) => v.type === type).length || 0})
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="flex min-w-max gap-1 rounded-xl border border-cyan-400/20 bg-slate-950/55 p-1">
+            {playTypeOrder.map((type) => (
+              <TabsTrigger
+                key={type}
+                value={type}
+                className="gap-2 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]"
+              >
+                {type === "online" ? <Monitor className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+                {type === "online" ? "Online" : "Live"} ({venues?.filter((v: any) => v.type === type).length || 0})
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         <TabsContent value="online" className="mt-4">
           {filteredVenues.length > 0 ? (
@@ -674,11 +718,9 @@ export default function Venues() {
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                Nenhuma plataforma online cadastrada.
-              </CardContent>
-            </Card>
+            <div className="tokyo-panel rounded-2xl py-12 text-center text-white/40">
+              Nenhuma plataforma online cadastrada.
+            </div>
           )}
         </TabsContent>
 
@@ -701,11 +743,9 @@ export default function Venues() {
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                Nenhum local live cadastrado.
-              </CardContent>
-            </Card>
+            <div className="tokyo-panel rounded-2xl py-12 text-center text-white/40">
+              Nenhum local live cadastrado.
+            </div>
           )}
         </TabsContent>
       </Tabs>

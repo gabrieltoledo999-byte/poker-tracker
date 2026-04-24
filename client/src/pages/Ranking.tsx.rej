@@ -1,0 +1,214 @@
+diff a/client/src/pages/Ranking.tsx b/client/src/pages/Ranking.tsx	(rejected hunks)
+@@ -131,37 +134,33 @@ function LeaderboardTable({
+         return (
+           <div
+             key={player.userId}
+-            className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
+-              index < 3
+-                ? "border-primary/30 bg-primary/5"
+-                : "border-border bg-muted/20"
++            className={`tokyo-chip flex items-center gap-3 rounded-xl p-3 transition-all ${
++              index < 3 ? "border-amber-400/30 bg-amber-500/5" : ""
+             }`}
+           >
+-            {/* Position */}
+-            <div className="w-10 text-center font-bold text-lg shrink-0">
++            <div className="w-9 shrink-0 text-center text-lg font-black">
+               {getMedalEmoji(index + 1)}
+             </div>
+ 
+-            {/* Avatar + Name */}
+-            <Avatar className="h-10 w-10 shrink-0">
++            <Avatar className="h-9 w-9 shrink-0">
+               <AvatarImage src={player.avatarUrl ?? undefined} />
+               <AvatarFallback className="text-sm font-semibold">
+                 {(player.name ?? "?").slice(0, 2).toUpperCase()}
+               </AvatarFallback>
+             </Avatar>
+-            <div className="flex-1 min-w-0">
+-              <p className="font-semibold truncate">{player.name ?? "Jogador"}</p>
+-              <p className="text-xs text-muted-foreground">
+-                {player.totalSessions} sess├Áes ÔÇó {player.totalTables ?? 0} mesas ÔÇó {player.trophyCount ?? 0} trof├®us
++
++            <div className="min-w-0 flex-1">
++              <p className="truncate text-sm font-bold text-cyan-100">{player.name ?? "Jogador"}</p>
++              <p className="text-xs text-white/50">
++                {player.totalSessions} sess├Áes ┬À {player.totalTables ?? 0} mesas ┬À {player.trophyCount ?? 0} trof├®us
+               </p>
+             </div>
+ 
+-            {/* Stats ÔÇö reordered so active sort is always first/visible */}
+-            <div className="flex gap-4 shrink-0 text-right">
++            <div className="flex shrink-0 gap-4 text-right">
+               {orderedStats.map((stat, i) => (
+                 <div key={stat.key} className={responsiveClasses[i]}>
+-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
+-                  <p className={`font-bold text-sm ${stat.colorClass(player)}`}>
++                  <p className="text-[11px] text-white/45">{stat.label}</p>
++                  <p className={`tokyo-data-value text-sm font-bold ${stat.colorClass(player)}`}>
+                     {stat.value(player)}
+                   </p>
+                 </div>
+@@ -239,83 +240,91 @@ export default function Ranking() {
+         </p>
+       </section>
+ 
+-      <div className="grid gap-4">
+-      <Card className={!consentAnswered ? "border-amber-500/40 bg-amber-50/40" : undefined}>
+-        <CardHeader className="pb-3">
+-          <CardTitle className="text-lg flex items-center gap-2">
+-            <ShieldAlert className="h-5 w-5" /> Consentimento de Ranking
+-          </CardTitle>
+-        </CardHeader>
+-        <CardContent className="space-y-3">
+-          {!consentAnswered && (
+-            <p className="text-sm text-muted-foreground">
+-              Voc├¬ ainda n├úo respondeu se quer participar do ranking. Nada deve aparecer automaticamente at├® essa escolha ser salva.
+-            </p>
+-          )}
+-          <div className="flex flex-wrap gap-2">
+-            <Button type="button" variant={showInGlobalRanking ? "default" : "outline"} onClick={() => setShowInGlobalRanking((prev) => !prev)}>
+-              Global {showInGlobalRanking ? "Ativo" : "Desativado"}
+-            </Button>
+-            <Button type="button" variant={showInFriendsRanking ? "default" : "outline"} onClick={() => setShowInFriendsRanking((prev) => !prev)}>
+-              Amigos {showInFriendsRanking ? "Ativo" : "Desativado"}
+-            </Button>
+-          </div>
+-          <div className="flex items-center gap-2">
+-            <Button onClick={handleSaveConsent} disabled={saveConsentMutation.isPending}>
+-              {saveConsentMutation.isPending ? "Salvando..." : "Salvar consentimento"}
+-            </Button>
+-            {consentAnswered && (
+-              <Badge variant="secondary">Respondido</Badge>
+-            )}
+-          </div>
+-        </CardContent>
+-      </Card>
++      {/* Consentimento */}
++      <div className={`tokyo-panel rounded-2xl p-5 ${!consentAnswered ? "border-amber-500/40" : ""}`}>
++        <div className="mb-3 flex items-center gap-2">
++          <ShieldAlert className="h-5 w-5 text-amber-300" />
++          <p className="text-base font-semibold text-cyan-100">Consentimento de Ranking</p>
++          {consentAnswered && <Badge variant="secondary" className="ml-auto text-xs">Respondido</Badge>}
++        </div>
++        {!consentAnswered && (
++          <p className="mb-3 text-sm text-white/60">
++            Voc├¬ ainda n├úo respondeu se quer participar do ranking. Nada aparece automaticamente at├® essa escolha ser salva.
++          </p>
++        )}
++        <div className="flex flex-wrap gap-2">
++          <Button
++            type="button"
++            size="sm"
++            onClick={() => setShowInGlobalRanking((prev) => !prev)}
++            className={`text-xs transition-all ${showInGlobalRanking ? "bg-cyan-400/20 border border-cyan-400/50 text-cyan-100" : "border border-white/15 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"}`}
++          >
++            <Globe className="mr-1 h-3 w-3" /> Global {showInGlobalRanking ? "Ativo" : "Desativado"}
++          </Button>
++          <Button
++            type="button"
++            size="sm"
++            onClick={() => setShowInFriendsRanking((prev) => !prev)}
++            className={`text-xs transition-all ${showInFriendsRanking ? "bg-cyan-400/20 border border-cyan-400/50 text-cyan-100" : "border border-white/15 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"}`}
++          >
++            <Users className="mr-1 h-3 w-3" /> Amigos {showInFriendsRanking ? "Ativo" : "Desativado"}
++          </Button>
++          <Button
++            size="sm"
++            onClick={handleSaveConsent}
++            disabled={saveConsentMutation.isPending}
++            className="bg-cyan-400 text-slate-950 hover:bg-cyan-300 text-xs"
++          >
++            {saveConsentMutation.isPending ? "Salvando..." : "Salvar consentimento"}
++          </Button>
++        </div>
+       </div>
+ 
++      {/* Tabs */}
+       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "global" | "friends")}>
+-        <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+-          <TabsTrigger value="global" className="gap-2">
+-            <Globe className="h-4 w-4" /> Global
+-          </TabsTrigger>
+-          <TabsTrigger value="friends" className="gap-2">
+-            <Users className="h-4 w-4" /> Amigos
+-          </TabsTrigger>
+-        </TabsList>
++        <div className="overflow-x-auto pb-1">
++          <TabsList className="flex min-w-max gap-1 rounded-xl border border-cyan-400/20 bg-slate-950/55 p-1">
++            <TabsTrigger
++              value="global"
++              className="gap-2 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]"
++            >
++              <Globe className="h-4 w-4" /> Global
++            </TabsTrigger>
++            <TabsTrigger
++              value="friends"
++              className="gap-2 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]"
++            >
++              <Users className="h-4 w-4" /> Amigos
++            </TabsTrigger>
++          </TabsList>
++        </div>
+ 
+-        <TabsContent value="global">
+-          <Card>
+-            <CardHeader>
+-              <CardTitle className="text-lg flex items-center gap-2">
+-                <Globe className="h-5 w-5" /> Ranking Global
+-              </CardTitle>
+-            </CardHeader>
+-            <CardContent>
+-              <LeaderboardTable
+-                data={globalData ?? []}
+-                isLoading={loadingGlobal}
+-                sortBy={sortBy}
+-                onSortChange={setSortBy}
+-              />
+-            </CardContent>
+-          </Card>
++        <TabsContent value="global" className="mt-4">
++          <div className="tokyo-panel rounded-2xl p-4">
++            <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-cyan-100">
++              <Globe className="h-4 w-4" /> Ranking Global
++            </p>
++            <LeaderboardTable
++              data={globalData ?? []}
++              isLoading={loadingGlobal}
++              sortBy={sortBy}
++              onSortChange={setSortBy}
++            />
++          </div>
+         </TabsContent>
+ 
+-        <TabsContent value="friends">
+-          <Card>
+-            <CardHeader>
+-              <CardTitle className="text-lg flex items-center gap-2">
+-                <Users className="h-5 w-5" /> Ranking de Amigos
+-              </CardTitle>
+-            </CardHeader>
+-            <CardContent>
+-              <LeaderboardTable
+-                data={friendsData ?? []}
+-                isLoading={loadingFriends}
+-                sortBy={sortBy}
+-                onSortChange={setSortBy}
+-              />
+-            </CardContent>
+-          </Card>
++        <TabsContent value="friends" className="mt-4">
++          <div className="tokyo-panel rounded-2xl p-4">
++            <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-cyan-100">
++              <Users className="h-4 w-4" /> Ranking de Amigos
++            </p>
++            <LeaderboardTable
++              data={friendsData ?? []}
++              isLoading={loadingFriends}
++              sortBy={sortBy}
++              onSortChange={setSortBy}
++            />
++          </div>
+         </TabsContent>
+       </Tabs>
+     </div>

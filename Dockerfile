@@ -15,6 +15,9 @@ RUN pnpm install --frozen-lockfile
 # Copy the rest of the source
 COPY . .
 
+# Force cache bust on each deploy
+ARG CACHEBUST=20260421p
+
 # Build the project
 RUN pnpm build
 

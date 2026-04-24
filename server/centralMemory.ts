@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import {
   centralHandActions,
   centralHands,
@@ -17,6 +17,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { getDb } from "./db";
+import { equityAtAllIn } from "./equity";
 
 type AbiBucket = "micro" | "low" | "low_mid" | "mid" | "high" | "high_roller";
 
@@ -127,6 +128,43 @@ function normalizePlayerName(name: string | undefined): string {
     .trim();
 }
 
+function normalizeStoredPosition(position: string | undefined): "UTG" | "UTG1" | "UTG2" | "LJ" | "HJ" | "CO" | "BTN" | "SB" | "BB" | "UNKNOWN" {
+  const normalized = String(position ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/\+/g, "");
+
+  switch (normalized) {
+    case "UTG":
+      return "UTG";
+    case "UTG1":
+    case "EP":
+      return "UTG1";
+    case "UTG2":
+    case "EP1":
+      return "UTG2";
+    case "MP":
+    case "MP1":
+    case "LJ":
+      return "LJ";
+    case "MP2":
+    case "HJ":
+      return "HJ";
+    case "CO":
+      return "CO";
+    case "BTN":
+    case "BU":
+      return "BTN";
+    case "SB":
+      return "SB";
+    case "BB":
+      return "BB";
+    default:
+      return "UNKNOWN";
+  }
+}
+
 function inferHeroFromFlags(actions: ReplayActionInput[]): string {
   const counts = new Map<string, number>();
   for (const action of actions) {
@@ -159,6 +197,45 @@ function normalizeCards(value: string | undefined): string {
 
 function normalizeId(value: string | undefined): string {
   return String(value ?? "").trim();
+}
+
+function getFirstAggressiveActionIndex(actions: ReplayActionInput[]): number {
+  return actions.findIndex((action) => isAggressiveAction(action));
+}
+
+function getTrueFlopCbetActor(flopActions: ReplayActionInput[], preflopAggressorName: string): string {
+  const firstAggressiveIndex = getFirstAggressiveActionIndex(flopActions);
+  if (firstAggressiveIndex < 0) return "";
+
+  const firstAggressiveAction = flopActions[firstAggressiveIndex];
+  if (!firstAggressiveAction || isOutlierCbetAction(firstAggressiveAction)) return "";
+
+  const actorName = normalizePlayerName(firstAggressiveAction.playerName);
+  return actorName === preflopAggressorName ? actorName : "";
+}
+
+function getDirectHeroResponseToFlopCbetIndex(
+  flopActions: ReplayActionInput[],
+  villainCbetIndex: number,
+  isHeroAction: (action: ReplayActionInput) => boolean,
+): number {
+  for (let index = villainCbetIndex + 1; index < flopActions.length; index += 1) {
+    const action = flopActions[index];
+    if (!action) continue;
+
+    if (isHeroAction(action)) {
+      return index;
+    }
+
+    const normalizedType = String(action.actionType ?? "").trim().toLowerCase();
+    if (normalizedType === "fold" || normalizedType === "check") {
+      continue;
+    }
+
+    return -1;
+  }
+
+  return -1;
 }
 
 type ReplayHandFingerprint = {
@@ -301,6 +378,84 @@ function hasConsecutiveFingerprintMatch(a: string[], b: string[], windowSize: nu
   return false;
 }
 
+async function deleteTournamentCascade(db: any, userId: number, tournamentId: number) {
+  await db.delete(centralHandActions).where(and(eq(centralHandActions.userId, userId), eq(centralHandActions.tournamentId, tournamentId)));
+  await db.delete(showdownRecords).where(and(eq(showdownRecords.userId, userId), eq(showdownRecords.tournamentId, tournamentId)));
+  await db.delete(playerTournamentStats).where(and(eq(playerTournamentStats.userId, userId), eq(playerTournamentStats.tournamentId, tournamentId)));
+  await db.delete(centralHands).where(and(eq(centralHands.userId, userId), eq(centralHands.tournamentId, tournamentId)));
+  await db.delete(centralTournaments).where(and(eq(centralTournaments.userId, userId), eq(centralTournaments.id, tournamentId)));
+}
+
+async function persistTournamentStats(
+  db: any,
+  userId: number,
+  tournamentId: number,
+  input: ImportReplayInput,
+  abiBucket: string,
+  totalCost: number,
+) {
+  const tournamentAnalysis = await analyzeReplayTournament(input);
+
+  await db.delete(playerTournamentStats).where(
+    and(eq(playerTournamentStats.userId, userId), eq(playerTournamentStats.tournamentId, tournamentId)),
+  );
+
+  await db.insert(playerTournamentStats).values({
+    userId,
+    tournamentId,
+    handsPlayed: input.hands.length,
+    vpip: Number(tournamentAnalysis.stats.vpip ?? 0),
+    pfr: Number(tournamentAnalysis.stats.pfr ?? 0),
+    threeBet: Number(tournamentAnalysis.stats.threeBet ?? 0),
+    cbetFlop: Number(tournamentAnalysis.stats.cbetFlop ?? 0),
+    cbetTurn: Number(tournamentAnalysis.stats.cbetTurn ?? 0),
+    foldToCbet: Number(tournamentAnalysis.stats.foldToCbet ?? 0),
+    bbDefense: Number(tournamentAnalysis.stats.bbDefense ?? 0),
+    stealAttempt: Number(tournamentAnalysis.stats.attemptToSteal ?? 0),
+    aggressionFactor: Math.round(Number(tournamentAnalysis.stats.aggressionFactor ?? 0)),
+    wtsd: Number(tournamentAnalysis.stats.wtsd ?? 0),
+    wsd: Number(tournamentAnalysis.stats.wsd ?? 0),
+    finalPosition: input.tournament.finalPosition ?? null,
+    abiBucket,
+    totalCost,
+  });
+}
+
+async function finalizeImportedReplay(
+  db: any,
+  userId: number,
+  tournamentId: number,
+  input: ImportReplayInput,
+  abiBucket: string,
+  totalCost: number,
+  site: string,
+  allowFieldAggregation: boolean,
+) {
+  await persistTournamentStats(db, userId, tournamentId, input, abiBucket, totalCost);
+  await refreshUserAbiAggregates(userId);
+  if (allowFieldAggregation) {
+    await refreshFieldAbiAggregates(site, abiBucket);
+  }
+}
+
+async function reuseExistingReplayImport(
+  db: any,
+  userId: number,
+  tournamentId: number,
+  input: ImportReplayInput,
+  abiBucket: string,
+  totalCost: number,
+  site: string,
+  allowFieldAggregation: boolean,
+) {
+  await finalizeImportedReplay(db, userId, tournamentId, input, abiBucket, totalCost, site, allowFieldAggregation);
+  return {
+    tournamentId,
+    handsImported: input.hands.length,
+    reusedExisting: true,
+  };
+}
+
 function toPct(numerator: number, denominator: number): number {
   if (denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 100);
@@ -337,6 +492,35 @@ function isVoluntaryPreflopAction(action: { actionType?: string; isForced?: bool
   return type === "call" || type === "bet" || type === "raise" || type === "all_in";
 }
 
+const CBET_ALL_IN_OUTLIER_MULTIPLIER = 10;
+
+function getActionCommitAmount(action: { amount?: number | null; toAmount?: number | null }): number {
+  const amount = Number(action.amount ?? 0);
+  if (amount > 0) return amount;
+  const toAmount = Number(action.toAmount ?? 0);
+  return toAmount > 0 ? toAmount : 0;
+}
+
+function isOutlierCbetAction(action: {
+  actionType?: string;
+  isAllIn?: boolean | number | null;
+  amount?: number | null;
+  toAmount?: number | null;
+  potBefore?: number | null;
+}): boolean {
+  if (!isAggressiveAction({ actionType: action.actionType })) return false;
+  const isAllInFlag = action.isAllIn === true || Number(action.isAllIn ?? 0) === 1;
+  if (!isAllInFlag) return false;
+
+  const potBefore = Number(action.potBefore ?? 0);
+  if (potBefore <= 0) return false;
+
+  const commitAmount = getActionCommitAmount(action);
+  if (commitAmount <= 0) return false;
+
+  return commitAmount >= (potBefore * CBET_ALL_IN_OUTLIER_MULTIPLIER);
+}
+
 type LiveHistoricalStats = {
   hands: number;
   vpip: number;
@@ -350,13 +534,36 @@ type LiveHistoricalStats = {
   aggressionFactor: number;
   wtsd: number;
   wsd: number;
+  opportunities: {
+    hands: number;
+    cbetFlop: number;
+    cbetTurn: number;
+    foldToCbet: number;
+    bbDefense: number;
+    steal: number;
+    aggressionActions: number;
+    aggressionCalls: number;
+    showdownHands: number;
+  };
 };
 
 async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Promise<LiveHistoricalStats | null> {
+  const [userRow] = await db
+    .select({
+      name: users.name,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const profileHeroName = normalizePlayerName(userRow?.name ?? undefined);
+
   const hands = await db
     .select({
       id: centralHands.id,
+      tournamentId: centralHands.tournamentId,
       heroSeat: centralHands.heroSeat,
+      heroCards: centralHands.heroCards,
       heroPosition: centralHands.heroPosition,
       showdown: centralHands.showdown,
       result: centralHands.result,
@@ -374,6 +581,10 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
       playerName: centralHandActions.playerName,
       seat: centralHandActions.seat,
       actionType: centralHandActions.actionType,
+      amount: centralHandActions.amount,
+      toAmount: centralHandActions.toAmount,
+      potBefore: centralHandActions.potBefore,
+      isAllIn: centralHandActions.isAllIn,
       isForced: centralHandActions.isForced,
       heroInHand: centralHandActions.heroInHand,
     })
@@ -398,6 +609,10 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
       playerName: action.playerName,
       seat: action.seat,
       actionType: action.actionType,
+      amount: action.amount,
+      toAmount: action.toAmount,
+      potBefore: action.potBefore,
+      isAllIn: action.isAllIn,
       isForced: action.isForced,
       heroInHand: action.heroInHand,
     });
@@ -422,10 +637,18 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
 
   for (const hand of hands) {
     const handId = Number(hand.id);
+    const heroName = profileHeroName;
     const handActions = actionsByHand.get(handId) ?? [];
     const heroSeat = Number(hand.heroSeat ?? 0);
-    const isHeroAction = (action: { heroInHand?: number | null; seat?: number | null }) => Number(action.heroInHand ?? 0) === 1
-      || (heroSeat > 0 && Number(action.seat ?? 0) === heroSeat);
+    const hasHeroCards = String(hand.heroCards ?? "").trim().length > 0;
+    const isHeroAction = (action: { heroInHand?: number | null; seat?: number | null; playerName?: string | null }) => Number(action.heroInHand ?? 0) === 1
+      || (heroSeat > 0 && Number(action.seat ?? 0) === heroSeat)
+      || (heroName.length > 0 && normalizePlayerName(action.playerName ?? undefined) === heroName);
+    const hasHeroNonForcedAction = handActions.some(
+      (action) => isHeroAction(action) && Number(action.isForced ?? 0) !== 1,
+    );
+    if (!hasHeroCards && !hasHeroNonForcedAction) continue;
+
     const preflop = handActions.filter((a) => normalizeStreet(a.street ?? undefined) === "preflop");
     const heroPreflop = preflop.filter((a) => isHeroAction(a));
 
@@ -446,23 +669,28 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     const preflopAggressorName = normalizePlayerName(preflopAggressor?.playerName ?? undefined);
 
     const flop = handActions.filter((a) => normalizeStreet(a.street ?? undefined) === "flop");
+    const flopCbetActor = flop.length > 0 ? getTrueFlopCbetActor(flop, preflopAggressorName) : "";
     let heroCbetFlopThisHand = false;
-    if (preflopAggressorIsHero) {
+    if (preflopAggressorIsHero && flop.length > 0) {
       cbetOpportunities += 1;
-      const heroFlopCbet = flop.some((a) => isHeroAction(a) && isAggressiveAction({ actionType: a.actionType ?? undefined }));
+      const heroFlopCbet = flopCbetActor.length > 0 && flopCbetActor === normalizePlayerName(profileHeroName);
       if (heroFlopCbet) cbetMade += 1;
       heroCbetFlopThisHand = heroFlopCbet;
-    } else if (preflopAggressorName) {
-      const firstHeroFlopActionIndex = flop.findIndex((a) => isHeroAction(a));
-      if (firstHeroFlopActionIndex >= 0) {
-        const villainCbetBeforeHero = flop.slice(0, firstHeroFlopActionIndex).some(
-          (a) => normalizePlayerName(a.playerName ?? undefined) === preflopAggressorName
-            && isAggressiveAction({ actionType: a.actionType ?? undefined }),
+    } else if (preflopAggressorName && !preflopAggressorIsHero && flopCbetActor === preflopAggressorName) {
+      const villainCbetIndex = flop.findIndex(
+        (a) => normalizePlayerName(a.playerName ?? undefined) === preflopAggressorName
+          && isAggressiveAction({ actionType: a.actionType ?? undefined }),
+      );
+      if (villainCbetIndex >= 0) {
+        const firstHeroResponseIndex = getDirectHeroResponseToFlopCbetIndex(
+          flop,
+          villainCbetIndex,
+          isHeroAction,
         );
-        if (villainCbetBeforeHero) {
+        if (firstHeroResponseIndex >= 0) {
           foldToCbetOpportunities += 1;
-          const firstHeroAction = flop[firstHeroFlopActionIndex];
-          if (firstHeroAction && isFoldAction({ actionType: firstHeroAction.actionType ?? undefined })) {
+          const heroResponse = flop[firstHeroResponseIndex];
+          if (heroResponse && isFoldAction({ actionType: heroResponse.actionType ?? undefined })) {
             foldToCbetCount += 1;
           }
         }
@@ -511,8 +739,23 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     }
   }
 
-  const handsCount = hands.length;
-  const showdownHands = hands.filter((h) => Number(h.showdown ?? 0) === 1);
+  const eligibleHands = hands.filter((hand) => {
+    const handId = Number(hand.id ?? 0);
+    const heroName = profileHeroName;
+    const handActions = actionsByHand.get(handId) ?? [];
+    const heroSeat = Number(hand.heroSeat ?? 0);
+    const hasHeroCards = String(hand.heroCards ?? "").trim().length > 0;
+    const hasHeroNonForcedAction = handActions.some((action) => {
+      const isHero = Number(action.heroInHand ?? 0) === 1
+        || (heroSeat > 0 && Number(action.seat ?? 0) === heroSeat)
+        || (heroName.length > 0 && normalizePlayerName(action.playerName ?? undefined) === heroName);
+      return isHero && Number(action.isForced ?? 0) !== 1;
+    });
+    return hasHeroCards || hasHeroNonForcedAction;
+  });
+
+  const handsCount = eligibleHands.length;
+  const showdownHands = eligibleHands.filter((h) => Number(h.showdown ?? 0) === 1);
   const wonAtShowdown = showdownHands.filter((h) => Number(h.result ?? 0) > 0).length;
 
   return {
@@ -528,6 +771,17 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     aggressionFactor: callActions > 0 ? round2(aggressionActions / callActions) : (aggressionActions > 0 ? round2(aggressionActions) : 0),
     wtsd: toPct(showdownHands.length, handsCount),
     wsd: toPct(wonAtShowdown, showdownHands.length),
+    opportunities: {
+      hands: handsCount,
+      cbetFlop: cbetOpportunities,
+      cbetTurn: cbetTurnOpportunities,
+      foldToCbet: foldToCbetOpportunities,
+      bbDefense: bbDefenseOpportunities,
+      steal: stealOpportunities,
+      aggressionActions,
+      aggressionCalls: callActions,
+      showdownHands: showdownHands.length,
+    },
   };
 }
 
@@ -576,6 +830,44 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
   let stealAttemptCount = 0;
   let aggressionActions = 0;
   let callActions = 0;
+  // extended metrics
+  let rfiOpportunities = 0;
+  let rfiAttempts = 0;
+  let coldCallOpportunities = 0;
+  let coldCallCount = 0;
+  let squeezeOpportunities = 0;
+  let squeezeCount = 0;
+  let restealOpportunities = 0;
+  let restealCount = 0;
+  let foldToStealOpportunities = 0;
+  let foldToStealCount = 0;
+  let foldTo3BetOpportunities = 0;
+  let foldTo3BetCount = 0;
+  let cbetIpOpportunities = 0;
+  let cbetIpMade = 0;
+  let cbetOopOpportunities = 0;
+  let cbetOopMade = 0;
+  let floatFlopOpportunities = 0;
+  let floatFlopCount = 0;
+  let checkRaiseFlopOpportunities = 0;
+  let checkRaiseFlopCount = 0;
+
+  // === All-in Adj (EV BB/100) ===
+  // Soma o resultado em BB "ajustado pela sorte":
+  //  - Para mãos sem all-in do hero pré-showdown: usa o resultado real em BB.
+  //  - Para mãos com all-in do hero e cartas dos vilões visíveis: usa EV em BB
+  //    (equity × pote total − investimento do hero), dividido pelo big blind.
+  let allInAdjTotalBb = 0;
+  let allInAdjHandsCount = 0; // mãos cujo EV foi recalculado (amostra de all-in)
+  let allInAdjSkipped = 0; // mãos de all-in descartadas por falta de dados
+
+  // indexa showdowns por handRef
+  const showdownsByHand = new Map<string, ReplayShowdownInput[]>();
+  for (const sd of input.showdowns) {
+    const bucket = showdownsByHand.get(sd.handRef) ?? [];
+    bucket.push(sd);
+    showdownsByHand.set(sd.handRef, bucket);
+  }
 
   for (const hand of hands) {
     const handActions = actionsByHand.get(hand.handRef) ?? [];
@@ -619,23 +911,27 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
 
     const flop = handActions.filter((a) => normalizeStreet(a.street) === "flop");
     let heroCbetFlopThisHand = false;
-    if (preflopAggressorName === heroName) {
+    const flopCbetActor = flop.length > 0 ? getTrueFlopCbetActor(flop, preflopAggressorName) : "";
+
+    if (preflopAggressorName === heroName && flop.length > 0) {
       cbetOpportunities += 1;
-      const heroFlopCbet = flop.some(
-        (a) => normalizePlayerName(a.playerName) === heroName && isAggressiveAction(a),
-      );
+      const heroFlopCbet = flopCbetActor === heroName;
       if (heroFlopCbet) cbetMade += 1;
       heroCbetFlopThisHand = heroFlopCbet;
-    } else if (preflopAggressorName && preflopAggressorName !== heroName) {
-      const firstHeroFlopActionIndex = flop.findIndex((a) => normalizePlayerName(a.playerName) === heroName);
-      if (firstHeroFlopActionIndex >= 0) {
-        const villainCbetBeforeHero = flop.slice(0, firstHeroFlopActionIndex).some(
-          (a) => normalizePlayerName(a.playerName) === preflopAggressorName && isAggressiveAction(a),
+    } else if (preflopAggressorName && preflopAggressorName !== heroName && flopCbetActor === preflopAggressorName) {
+      const villainCbetIndex = flop.findIndex(
+        (a) => normalizePlayerName(a.playerName) === preflopAggressorName && isAggressiveAction(a),
+      );
+      if (villainCbetIndex >= 0) {
+        const firstHeroResponseIndex = getDirectHeroResponseToFlopCbetIndex(
+          flop,
+          villainCbetIndex,
+          (action) => normalizePlayerName(action.playerName) === heroName,
         );
-        if (villainCbetBeforeHero) {
+        if (firstHeroResponseIndex >= 0) {
           foldToCbetOpportunities += 1;
-          const firstHeroAction = flop[firstHeroFlopActionIndex];
-          if (firstHeroAction && isFoldAction(firstHeroAction)) {
+          const heroResponse = flop[firstHeroResponseIndex];
+          if (heroResponse && isFoldAction(heroResponse)) {
             foldToCbetCount += 1;
           }
         }
@@ -688,10 +984,203 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       }
     }
 
+    // === Extended preflop metrics (RFI / Cold Call / Squeeze / Fold-to-Steal / Resteal) ===
+    const heroFirstVoluntaryIdx = preflop.findIndex(
+      (a) => normalizePlayerName(a.playerName) === heroName && !a.isForced,
+    );
+    if (heroFirstVoluntaryIdx >= 0) {
+      const priorActions = preflop.slice(0, heroFirstVoluntaryIdx);
+      const priorVoluntary = priorActions.filter((a) => !a.isForced);
+      const priorRaises = priorVoluntary.filter((a) => isAggressiveAction(a));
+      const priorCalls = priorVoluntary.filter((a) => isCallAction(a));
+      const heroFirstAction = preflop[heroFirstVoluntaryIdx];
+
+      // RFI: hero é o primeiro a entrar voluntariamente no pote via raise
+      if (priorVoluntary.length === 0 && heroPosition !== "BB") {
+        rfiOpportunities += 1;
+        if (heroFirstAction && isAggressiveAction(heroFirstAction)) rfiAttempts += 1;
+      }
+
+      // Cold Call: enfrenta 1 raise, sem callers prévios, decide
+      if (priorRaises.length === 1 && priorCalls.length === 0) {
+        coldCallOpportunities += 1;
+        if (heroFirstAction && isCallAction(heroFirstAction)) coldCallCount += 1;
+      }
+
+      // Squeeze: 1 raise + >=1 caller na frente, decide aumentar
+      if (priorRaises.length === 1 && priorCalls.length >= 1) {
+        squeezeOpportunities += 1;
+        if (heroFirstAction && isAggressiveAction(heroFirstAction)) squeezeCount += 1;
+      }
+
+      // Fold-to-Steal / Resteal: hero em blind contra 1 raise solo
+      if ((heroPosition === "SB" || heroPosition === "BB") && priorRaises.length === 1 && priorCalls.length === 0) {
+        foldToStealOpportunities += 1;
+        restealOpportunities += 1;
+        if (heroFirstAction && isFoldAction(heroFirstAction)) foldToStealCount += 1;
+        if (heroFirstAction && isAggressiveAction(heroFirstAction)) restealCount += 1;
+      }
+    }
+
+    // === Fold to 3-bet ===
+    if (heroPreflopAggression) {
+      const heroFirstAggIdx = preflop.findIndex(
+        (a) => normalizePlayerName(a.playerName) === heroName && isAggressiveAction(a),
+      );
+      if (heroFirstAggIdx >= 0) {
+        const afterHeroRaise = preflop.slice(heroFirstAggIdx + 1);
+        const villain3BetIdx = afterHeroRaise.findIndex(
+          (a) => normalizePlayerName(a.playerName) !== heroName && isAggressiveAction(a),
+        );
+        if (villain3BetIdx >= 0) {
+          const postThreeBet = afterHeroRaise.slice(villain3BetIdx + 1);
+          const heroResponse = postThreeBet.find((a) => normalizePlayerName(a.playerName) === heroName);
+          if (heroResponse) {
+            foldTo3BetOpportunities += 1;
+            if (isFoldAction(heroResponse)) foldTo3BetCount += 1;
+          }
+        }
+      }
+    }
+
+    // === C-bet IP / OOP split ===
+    if (preflopAggressorName === heroName && flop.length > 0) {
+      const heroFlopIdx = flop.findIndex((a) => normalizePlayerName(a.playerName) === heroName);
+      if (heroFlopIdx > 0) {
+        cbetIpOpportunities += 1;
+        if (heroCbetFlopThisHand) cbetIpMade += 1;
+      } else if (heroFlopIdx === 0) {
+        cbetOopOpportunities += 1;
+        if (heroCbetFlopThisHand) cbetOopMade += 1;
+      }
+    }
+
+    // === Float Flop: hero IP, pagou c-bet flop, agrediu turn ===
+    if (preflopAggressorName && preflopAggressorName !== heroName && flop.length > 0) {
+      const heroFlopIdx = flop.findIndex((a) => normalizePlayerName(a.playerName) === heroName);
+      if (heroFlopIdx > 0) {
+        const heroFlopAction = flop[heroFlopIdx];
+        const villainCbetBeforeHero = flop.slice(0, heroFlopIdx).some(
+          (a) => normalizePlayerName(a.playerName) === preflopAggressorName && isAggressiveAction(a),
+        );
+        if (villainCbetBeforeHero && heroFlopAction && isCallAction(heroFlopAction)) {
+          floatFlopOpportunities += 1;
+          const heroTurnAgg = turn.some(
+            (a) => normalizePlayerName(a.playerName) === heroName && isAggressiveAction(a),
+          );
+          if (heroTurnAgg) floatFlopCount += 1;
+        }
+      }
+    }
+
+    // === Check-raise Flop: hero checka flop, vilão aposta, hero aumenta ===
+    if (flop.length > 0) {
+      const heroFlopIdx = flop.findIndex((a) => normalizePlayerName(a.playerName) === heroName);
+      if (heroFlopIdx >= 0 && normalizeActionType(flop[heroFlopIdx].actionType) === "check") {
+        const afterHero = flop.slice(heroFlopIdx + 1);
+        const villainBetIdx = afterHero.findIndex(
+          (a) => normalizePlayerName(a.playerName) !== heroName && isAggressiveAction(a),
+        );
+        if (villainBetIdx >= 0) {
+          checkRaiseFlopOpportunities += 1;
+          const heroAfterBet = afterHero.slice(villainBetIdx + 1).find(
+            (a) => normalizePlayerName(a.playerName) === heroName,
+          );
+          if (heroAfterBet && isAggressiveAction(heroAfterBet)) {
+            checkRaiseFlopCount += 1;
+          }
+        }
+      }
+    }
+
     for (const action of heroActions) {
       if (isCallAction(action)) callActions += 1;
       if (isAggressiveAction(action)) aggressionActions += 1;
     }
+
+    // === All-in Adj (EV BB/100) ===
+    // Default: contribui com o resultado real (em BB) da mão.
+    let adjustedBb = handResultBb;
+    if (handBigBlind > 0) {
+      // Detecta primeiro all-in do hero antes do showdown
+      const heroAllInIdx = handActions.findIndex(
+        (a) => normalizePlayerName(a.playerName) === heroName
+          && (a.isAllIn === true || normalizeActionType(a.actionType) === "all_in")
+          && normalizeStreet(a.street) !== "showdown"
+          && normalizeStreet(a.street) !== "summary",
+      );
+
+      if (heroAllInIdx >= 0) {
+        const showdowns = showdownsByHand.get(hand.handRef) ?? [];
+        const heroShowdown = showdowns.find(
+          (s) => normalizePlayerName(s.playerName) === heroName,
+        );
+        const villainShowdowns = showdowns.filter(
+          (s) => normalizePlayerName(s.playerName) !== heroName
+            && typeof s.holeCards === "string"
+            && s.holeCards.trim().length >= 4,
+        );
+
+        const heroCardsRaw = heroShowdown?.holeCards ?? hand.heroCards;
+        const heroCards = normalizeCards(heroCardsRaw).split(/\s+/).filter(Boolean);
+        const villainCards = villainShowdowns.map((s) => normalizeCards(s.holeCards).split(/\s+/).filter(Boolean));
+
+        // Board conhecido até a rua do all-in (flop/turn/river → 3/4/5 cartas; preflop → 0)
+        const boardFull = normalizeCards(hand.board).split(/\s+/).filter(Boolean);
+        const streetAtAllIn = normalizeStreet(handActions[heroAllInIdx].street);
+        const knownBoardLen = streetAtAllIn === "preflop"
+          ? 0
+          : streetAtAllIn === "flop"
+          ? 3
+          : streetAtAllIn === "turn"
+          ? 4
+          : 5;
+        const knownBoard = boardFull.slice(0, Math.min(knownBoardLen, boardFull.length));
+
+        const qualified = heroCards.length === 2
+          && villainCards.length >= 1
+          && villainCards.every((v) => v.length === 2);
+
+        if (qualified) {
+          try {
+            const eq = equityAtAllIn({
+              heroHole: heroCards,
+              villainHoles: villainCards,
+              knownBoard,
+              maxSamples: 20000,
+            });
+            if (eq && Number.isFinite(eq.hero)) {
+              // Calcula investimento do hero em chips somando aportes dele.
+              let heroInvested = 0;
+              for (const a of handActions) {
+                if (normalizePlayerName(a.playerName) !== heroName) continue;
+                const t = normalizeActionType(a.actionType);
+                if (t === "fold" || t === "check" || t === "show" || t === "muck" || t === "collect" || t === "other") continue;
+                const amt = Number(a.amount ?? 0);
+                if (Number.isFinite(amt) && amt > 0) heroInvested += amt;
+              }
+              const totalPot = Math.max(0, Number(hand.totalPot ?? 0));
+              // Se totalPot não estiver disponível, estima via result + heroInvested*(N+1) — inviável; pula mão.
+              if (totalPot > 0 && heroInvested > 0) {
+                const evChips = eq.hero * totalPot - heroInvested;
+                const evBb = evChips / handBigBlind;
+                adjustedBb = evBb;
+                allInAdjHandsCount += 1;
+              } else {
+                allInAdjSkipped += 1;
+              }
+            } else {
+              allInAdjSkipped += 1;
+            }
+          } catch {
+            allInAdjSkipped += 1;
+          }
+        } else {
+          allInAdjSkipped += 1;
+        }
+      }
+    }
+    allInAdjTotalBb += adjustedBb;
   }
 
   const showdownsCount = new Set(input.showdowns.map((s) => s.handRef)).size;
@@ -733,6 +1222,17 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
   const attemptToSteal = toPct(stealAttemptCount, stealOpportunities);
   const aggressionFactor = callActions > 0 ? round2(aggressionActions / callActions) : (aggressionActions > 0 ? round2(aggressionActions) : 0);
   const cbetTurn = toPct(cbetTurnMade, cbetTurnOpportunities);
+  const rfi = toPct(rfiAttempts, rfiOpportunities);
+  const coldCall = toPct(coldCallCount, coldCallOpportunities);
+  const squeeze = toPct(squeezeCount, squeezeOpportunities);
+  const resteal = toPct(restealCount, restealOpportunities);
+  const foldToSteal = toPct(foldToStealCount, foldToStealOpportunities);
+  const foldTo3Bet = toPct(foldTo3BetCount, foldTo3BetOpportunities);
+  const cbetIp = toPct(cbetIpMade, cbetIpOpportunities);
+  const cbetOop = toPct(cbetOopMade, cbetOopOpportunities);
+  const floatFlop = toPct(floatFlopCount, floatFlopOpportunities);
+  const checkRaiseFlop = toPct(checkRaiseFlopCount, checkRaiseFlopOpportunities);
+  const allInAdjBb100 = hands.length > 0 ? round2((allInAdjTotalBb / hands.length) * 100) : 0;
   const showdownHands = hands.filter((h) => Boolean(h.showdown));
   const wtsd = toPct(showdownHands.length, hands.length);
   const wonAtShowdown = showdownHands.filter((h) => Number(h.result ?? 0) > 0).length;
@@ -790,6 +1290,17 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       aggressionFactor,
       wtsd,
       wsd,
+      rfi,
+      coldCall,
+      squeeze,
+      resteal,
+      foldToSteal,
+      foldTo3Bet,
+      cbetIp,
+      cbetOop,
+      floatFlop,
+      checkRaiseFlop,
+      allInAdjBb100,
     },
     opportunities: {
       hands: hands.length,
@@ -798,6 +1309,21 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       foldToCbet: foldToCbetOpportunities,
       bbDefense: bbDefenseOpportunities,
       steal: stealOpportunities,
+      aggressionActions,
+      aggressionCalls: callActions,
+      rfi: rfiOpportunities,
+      coldCall: coldCallOpportunities,
+      squeeze: squeezeOpportunities,
+      resteal: restealOpportunities,
+      foldToSteal: foldToStealOpportunities,
+      foldTo3Bet: foldTo3BetOpportunities,
+      cbetIp: cbetIpOpportunities,
+      cbetOop: cbetOopOpportunities,
+      floatFlop: floatFlopOpportunities,
+      checkRaiseFlop: checkRaiseFlopOpportunities,
+      allInAdjOpportunities: allInAdjHandsCount + allInAdjSkipped,
+      allInAdjSample: allInAdjHandsCount,
+      allInAdjSkipped,
     },
     fieldReference: fieldRef
       ? {
@@ -929,6 +1455,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
     .select({
       id: centralHands.id,
       heroSeat: centralHands.heroSeat,
+      heroCards: centralHands.heroCards,
       heroPosition: centralHands.heroPosition,
       bigBlind: centralHands.bigBlind,
       result: centralHands.result,
@@ -982,11 +1509,27 @@ export async function getPlayerHistoricalProfile(userId: number) {
     if (!handId) continue;
 
     const heroSeat = Number(hand.heroSeat ?? 0);
+    const hasHeroCards = String(hand.heroCards ?? "").trim().length > 0;
     const actions = (actionsByHandForPosition.get(handId) ?? []).filter((action) => {
       const isHeroFlagged = Number(action.heroInHand ?? 0) === 1;
       const bySeatFallback = heroSeat > 0 && Number(action.seat ?? 0) === heroSeat;
       return isHeroFlagged || bySeatFallback;
     });
+    const hasHeroNonForcedAction = actions.some((action) => {
+      const actionType = normalizeActionType(action.actionType ?? undefined);
+      const isForcedPost = actionType === "post_ante" || actionType === "post_blind";
+      if (isForcedPost) return false;
+      return Number(action.amount ?? 0) > 0
+        || Number(action.toAmount ?? 0) > 0
+        || actionType === "check"
+        || actionType === "fold"
+        || actionType === "call"
+        || actionType === "bet"
+        || actionType === "raise"
+        || actionType === "collect"
+        || actionType === "show";
+    });
+    if (!hasHeroCards && !hasHeroNonForcedAction) continue;
 
     let handNetFromActions = 0;
     let usedActionData = false;
@@ -1067,6 +1610,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
   const tournamentHandsSum = Number(tournamentMetricAverages?.totalHands ?? 0);
   const fallbackTournamentCount = centralTournamentCount;
   const fallbackHandsCount = centralHandsCount;
+  const liveHandsCount = Number(liveStats?.hands ?? 0);
 
   const totalTournaments = Number(
     fallbackTournamentCount > 0
@@ -1076,7 +1620,9 @@ export async function getPlayerHistoricalProfile(userId: number) {
         : tournamentStatsCount,
   );
   const totalHands = Number(
-    fallbackHandsCount > 0
+    liveHandsCount > 0
+      ? liveHandsCount
+      : fallbackHandsCount > 0
       ? fallbackHandsCount
       : aggregate?.sampleHands && Number(aggregate.sampleHands) > 0
         ? aggregate.sampleHands
@@ -1181,22 +1727,14 @@ export async function getPlayerHistoricalProfile(userId: number) {
     bbDefenseAvg: Number(aggregate?.bbDefenseAvg ?? tournamentMetricAverages?.bbDefenseAvg ?? 0),
     cbetFlopAvg: Number(aggregate?.cbetFlopAvg ?? tournamentMetricAverages?.cbetFlopAvg ?? 0),
     cbetTurnAvg: Number(aggregate?.cbetTurnAvg ?? tournamentMetricAverages?.cbetTurnAvg ?? 0),
+    foldToCbetAvg: Number(aggregate?.foldToCbetAvg ?? tournamentMetricAverages?.foldToCbetAvg ?? 0),
     attemptToStealAvg: Number(aggregate?.stealAttemptAvg ?? tournamentMetricAverages?.stealAttemptAvg ?? 0),
     aggressionFactorAvg: Number(aggregate?.aggressionFactorAvg ?? tournamentMetricAverages?.aggressionFactorAvg ?? 0),
     wtsdAvg: Number(tournamentMetricAverages?.wtsdAvg ?? 0),
     wsdAvg: Number(tournamentMetricAverages?.wsdAvg ?? 0),
   };
 
-  const aggregateLooksZeroed =
-    totalHands > 0
-    && metricFromAggregate.vpipAvg === 0
-    && metricFromAggregate.pfrAvg === 0
-    && metricFromAggregate.threeBetAvg === 0
-    && metricFromAggregate.cbetFlopAvg === 0
-    && metricFromAggregate.attemptToStealAvg === 0
-    && metricFromAggregate.aggressionFactorAvg === 0;
-
-  const finalMetrics = aggregateLooksZeroed && liveStats
+  const finalMetrics = liveStats
     ? {
         vpipAvg: liveStats.vpip,
         pfrAvg: liveStats.pfr,
@@ -1204,6 +1742,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
         bbDefenseAvg: liveStats.bbDefense,
         cbetFlopAvg: liveStats.cbetFlop,
         cbetTurnAvg: liveStats.cbetTurn,
+        foldToCbetAvg: liveStats.foldToCbet,
         attemptToStealAvg: liveStats.attemptToSteal,
         aggressionFactorAvg: liveStats.aggressionFactor,
         wtsdAvg: liveStats.wtsd,
@@ -1211,8 +1750,8 @@ export async function getPlayerHistoricalProfile(userId: number) {
       }
     : metricFromAggregate;
 
-  if (aggregateLooksZeroed && liveStats) {
-    console.log("[getPlayerHistoricalProfile] Using live hand-action fallback metrics:", finalMetrics);
+  if (liveStats) {
+    console.log("[getPlayerHistoricalProfile] Using live hand-action metrics:", finalMetrics);
   }
 
   const result = {
@@ -1230,10 +1769,22 @@ export async function getPlayerHistoricalProfile(userId: number) {
       bbDefenseAvg: finalMetrics.bbDefenseAvg,
       cbetFlopAvg: finalMetrics.cbetFlopAvg,
       cbetTurnAvg: finalMetrics.cbetTurnAvg,
+      foldToCbetAvg: finalMetrics.foldToCbetAvg,
       attemptToStealAvg: finalMetrics.attemptToStealAvg,
       aggressionFactorAvg: finalMetrics.aggressionFactorAvg,
       wtsdAvg: finalMetrics.wtsdAvg,
       wsdAvg: finalMetrics.wsdAvg,
+      opportunities: {
+        hands: Number(liveStats?.opportunities.hands ?? totalHands),
+        cbetFlop: Number(liveStats?.opportunities.cbetFlop ?? 0),
+        cbetTurn: Number(liveStats?.opportunities.cbetTurn ?? 0),
+        foldToCbet: Number(liveStats?.opportunities.foldToCbet ?? 0),
+        bbDefense: Number(liveStats?.opportunities.bbDefense ?? 0),
+        steal: Number(liveStats?.opportunities.steal ?? 0),
+        aggressionActions: Number(liveStats?.opportunities.aggressionActions ?? 0),
+        aggressionCalls: Number(liveStats?.opportunities.aggressionCalls ?? 0),
+        showdownHands: Number(liveStats?.opportunities.showdownHands ?? Math.round((Number(finalMetrics.wtsdAvg ?? 0) / 100) * Math.max(totalHands, 0))),
+      },
     },
     positions: {
       byPosition: normalizedPositionStats,
@@ -1354,6 +1905,7 @@ export async function importReplayToCentralMemory(userId: number, input: ImportR
   const totalCost = buyIn + fee;
   const abiBucket = getAbiBucket(totalCost);
   const playerAbiSnapshot = await getPlayerAverageAbi(userId);
+  const allowFieldAggregation = consent.allowFieldAggregation === 1;
 
   const dedupInput = buildInputDedupFingerprint(input);
   const candidateTournaments = await db
@@ -1379,7 +1931,7 @@ export async function importReplayToCentralMemory(userId: number, input: ImportR
       || (dedupInput.rawSourceId && dedupInput.rawSourceId === candidateRawSourceId);
 
     if (hasExactTournamentIdMatch) {
-      throw new Error("DUPLICATE_REPLAY");
+      return await reuseExistingReplayImport(db, userId, candidate.id, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
     }
 
     const enoughHandsForPattern = dedupInput.handFingerprints.length >= DUPLICATE_HAND_WINDOW;
@@ -1392,140 +1944,179 @@ export async function importReplayToCentralMemory(userId: number, input: ImportR
 
     const inputSequence = dedupInput.handFingerprints.map((h) => h.signature);
     if (hasConsecutiveFingerprintMatch(inputSequence, stored.handFingerprints, DUPLICATE_HAND_WINDOW)) {
-      throw new Error("DUPLICATE_REPLAY");
+      return await reuseExistingReplayImport(db, userId, candidate.id, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
     }
   }
 
-  const [tournamentInserted] = await db
-    .insert(centralTournaments)
-    .values({
-      externalTournamentId: input.tournament.externalTournamentId,
-      userId,
-      site: input.tournament.site,
-      format: input.tournament.format,
-      buyIn,
-      fee,
-      totalCost,
-      currency: input.tournament.currency,
-      abiValue: totalCost,
-      abiBucket,
-      playerAbiSnapshot,
-      importedAt: input.tournament.importedAt ?? new Date(),
-      totalHands: input.tournament.totalHands ?? input.hands.length,
-      finalPosition: input.tournament.finalPosition,
-      wasEliminated: input.tournament.wasEliminated ? 1 : 0,
-      rawSourceId: input.tournament.rawSourceId,
-    })
-    .$returningId();
+  let tournamentId: number | null = null;
 
-  const tournamentId = tournamentInserted.id;
-
-  const handIdByRef = new Map<string, number>();
-  for (const hand of input.hands) {
-    const [insertedHand] = await db
-      .insert(centralHands)
+  try {
+    const [tournamentInserted] = await db
+      .insert(centralTournaments)
       .values({
-        externalHandId: hand.externalHandId,
-        tournamentId,
+        externalTournamentId: input.tournament.externalTournamentId,
         userId,
-        handNumber: hand.handNumber,
-        datetimeOriginal: hand.datetimeOriginal,
-        buttonSeat: hand.buttonSeat,
-        heroSeat: hand.heroSeat,
-        heroPosition: hand.heroPosition,
-        smallBlind: hand.smallBlind ?? 0,
-        bigBlind: hand.bigBlind ?? 0,
-        ante: hand.ante ?? 0,
-        board: hand.board,
-        heroCards: hand.heroCards,
-        totalPot: hand.totalPot,
-        rake: hand.rake,
-        result: hand.result,
-        showdown: hand.showdown ? 1 : 0,
-        rawText: hand.rawText,
-        parsedJson: hand.parsedJson,
-        handContextJson: hand.handContextJson,
+        site: input.tournament.site,
+        format: input.tournament.format,
+        buyIn,
+        fee,
+        totalCost,
+        currency: input.tournament.currency,
+        abiValue: totalCost,
+        abiBucket,
+        playerAbiSnapshot,
+        importedAt: input.tournament.importedAt ?? new Date(),
+        totalHands: input.tournament.totalHands ?? input.hands.length,
+        finalPosition: input.tournament.finalPosition,
+        wasEliminated: input.tournament.wasEliminated ? 1 : 0,
+        rawSourceId: input.tournament.rawSourceId,
       })
       .$returningId();
 
-    handIdByRef.set(hand.handRef, insertedHand.id);
+    tournamentId = tournamentInserted.id;
+
+    const handIdByRef = new Map<string, number>();
+    for (const hand of input.hands) {
+      const [insertedHand] = await db
+        .insert(centralHands)
+        .values({
+          externalHandId: hand.externalHandId,
+          tournamentId,
+          userId,
+          handNumber: hand.handNumber,
+          datetimeOriginal: hand.datetimeOriginal,
+          buttonSeat: hand.buttonSeat,
+          heroSeat: hand.heroSeat,
+          heroPosition: hand.heroPosition,
+          smallBlind: hand.smallBlind ?? 0,
+          bigBlind: hand.bigBlind ?? 0,
+          ante: hand.ante ?? 0,
+          board: hand.board,
+          heroCards: hand.heroCards,
+          totalPot: hand.totalPot,
+          rake: hand.rake,
+          result: hand.result,
+          showdown: hand.showdown ? 1 : 0,
+          rawText: hand.rawText,
+          parsedJson: hand.parsedJson,
+          handContextJson: hand.handContextJson,
+        })
+        .$returningId();
+
+      handIdByRef.set(hand.handRef, insertedHand.id);
+    }
+
+    for (const action of input.actions) {
+      const handId = handIdByRef.get(action.handRef);
+      if (!handId) continue;
+
+      await db.insert(centralHandActions).values({
+        handId,
+        tournamentId,
+        userId,
+        street: action.street,
+        actionOrder: action.actionOrder,
+        playerName: action.playerName,
+        seat: action.seat,
+        position: action.position,
+        actionType: action.actionType,
+        amount: action.amount,
+        toAmount: action.toAmount,
+        stackBefore: action.stackBefore,
+        stackAfter: action.stackAfter,
+        potBefore: action.potBefore,
+        potAfter: action.potAfter,
+        isAllIn: action.isAllIn ? 1 : 0,
+        isForced: action.isForced ? 1 : 0,
+        facingActionType: action.facingActionType,
+        facingSizeBb: action.facingSizeBb,
+        heroInHand: action.heroInHand ? 1 : 0,
+        showdownVisible: action.showdownVisible ? 1 : 0,
+        contextJson: action.contextJson,
+      });
+    }
+
+    for (const show of input.showdowns) {
+      const handId = handIdByRef.get(show.handRef);
+      if (!handId) continue;
+
+      await db.insert(showdownRecords).values({
+        handId,
+        tournamentId,
+        userId,
+        playerName: show.playerName,
+        seat: show.seat,
+        position: show.position,
+        holeCards: show.holeCards,
+        finalHandDescription: show.finalHandDescription,
+        wonPot: show.wonPot ? 1 : 0,
+        amountWon: show.amountWon,
+      });
+    }
+
+    await finalizeImportedReplay(db, userId, tournamentId, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
+
+    return { tournamentId, handsImported: handIdByRef.size };
+  } catch (error) {
+    if (tournamentId) {
+      await deleteTournamentCascade(db, userId, tournamentId).catch(() => undefined);
+      await refreshUserAbiAggregates(userId).catch(() => undefined);
+    }
+    throw error;
   }
+}
 
-  for (const action of input.actions) {
-    const handId = handIdByRef.get(action.handRef);
-    if (!handId) continue;
+export async function clearReplayHistoryForUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
 
-    await db.insert(centralHandActions).values({
-      handId,
-      tournamentId,
-      userId,
-      street: action.street,
-      actionOrder: action.actionOrder,
-      playerName: action.playerName,
-      seat: action.seat,
-      position: action.position,
-      actionType: action.actionType,
-      amount: action.amount,
-      toAmount: action.toAmount,
-      stackBefore: action.stackBefore,
-      stackAfter: action.stackAfter,
-      potBefore: action.potBefore,
-      potAfter: action.potAfter,
-      isAllIn: action.isAllIn ? 1 : 0,
-      isForced: action.isForced ? 1 : 0,
-      facingActionType: action.facingActionType,
-      facingSizeBb: action.facingSizeBb,
-      heroInHand: action.heroInHand ? 1 : 0,
-      showdownVisible: action.showdownVisible ? 1 : 0,
-      contextJson: action.contextJson,
-    });
-  }
+  await db.delete(centralHandActions).where(eq(centralHandActions.userId, userId));
+  await db.delete(showdownRecords).where(eq(showdownRecords.userId, userId));
+  await db.delete(centralHands).where(eq(centralHands.userId, userId));
+  await db.delete(playerTournamentStats).where(eq(playerTournamentStats.userId, userId));
+  await db.delete(playerPositionStats).where(eq(playerPositionStats.userId, userId));
+  await db.delete(playerStatsByAbi).where(eq(playerStatsByAbi.userId, userId));
+  await db.delete(playerStatsByPositionAndAbi).where(eq(playerStatsByPositionAndAbi.userId, userId));
+  await db.delete(playerAggregateStats).where(eq(playerAggregateStats.userId, userId));
+  await db.delete(playerLeakFlags).where(eq(playerLeakFlags.userId, userId));
+  await db.delete(centralTournaments).where(eq(centralTournaments.userId, userId));
 
-  for (const show of input.showdowns) {
-    const handId = handIdByRef.get(show.handRef);
-    if (!handId) continue;
+  return { success: true };
+}
 
-    await db.insert(showdownRecords).values({
-      handId,
-      tournamentId,
-      userId,
-      playerName: show.playerName,
-      seat: show.seat,
-      position: show.position,
-      holeCards: show.holeCards,
-      finalHandDescription: show.finalHandDescription,
-      wonPot: show.wonPot ? 1 : 0,
-      amountWon: show.amountWon,
-    });
-  }
+export async function compactReplayStorageForUser(userId: number, existingDb?: Awaited<ReturnType<typeof getDb>>) {
+  const db = existingDb ?? await getDb();
+  if (!db) throw new Error("Database not available");
 
-  const tournamentAnalysis = await analyzeReplayTournament(input);
-  await db.insert(playerTournamentStats).values({
-    userId,
-    tournamentId,
-    handsPlayed: input.hands.length,
-    vpip: Number(tournamentAnalysis.stats.vpip ?? 0),
-    pfr: Number(tournamentAnalysis.stats.pfr ?? 0),
-    threeBet: Number(tournamentAnalysis.stats.threeBet ?? 0),
-    cbetFlop: Number(tournamentAnalysis.stats.cbetFlop ?? 0),
-    cbetTurn: Number(tournamentAnalysis.stats.cbetTurn ?? 0),
-    foldToCbet: Number(tournamentAnalysis.stats.foldToCbet ?? 0),
-    bbDefense: Number(tournamentAnalysis.stats.bbDefense ?? 0),
-    stealAttempt: Number(tournamentAnalysis.stats.attemptToSteal ?? 0),
-    aggressionFactor: Math.round(Number(tournamentAnalysis.stats.aggressionFactor ?? 0)),
-    wtsd: Number(tournamentAnalysis.stats.wtsd ?? 0),
-    wsd: Number(tournamentAnalysis.stats.wsd ?? 0),
-    finalPosition: input.tournament.finalPosition ?? null,
-    abiBucket,
-    totalCost,
-  });
+  const compactedHands = await db
+    .update(centralHands)
+    .set({
+      rawText: null,
+      parsedJson: null,
+      handContextJson: null,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(centralHands.userId, userId),
+      or(
+        isNotNull(centralHands.rawText),
+        isNotNull(centralHands.parsedJson),
+        isNotNull(centralHands.handContextJson),
+      ),
+    ));
 
-  await refreshUserAbiAggregates(userId);
-  if (consent.allowFieldAggregation === 1) {
-    await refreshFieldAbiAggregates(input.tournament.site, abiBucket);
-  }
+  const compactedActions = await db
+    .update(centralHandActions)
+    .set({
+      contextJson: null,
+    })
+    .where(and(eq(centralHandActions.userId, userId), isNotNull(centralHandActions.contextJson)));
 
-  return { tournamentId, handsImported: handIdByRef.size };
+  return {
+    success: true,
+    compactedHands: Number((compactedHands as any)?.rowsAffected ?? 0),
+    compactedActions: Number((compactedActions as any)?.rowsAffected ?? 0),
+  };
 }
 
 export async function refreshUserAbiAggregates(userId: number) {
@@ -1660,7 +2251,7 @@ export async function refreshUserAbiAggregates(userId: number) {
   for (const row of positionAggRows) {
     await db.insert(playerPositionStats).values({
       userId,
-      position: (row.position as any) ?? "UNKNOWN",
+      position: normalizeStoredPosition(row.position as string | undefined),
       handsPlayed: Number(row.handsPlayed ?? 0),
       netChips: Number(row.netChips ?? 0),
     });

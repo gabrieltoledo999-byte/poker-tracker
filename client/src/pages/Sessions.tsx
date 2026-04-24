@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type DragEvent as ReactDragEvent, type ClipboardEvent as ReactClipboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
@@ -22,6 +23,106 @@ import {
   Edit2, CheckCircle, XCircle, Wifi, MapPin, Sparkles,
   ChevronDown, ChevronUp, Clock, DollarSign, BarChart2, Building2, RotateCcw, ImagePlus, Send, CalendarDays
 } from "lucide-react";
+
+// ─── Tournament Name Autocomplete ────────────────────────────────────────────
+function normalizeTournamentKey(name: string) {
+  return name.toLowerCase().replace(/[\d#\-_.()/\\]+/g, "").replace(/\s+/g, " ").trim();
+}
+
+function TournamentNameInput({
+  value,
+  onChange,
+  knownNames,
+  className,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  knownNames: string[];
+  className?: string;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const typed = value.trim();
+  const suggestions = typed.length >= 1
+    ? knownNames.filter((n) => n.toLowerCase().includes(typed.toLowerCase()) && n.toLowerCase() !== typed.toLowerCase())
+    : knownNames.slice();
+
+  const similarNames = useMemo(() => {
+    if (!typed || typed.length < 3) return [];
+    const normTyped = normalizeTournamentKey(typed);
+    if (!normTyped) return [];
+    return knownNames.filter((n) => {
+      const nk = normalizeTournamentKey(n);
+      if (!nk || n.toLowerCase() === typed.toLowerCase()) return false;
+      return nk === normTyped || nk.includes(normTyped) || normTyped.includes(nk);
+    });
+  }, [typed, knownNames]);
+
+  function updateDropdownPosition() {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setDropdownStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    });
+  }
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const dropdown = open && suggestions.length > 0 ? createPortal(
+    <div
+      style={{ ...dropdownStyle, pointerEvents: "auto" }}
+      className="rounded-md border border-border bg-popover shadow-lg overflow-hidden"
+    >
+      {suggestions.slice(0, 8).map((s) => (
+        <button
+          key={s}
+          type="button"
+          className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors truncate"
+          onMouseDown={(e) => { e.preventDefault(); onChange(s); setOpen(false); }}
+        >
+          {s}
+        </button>
+      ))}
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div ref={wrapRef}>
+      <Input
+        ref={inputRef}
+        className={className}
+        placeholder={placeholder ?? "Ex: Sunday Million"}
+        value={value}
+        autoComplete="off"
+        onChange={(e) => { onChange(e.target.value); setOpen(true); updateDropdownPosition(); }}
+        onFocus={() => { setOpen(true); updateDropdownPosition(); }}
+      />
+      {dropdown}
+      {similarNames.length > 0 && (
+        <div className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-400">
+          ⚠️ Você tem um torneio parecido cadastrado. É o mesmo?
+          <span className="block mt-0.5 font-semibold">{similarNames.join(" · ")}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GAME_FORMATS = [
@@ -282,18 +383,52 @@ function playPositiveCashOutCelebration() {
   }
 }
 
+type RewardDropKind = "bill" | "coin";
+
+type RewardDrop = {
+  id: number;
+  kind: RewardDropKind;
+  left: number;
+  delay: number;
+  duration: number;
+  size: number;
+  sway: number;
+  rotate: number;
+};
+
+function renderRewardDrop(drop: RewardDrop) {
+  if (drop.kind === "bill") {
+    return <span style={{ fontSize: `${drop.size}px` }}>💵</span>;
+  }
+  return (
+    <span
+      className="inline-flex items-center justify-center rounded-full border border-amber-100/80 text-[10px] font-black text-amber-900 shadow-[0_4px_10px_rgba(0,0,0,0.35)]"
+      style={{
+        width: `${Math.max(14, drop.size * 0.82)}px`,
+        height: `${Math.max(14, drop.size * 0.82)}px`,
+        background: "radial-gradient(circle at 30% 30%, #fef3c7 0%, #f59e0b 58%, #92400e 100%)",
+      }}
+    >
+      $
+    </span>
+  );
+}
+
 function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
   const drops = useMemo(
-    () => Array.from({ length: 34 }).map((_, index) => ({
-      id: index,
-      left: Math.random() * 100,
-      delay: Math.random() * 0.45,
-      duration: 1.4 + Math.random() * 1.2,
-      size: 18 + Math.random() * 20,
-      sway: 14 + Math.random() * 24,
-      rotate: -18 + Math.random() * 36,
-      icon: Math.random() > 0.6 ? "💵" : "💸",
-    })),
+    () => Array.from({ length: 42 }).map((_, index) => {
+      const kind: RewardDropKind = Math.random() > 0.45 ? "coin" : "bill";
+      return {
+        id: index,
+        kind,
+        left: Math.random() * 100,
+        delay: Math.random() * 0.52,
+        duration: 1.35 + Math.random() * 1.35,
+        size: 16 + Math.random() * 22,
+        sway: 14 + Math.random() * 24,
+        rotate: -20 + Math.random() * 40,
+      };
+    }),
     [],
   );
 
@@ -308,12 +443,12 @@ function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
         @keyframes cash-rain-fall {
           0% { transform: translateY(-18vh) rotate(0deg); opacity: 0; }
           10% { opacity: 1; }
-          100% { transform: translateY(110vh) rotate(var(--bill-rotate)); opacity: 0.95; }
+          100% { transform: translateY(110vh) rotate(var(--drop-rotate)); opacity: 0.95; }
         }
         @keyframes cash-rain-sway {
           0% { margin-left: 0; }
-          50% { margin-left: var(--bill-sway); }
-          100% { margin-left: calc(var(--bill-sway) * -0.7); }
+          50% { margin-left: var(--drop-sway); }
+          100% { margin-left: calc(var(--drop-sway) * -0.7); }
         }
         @keyframes cash-rain-flash {
           0% { opacity: 0; }
@@ -334,18 +469,17 @@ function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
       {drops.map((drop) => (
         <span
           key={drop.id}
-          className="absolute top-0"
+          className="absolute top-0 inline-flex items-center justify-center"
           style={{
             left: `${drop.left}%`,
-            fontSize: `${drop.size}px`,
             animation: `cash-rain-fall ${drop.duration}s linear ${drop.delay}s forwards, cash-rain-sway ${Math.max(0.9, drop.duration * 0.75)}s ease-in-out ${drop.delay}s 2 alternate`,
             filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.25))",
             transformOrigin: "center",
-            ["--bill-sway" as any]: `${drop.sway}px`,
-            ["--bill-rotate" as any]: `${drop.rotate}deg`,
+            ["--drop-sway" as any]: `${drop.sway}px`,
+            ["--drop-rotate" as any]: `${drop.rotate}deg`,
           }}
         >
-          {drop.icon}
+          {renderRewardDrop(drop)}
         </span>
       ))}
     </div>
@@ -386,6 +520,7 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
   const [venueId, setVenueId] = useState(table.venueId?.toString() ?? "");
   const [clubName, setClubName] = useState(table.clubName ?? "");
   const [tournamentName, setTournamentName] = useState(table.tournamentName ?? "");
+  const { data: knownTournamentNames = [] } = trpc.sessions.tournamentNames.useQuery();
   const [buyIn, setBuyIn] = useState((table.buyIn / 100).toFixed(2));
   const [cashOut, setCashOut] = useState(table.cashOut != null ? (table.cashOut / 100).toFixed(2) : "");
   const [stakes, setStakes] = useState(table.stakes ?? "");
@@ -513,16 +648,21 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
           </div>
           <div>
             <Label className="text-xs">Nome do Torneio (opcional)</Label>
-            <Input className="h-8 text-sm mt-1" placeholder="Ex: Sunday Million" value={tournamentName} onChange={e => setTournamentName(e.target.value)} />
+            <TournamentNameInput
+              value={tournamentName}
+              onChange={setTournamentName}
+              knownNames={knownTournamentNames}
+              className="h-8 text-sm mt-1"
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Buy-in ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="text" inputMode="decimal" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
+              <Input className="h-8 text-sm mt-1" type="number" inputMode="decimal" step="0.5" min="0" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">Cash-out ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="text" inputMode="decimal" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
+              <Input className="h-8 text-sm mt-1" type="number" inputMode="decimal" step="0.5" min="0" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
             </div>
           </div>
           <div>
@@ -602,6 +742,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const [stakes, setStakes] = useState("");
 
   const { data: venues } = trpc.venues.list.useQuery({ type });
+  const { data: knownTournamentNames = [] } = trpc.sessions.tournamentNames.useQuery();
 
   const parsedVenueId = venueId ? parseInt(venueId, 10) : null;
   const { data: venueBuyIns } = trpc.sessions.getBuyInsByVenue.useQuery(
@@ -891,9 +1032,11 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
         <div className="space-y-1">
           <Label>Buy-in ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : currency === "EUR" ? "EUR" : "R$"})</Label>
           <Input
-            type="text"
+            type="number"
             inputMode="decimal"
-            placeholder="0,00"
+            step="0.5"
+            min="0"
+            placeholder="0.00"
             value={buyIn}
             onChange={(e) => setBuyIn(e.target.value)}
             required
@@ -932,7 +1075,11 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
 
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">Nome do Torneio (opcional)</Label>
-        <Input placeholder="Ex: Sunday Million" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} />
+        <TournamentNameInput
+          value={tournamentName}
+          onChange={setTournamentName}
+          knownNames={knownTournamentNames}
+        />
       </div>
 
       <div className="space-y-1">
@@ -1407,32 +1554,83 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
 
   return (
     <div className="space-y-4">
-      {/* Session header */}
-      <div className="bg-gradient-to-r from-primary/20 to-primary/5 border border-primary/30 rounded-xl p-4">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="font-semibold text-sm">Sessão em andamento</span>
+      {/* Session header — poker table visual */}
+      <div
+        className="relative w-full overflow-hidden rounded-2xl border border-white/5"
+        style={{
+          background: "radial-gradient(ellipse at 50% 100%, #0c2214 0%, #080c18 60%, #06080f 100%)",
+          minHeight: 200,
+        }}
+      >
+        {/* Ambient glow */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: "radial-gradient(ellipse at 50% 85%, rgba(16,120,40,0.22) 0%, transparent 62%)" }}
+        />
+
+        {/* 3-D perspective table */}
+        <div
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{ bottom: "-8%", width: "92%", perspective: "480px", perspectiveOrigin: "50% 100%" }}
+        >
+          {/* Outer rail */}
+          <div
+            style={{
+              transform: "rotateX(32deg)",
+              transformOrigin: "50% 100%",
+              borderRadius: "50%",
+              width: "100%",
+              paddingBottom: "46%",
+              position: "relative",
+              background: "radial-gradient(ellipse at 48% 38%, #7a4f1f 0%, #4a2d0a 55%, #2a1805 100%)",
+              boxShadow: "0 -8px 40px rgba(0,0,0,0.7), inset 0 4px 12px rgba(255,255,255,0.06)",
+            }}
+          >
+            {/* Inner felt */}
+            <div
+              style={{
+                position: "absolute",
+                inset: "6%",
+                borderRadius: "50%",
+                background: "radial-gradient(ellipse at 46% 36%, #1e8c38 0%, #0f5a1f 52%, #073a12 100%)",
+                boxShadow: "inset 0 6px 20px rgba(0,0,0,0.5), inset 0 -2px 8px rgba(255,255,255,0.04)",
+              }}
+            >
+              <div style={{ position: "absolute", inset: "10%", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.07)" }} />
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", paddingBottom: "6%" }}>
+                <span style={{ color: "rgba(255,255,255,0.10)", fontSize: "0.65rem", fontWeight: 800, letterSpacing: "0.25em", textTransform: "uppercase" }}>
+                  THE RAIL
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2 font-mono text-base font-bold text-primary sm:text-lg">
-            <Timer className="h-5 w-5" />
+        </div>
+
+        {/* Live indicator + timer */}
+        <div className="relative z-10 flex items-center justify-between px-4 pt-3">
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-[11px] font-semibold text-green-300/90 tracking-wide uppercase">Ao vivo</span>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-sm font-bold text-white/80">
+            <Timer className="h-4 w-4 text-white/50" />
             {elapsed}
           </div>
         </div>
 
-        {/* Totals */}
-        <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3 sm:gap-3">
+        {/* Stats bar */}
+        <div className="relative z-10 mt-auto px-4 pb-4 pt-28 grid grid-cols-3 text-center gap-1">
           <div>
-            <p className="text-xs text-muted-foreground">Buy-in total</p>
-            <p className="font-semibold text-sm">R${(totalBuyIn / 100).toFixed(2)}</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-wide">Buy-in</p>
+            <p className="text-sm font-bold text-white/90">R${(totalBuyIn / 100).toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Mesas</p>
-            <p className="font-semibold text-sm">{session.tables.length}</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-wide">Mesas</p>
+            <p className="text-sm font-bold text-white/90">{session.tables.length}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Resultado</p>
-            <p className={`font-semibold text-sm ${totalProfit === null ? "text-muted-foreground" : totalProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
+            <p className="text-[10px] text-white/40 uppercase tracking-wide">Resultado</p>
+            <p className={`text-sm font-bold ${totalProfit === null ? "text-white/40" : totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               {totalProfit === null ? "—" : `${totalProfit >= 0 ? "+" : ""}R$${(totalProfit / 100).toFixed(2)}`}
             </p>
           </div>
@@ -1440,54 +1638,42 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
       </div>
 
       {/* Premium hand counters */}
-      <div className="rounded-xl border border-border/60 bg-card/40 p-3 space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-sm font-semibold">Contador de Mãos Premium</h3>
-          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-            <span className="text-xs text-muted-foreground">Marque direto na sessão</span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 px-3 text-xs w-full sm:w-auto"
-              onClick={handleUndoLastHandAction}
-              disabled={!lastHandStatsSnapshot || registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
-            >
-              <RotateCcw className="h-3 w-3 mr-1" /> Desfazer última ação
-            </Button>
-          </div>
+      <div className="rounded-xl border border-border/60 bg-card/40 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Mãos Premium</h3>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-muted-foreground"
+            onClick={handleUndoLastHandAction}
+            disabled={!lastHandStatsSnapshot || registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
+          >
+            <RotateCcw className="h-3 w-3 mr-1" /> Desfazer
+          </Button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="flex flex-col gap-2">
           {([
-            { key: "kk", label: "KK (Rei Rei)", wins: handPatternStats?.kk?.wins ?? 0, losses: handPatternStats?.kk?.losses ?? 0, hands: handPatternStats?.kk?.hands ?? 0 },
-            { key: "jj", label: "JJ (Vala Vala)", wins: handPatternStats?.jj?.wins ?? 0, losses: handPatternStats?.jj?.losses ?? 0, hands: handPatternStats?.jj?.hands ?? 0 },
-            { key: "aa", label: "AA (As As)", wins: handPatternStats?.aa?.wins ?? 0, losses: handPatternStats?.aa?.losses ?? 0, hands: handPatternStats?.aa?.hands ?? 0 },
-            { key: "ak", label: "AK (As e Rei)", wins: handPatternStats?.ak?.wins ?? 0, losses: handPatternStats?.ak?.losses ?? 0, hands: handPatternStats?.ak?.hands ?? 0 },
+            { key: "kk", wins: handPatternStats?.kk?.wins ?? 0, losses: handPatternStats?.kk?.losses ?? 0 },
+            { key: "jj", wins: handPatternStats?.jj?.wins ?? 0, losses: handPatternStats?.jj?.losses ?? 0 },
+            { key: "aa", wins: handPatternStats?.aa?.wins ?? 0, losses: handPatternStats?.aa?.losses ?? 0 },
+            { key: "ak", wins: handPatternStats?.ak?.wins ?? 0, losses: handPatternStats?.ak?.losses ?? 0 },
           ] as const).map((item) => (
-            <div key={item.key} className="rounded-lg border border-border/60 bg-background/60 p-2.5">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold">{item.label}</p>
-                <p className="text-[11px] text-muted-foreground">Total: {item.hands}</p>
-              </div>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-3 text-xs text-emerald-600 border-emerald-500/40 hover:bg-emerald-500/10 w-full sm:w-auto"
-                  onClick={() => handleRegisterHandResult(item.key, "win")}
-                  disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
-                >
-                  + Vitória ({item.wins})
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-3 text-xs text-red-600 border-red-500/40 hover:bg-red-500/10 w-full sm:w-auto"
-                  onClick={() => handleRegisterHandResult(item.key, "loss")}
-                  disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
-                >
-                  + Derrota ({item.losses})
-                </Button>
-              </div>
+            <div key={item.key} className="flex items-center gap-2">
+              <span className="w-9 shrink-0 text-center text-sm font-bold tracking-wide text-foreground/80 uppercase">{item.key}</span>
+              <button
+                className="flex-1 h-12 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold text-base active:scale-95 transition-transform disabled:opacity-40"
+                onClick={() => handleRegisterHandResult(item.key, "win")}
+                disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
+              >
+                ✅ {item.wins}
+              </button>
+              <button
+                className="flex-1 h-12 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 font-semibold text-base active:scale-95 transition-transform disabled:opacity-40"
+                onClick={() => handleRegisterHandResult(item.key, "loss")}
+                disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
+              >
+                ❌ {item.losses}
+              </button>
             </div>
           ))}
         </div>
@@ -2471,6 +2657,86 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
 }
 
 // ─── Main Sessions Page ────────────────────────────────────────────────────────
+const FALLING_CHIP_PALETTE = [
+  { value: "25", color: "#c81e1e" },
+  { value: "100", color: "#1653d1" },
+  { value: "500", color: "#111827" },
+  { value: "5", color: "#16a34a" },
+  { value: "1", color: "#e5e7eb" },
+  { value: "1000", color: "#7c3aed" },
+  { value: "50", color: "#f59e0b" },
+] as const;
+
+function FallingChip({ left, size, delay, duration, value, color, sway, rotateFrom, rotateTo }: {
+  left: number; size: number; delay: number; duration: number; value: string; color: string; sway: number; rotateFrom: number; rotateTo: number;
+}) {
+  return (
+    <div
+      className="absolute top-0 rounded-full opacity-[0.22] shadow-[0_18px_32px_rgba(0,0,0,0.3)]"
+      style={{
+        left: `${left}%`,
+        width: `${size}px`,
+        height: `${size}px`,
+        background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.26) 0%, ${color} 52%, rgba(8,8,10,0.84) 100%)`,
+        border: "1px solid rgba(255,255,255,0.48)",
+        animation: `chipFall ${duration}s linear ${delay}s infinite, chipSway ${(duration / 2).toFixed(2)}s ease-in-out ${delay}s infinite alternate`,
+        // custom props consumed by keyframes
+        ["--chip-sway" as any]: `${sway}px`,
+        ["--chip-rot-from" as any]: `${rotateFrom}deg`,
+        ["--chip-rot-to" as any]: `${rotateTo}deg`,
+      }}
+    >
+      <div className="absolute inset-[9%] rounded-full border-2 border-dashed border-white/80" />
+      <div className="absolute inset-[26%] rounded-full border border-white/55" />
+      <div className="absolute inset-0 flex items-center justify-center font-black tracking-tight text-white/85" style={{ fontSize: `${Math.max(10, size * 0.18)}px` }}>{value}</div>
+      <span className="absolute left-[18%] top-[21%] h-1.5 w-1.5 rounded-full bg-white/90" />
+      <span className="absolute left-[22%] top-[73%] h-1.5 w-1.5 rounded-full bg-white/90" />
+      <span className="absolute right-[17%] top-[26%] h-1.5 w-1.5 rounded-full bg-white/90" />
+      <span className="absolute right-[21%] top-[69%] h-1.5 w-1.5 rounded-full bg-white/90" />
+    </div>
+  );
+}
+
+function SessionsPageBackdropChips() {
+  const chips = useMemo(() => {
+    const count = 18;
+    return Array.from({ length: count }).map((_, i) => {
+      const palette = FALLING_CHIP_PALETTE[i % FALLING_CHIP_PALETTE.length];
+      return {
+        id: i,
+        left: Math.random() * 96,
+        size: 48 + Math.random() * 80,
+        delay: -Math.random() * 14,
+        duration: 10 + Math.random() * 10,
+        value: palette.value,
+        color: palette.color,
+        sway: 20 + Math.random() * 60,
+        rotateFrom: -180 + Math.random() * 180,
+        rotateTo: 180 + Math.random() * 360,
+      };
+    });
+  }, []);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden>
+      <style>{`
+        @keyframes chipFall {
+          0% { transform: translate3d(0, -20vh, 0) rotate(var(--chip-rot-from)); }
+          100% { transform: translate3d(0, 120vh, 0) rotate(var(--chip-rot-to)); }
+        }
+        @keyframes chipSway {
+          0% { margin-left: calc(var(--chip-sway) * -1); }
+          100% { margin-left: var(--chip-sway); }
+        }
+      `}</style>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.05),_transparent_46%),radial-gradient(circle_at_bottom,_rgba(34,197,94,0.04),_transparent_44%)]" />
+      {chips.map((c) => (
+        <FallingChip key={c.id} {...c} />
+      ))}
+    </div>
+  );
+}
+
 export default function Sessions() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -2953,8 +3219,10 @@ export default function Sessions() {
 
       if (historyTournamentFilter.trim()) {
         const q = historyTournamentFilter.trim().toLowerCase();
-        const name = ((s as any).primaryTournamentName || s.tournamentName || "").toLowerCase();
-        if (!name.includes(q)) return false;
+        const sessionName = ((s as any).primaryTournamentName || s.tournamentName || "").toLowerCase();
+        const allNames: string[] = (s as any).allTournamentNames ?? [];
+        const inAll = allNames.some((n: string) => n.includes(q));
+        if (!sessionName.includes(q) && !inAll) return false;
       }
       return true;
     });
@@ -2976,7 +3244,8 @@ export default function Sessions() {
   const shouldBlockSessionStart = needsPlayStyleOnboarding || needsRankingConsentOnboarding;
 
   return (
-    <div className="p-3 sm:p-6 space-y-6 max-w-2xl mx-auto">
+    <div className="relative p-3 sm:p-6 space-y-6 max-w-2xl mx-auto [&>*:not(:first-child)]:relative [&>*:not(:first-child)]:z-10">
+      <SessionsPageBackdropChips />
       {moneyRainVisible && <MoneyRainOverlay onDone={() => setMoneyRainVisible(false)} />}
 
       {/* Header */}
@@ -3056,7 +3325,7 @@ export default function Sessions() {
 
       {/* Active session */}
       {activeSession ? (
-        <Card className="border-primary/30">
+        <Card className="relative z-10 border-primary/30 bg-background shadow-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -3074,7 +3343,7 @@ export default function Sessions() {
           </CardContent>
         </Card>
       ) : optimisticSessionStartedAt ? (
-        <Card className="border-primary/30">
+        <Card className="relative z-10 border-primary/30 bg-background shadow-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />

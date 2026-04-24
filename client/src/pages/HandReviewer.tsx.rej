@@ -1,0 +1,167 @@
+diff a/client/src/pages/HandReviewer.tsx b/client/src/pages/HandReviewer.tsx	(rejected hunks)
+@@ -621,7 +674,9 @@ export default function HandReviewer() {
+         suggestions.push("Leak cl├íssico detectado: c-bet flop alta e turn baixa. Trabalhar plano de 2┬║ barril.");
+       }
+       const gap = Number(h.summary.vpipAvg ?? 0) - Number(h.summary.pfrAvg ?? 0);
+-      if (gap > 8) {
++      const vpipStatus = getMetricStatus("vpip", h.summary.vpipAvg);
++      const pfrStatus = getMetricStatus("pfr", h.summary.pfrAvg);
++      if (gap > 8 && (vpipStatus !== "ok" || pfrStatus !== "ok")) {
+         suggestions.push("Gap VPIP-PFR alto: revisar excesso de calls pr├®-flop e passividade sem iniciativa.");
+       }
+     }
+@@ -785,15 +840,15 @@ export default function HandReviewer() {
+               Nosso compromisso ├® garantir prote├º├úo, integridade e confidencialidade dos seus dados, seguindo boas pr├íticas de seguran├ºa e privacidade.
+             </p>
+ 
+-            <div className="rounded-lg border border-cyan-400/25 bg-cyan-500/10 p-3 text-xs">
++            <div className="rounded-xl bg-cyan-500/8 p-3 text-xs shadow-[inset_0_1px_0_rgba(34,211,238,0.08)]">
+               ­ƒöÆ Seus dados s├úo protegidos por mecanismos de seguran├ºa e n├úo s├úo utilizados de forma indevida ou fora do escopo da plataforma.
+             </div>
+ 
+-            <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
++            <div className="rounded-xl bg-amber-500/8 p-3 text-xs text-amber-100 shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
+               ÔÜá´©Å O uso do Revisor de M├úos est├í condicionado ├á aceita├º├úo deste termo. Caso n├úo concorde, essa funcionalidade permanecer├í indispon├¡vel.
+             </div>
+ 
+-            <div className="rounded-lg border border-white/15 bg-black/25 p-3 text-xs text-white/85">
++            <div className="rounded-xl bg-white/4 p-3 text-xs text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+               <p className="mb-2 font-semibold text-cyan-100">Termos adicionais</p>
+               <p className="mb-1">
+                 Seus dados poder├úo ser utilizados de forma agregada e anonimizada para desenvolvimento de modelos anal├¡ticos e estrat├®gias baseadas em GTO.
+@@ -985,11 +1054,13 @@ export default function HandReviewer() {
+                       <MetricLabel label="C-bet flop" hint="Frequ├¬ncia em que voc├¬ c-beta no flop ap├│s ser o agressor pr├®-flop." />
+                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.cbetFlop)} ┬À {metricStatusBadge(getMetricStatus("cbetFlop", analyzeMutation.data.stats.cbetFlop))}</p>
+                       <p className="mt-1 text-xs text-white/60">Faixa comum: 55% - 75%</p>
++                      <p className="mt-1 text-xs text-white/60">Amostra: {tournamentOpportunities.cbetFlop} oportunidades reais de c-bet no flop.</p>
+                     </div>
+                     <div className="tokyo-metric rounded-lg p-3 text-sm">
+                       <MetricLabel label="Fold to C-bet" hint="Percentual de vezes em que voc├¬ foldou para c-bet no flop." />
+                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(analyzeMutation.data.stats.foldToCbet)} ┬À {metricStatusBadge(getMetricStatus("foldToCbet", analyzeMutation.data.stats.foldToCbet))}</p>
+                       <p className="mt-1 text-xs text-white/60">Faixa comum: 40% - 55%</p>
++                      <p className="mt-1 text-xs text-white/60">Amostra: {tournamentOpportunities.foldToCbet} vezes em que voc├¬ realmente enfrentou uma c-bet no flop.</p>
+                     </div>
+                     <div className="tokyo-metric rounded-lg p-3 text-sm">
+                       <MetricLabel label="Defesa de BB" hint="Percentual de vezes em que voc├¬ continuou defendendo seu big blind em vez de foldar." />
+@@ -1010,18 +1081,18 @@ export default function HandReviewer() {
+                     </div>
+                   </div>
+ 
+-                  <div className="rounded-lg border border-blue-300/20 bg-blue-500/5 p-3 text-xs text-blue-100">
++                  <div className="rounded-xl bg-blue-500/8 p-3 text-xs text-blue-100 shadow-[inset_0_1px_0_rgba(59,130,246,0.08)]">
+                     Esses valores s├úo refer├¬ncias pr├íticas de jogadores s├│lidos, n├úo regras fixas de GTO.
+                   </div>
+ 
+                   <div className="grid gap-3 md:grid-cols-2">
+-                    <div className="rounded-lg border border-amber-300/20 bg-amber-500/5 p-3 text-sm">
++                    <div className="rounded-xl bg-amber-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
+                       <p className="mb-2 font-semibold text-amber-200">Principais alertas desse torneio</p>
+                       {analyzeMutation.data.alerts.length > 0
+                         ? analyzeMutation.data.alerts.map((alert) => <p key={alert}>- {alert}</p>)
+                         : <p className="text-white/70">Sem alertas relevantes para esta amostra.</p>}
+                     </div>
+-                    <div className="rounded-lg border border-emerald-300/20 bg-emerald-500/5 p-3 text-sm">
++                    <div className="rounded-xl bg-emerald-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(16,185,129,0.08)]">
+                       <p className="mb-2 font-semibold text-emerald-200">Principais pontos fortes desse torneio</p>
+                       {analyzeMutation.data.strengths.length > 0
+                         ? analyzeMutation.data.strengths.map((strength) => <p key={strength}>- {strength}</p>)
+@@ -1216,7 +1287,7 @@ export default function HandReviewer() {
+                         threeBet: Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0),
+                         cbetFlop: Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0),
+                         cbetTurn: Number(playerHistoryQuery.data.summary.cbetTurnAvg ?? 0),
+-                        foldToCbet: 0,
++                        foldToCbet: Number((playerHistoryQuery.data.summary as any).foldToCbetAvg ?? 0),
+                         bbDefense: Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0),
+                         attemptToSteal: Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0),
+                         aggressionFactor: Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0),
+@@ -1243,16 +1314,16 @@ export default function HandReviewer() {
+         </CardContent>
+       </Card>
+ 
+-      <div className="tokyo-panel rounded-xl px-4 py-3 text-sm">
++      <div className="rounded-2xl bg-gradient-to-b from-amber-500/6 to-transparent px-4 py-3 text-sm">
+         <details className="text-xs text-amber-100/85">
+           <summary className="cursor-pointer font-semibold text-amber-200">Sobre estat├¡stica e metodologia (saiba mais)</summary>
+           <p className="mt-2 text-amber-100/75">
+             Conte├║do avan├ºado com gr├íficos, faixas, f├│rmula e premissas. Expanda apenas quando quiser aprofundar.
+           </p>
+-          <div className="mt-3 space-y-2 rounded-lg border border-amber-300/20 bg-black/20 p-3">
++          <div className="mt-3 space-y-2 rounded-2xl bg-black/15 p-3">
+ 
+         <div className="grid gap-3 xl:grid-cols-2">
+-          <div className="rounded-lg border border-amber-300/20 bg-black/25 p-3">
++          <div className="rounded-xl bg-black/20 p-3">
+             <p className="mb-2 text-xs font-semibold text-amber-200">Amostra para detectar padr├Áes espec├¡ficos (efeito de 5% a 10%)</p>
+             <div className="h-[280px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+@@ -1275,7 +1346,7 @@ export default function HandReviewer() {
+             </div>
+           </div>
+ 
+-          <div className="rounded-lg border border-amber-300/20 bg-black/25 p-3">
++          <div className="rounded-xl bg-black/20 p-3">
+             <p className="mb-2 text-xs font-semibold text-amber-200">M├úos para estimar winrate (margem de erro +/-2 BB/100)</p>
+             <div className="h-[280px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+@@ -1304,26 +1375,26 @@ export default function HandReviewer() {
+           </div>
+         </div>
+ 
+-        <details className="mt-3 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
++        <details className="mt-3 rounded-xl bg-black/15 p-3 text-xs text-amber-100/85">
+           <summary className="cursor-pointer font-semibold text-amber-200">1) Fundamentos e n├¡veis de confian├ºa</summary>
+           <div className="mt-2 space-y-2">
+             <p>Modelo principal para winrate: n = (Z x sigma / E)^2</p>
+             <p>Premissas usuais: sigma = 85 BB/100 (regular consistente), margem de erro E em BB/100.</p>
+-            <div className="rounded border border-amber-300/25 bg-amber-400/5 p-2">
++            <div className="rounded-xl bg-amber-400/6 p-2">
+               <p className="font-semibold text-amber-200">Faixas oficiais usadas no produto (por m├úos)</p>
+               <p className="mt-1">Baixa: at├® 6.999 ┬À Moderada: 7.000-10.999 ┬À M├®dia: 11.000-18.999 ┬À Alta: 19.000-26.999 ┬À Muito alta: 27.000+</p>
+             </div>
+             <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-5">
+-              <span className="rounded border border-amber-300/25 px-2 py-1">Baixa (70%): Z = 1.04</span>
+-              <span className="rounded border border-amber-300/25 px-2 py-1">Moderada (80%): Z = 1.28</span>
+-              <span className="rounded border border-amber-300/25 px-2 py-1">M├®dia (90%): Z = 1.645</span>
+-              <span className="rounded border border-amber-300/25 px-2 py-1">Alta (95%): Z = 1.96</span>
+-              <span className="rounded border border-amber-300/25 px-2 py-1">Muito alta (99%): Z = 2.576</span>
++              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Baixa (70%): Z = 1.04</span>
++              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Moderada (80%): Z = 1.28</span>
++              <span className="rounded-lg bg-amber-400/8 px-2 py-1">M├®dia (90%): Z = 1.645</span>
++              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Alta (95%): Z = 1.96</span>
++              <span className="rounded-lg bg-amber-400/8 px-2 py-1">Muito alta (99%): Z = 2.576</span>
+             </div>
+           </div>
+         </details>
+ 
+-        <details className="mt-2 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
++        <details className="mt-2 rounded-xl bg-black/15 p-3 text-xs text-amber-100/85">
+           <summary className="cursor-pointer font-semibold text-amber-200">2) Padr├Áes de jogador (winrate/ROI)</summary>
+           <div className="mt-2 overflow-x-auto">
+             <table className="w-full min-w-[680px] border-collapse text-left">
+@@ -1349,7 +1420,7 @@ export default function HandReviewer() {
+           </p>
+         </details>
+ 
+-        <details className="mt-2 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
++        <details className="mt-2 rounded-xl bg-black/15 p-3 text-xs text-amber-100/85">
+           <summary className="cursor-pointer font-semibold text-amber-200">3) Padr├Áes de jogo (HUD stats por oportunidade)</summary>
+           <div className="mt-2 space-y-2">
+             <p>Modelo de propor├º├úo binomial: n = (Z / E)^2 x p(1-p)</p>
+@@ -1382,7 +1453,7 @@ export default function HandReviewer() {
+           </div>
+         </details>
+ 
+-        <details className="mt-2 rounded-lg border border-amber-300/20 bg-black/25 p-3 text-xs text-amber-100/85">
++        <details className="mt-2 rounded-xl bg-black/15 p-3 text-xs text-amber-100/85">
+           <summary className="cursor-pointer font-semibold text-amber-200">4) Regra de ouro para explora├º├úo pr├ítica</summary>
+           <div className="mt-2 space-y-1">
+             <p>Extremos convergem r├ípido: 90% em 10 spots ou 10% em 10 spots j├í sugerem tend├¬ncia forte e explor├ível.</p>
+@@ -1390,7 +1461,7 @@ export default function HandReviewer() {
+           </div>
+         </details>
+ 
+-        <div className="mt-2 rounded-lg border border-amber-300/25 bg-amber-400/10 p-2 text-xs font-semibold text-amber-300">
++        <div className="mt-2 rounded-xl bg-amber-400/8 p-2 text-xs font-semibold text-amber-300">
+           Resumo pr├ítico: winrate confi├ível pede milhares de m├úos; leaks por spot podem aparecer com dezenas de oportunidades, mas confirma├º├úo forte exige amostra maior.
+         </div>
+           </div>

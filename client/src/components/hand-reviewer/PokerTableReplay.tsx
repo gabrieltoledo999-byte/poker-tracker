@@ -21,8 +21,8 @@ function getSeatLayout(maxPlayers: number): Array<{ top: string; left: string }>
   const seats = Math.min(Math.max(maxPlayers, 3), 9);
   const cx = 50;
   const cy = 49;
-  const rx = seats >= 8 ? 39 : 37;
-  const ry = seats >= 8 ? 37 : 35;
+  const rx = seats >= 8 ? 44 : 42;
+  const ry = seats >= 8 ? 30 : 32;
   const step = 360 / seats;
 
   return Array.from({ length: seats }).map((_, index) => {
@@ -195,19 +195,28 @@ export function PokerTableReplay(props: {
   return (
     <section className={`relative h-full overflow-hidden rounded-3xl border border-white/12 bg-[radial-gradient(circle_at_20%_10%,rgba(139,92,246,0.15),transparent_34%),radial-gradient(circle_at_82%_85%,rgba(6,182,212,0.14),transparent_38%),linear-gradient(180deg,#0b1020_0%,#070b17_100%)] shadow-[0_22px_55px_rgba(2,6,23,0.5)] ${props.className ?? ""}`}>
       <div className="absolute inset-0 rounded-3xl bg-[linear-gradient(145deg,rgba(255,255,255,0.05),transparent_30%,transparent_70%,rgba(255,255,255,0.03))]" />
-      <div className="relative h-full w-full pb-28 sm:pb-20">
-        <div className="pointer-events-none absolute left-1/2 top-[52.5%] h-[60%] w-[85%] -translate-x-1/2 -translate-y-1/2 rounded-[999px] bg-black/55 blur-[26px]" />
+      <div className="relative h-full w-full pb-16 sm:pb-20">
+        {/* Drop shadow */}
+        <div className="pointer-events-none absolute left-1/2 top-[52.5%] h-[76%] w-[92%] -translate-x-1/2 -translate-y-1/2 rounded-[999px] bg-black/65 blur-[30px]" />
+        {/* Outer rail - dark navy */}
         <div
-          className="absolute left-1/2 top-[48.8%] h-[67%] w-[93%] rounded-[999px] border border-indigo-200/18 bg-[radial-gradient(circle_at_50%_34%,#3a3859_0%,#1a213b_46%,#090d1a_100%)] shadow-[0_22px_38px_rgba(0,0,0,0.62),inset_0_2px_2px_rgba(255,255,255,0.16),inset_0_-8px_12px_rgba(0,0,0,0.45)]"
-          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(19deg)" }}
+          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[94%] sm:h-[80%] w-[99%] sm:w-[96%] rounded-[999px] bg-[radial-gradient(ellipse_at_50%_18%,#2e3460_0%,#1c2050_18%,#131636_38%,#0c0e22_58%,#070915_80%,#040610_100%)] shadow-[0_28px_48px_rgba(0,0,0,0.85),inset_0_4px_16px_rgba(120,130,255,0.18),inset_0_-14px_24px_rgba(0,0,0,0.70)]"
+          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
+        {/* Padded bumper - very dark with indigo accent border */}
         <div
-          className="absolute left-1/2 top-[48.8%] h-[62%] w-[88%] rounded-[999px] border border-cyan-100/14 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0)_24%)]"
-          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(19deg)" }}
+          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[88%] sm:h-[74%] w-[93%] sm:w-[90%] rounded-[999px] border-[3px] border-indigo-500/30 bg-[radial-gradient(ellipse_at_50%_20%,#181c34_0%,#0f1224_30%,#090c1c_60%,#050810_100%)] shadow-[inset_0_6px_18px_rgba(99,102,241,0.10),inset_0_-18px_30px_rgba(0,0,0,0.90),inset_0_0_30px_rgba(0,0,0,0.50)]"
+          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
+        {/* Felt surface */}
         <div
-          className="absolute left-1/2 top-[48.8%] h-[58.5%] w-[84.5%] rounded-[999px] border border-cyan-200/18 bg-[radial-gradient(circle_at_50%_42%,#1f5578_0%,#18476f_33%,#15395c_62%,#26204e_100%)] shadow-[inset_0_2px_5px_rgba(255,255,255,0.12),inset_0_-20px_26px_rgba(0,0,0,0.26)]"
-          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(19deg)" }}
+          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[84%] sm:h-[70%] w-[90%] sm:w-[87%] rounded-[999px] border border-cyan-200/18 bg-[radial-gradient(circle_at_50%_42%,#1f5578_0%,#18476f_33%,#15395c_62%,#26204e_100%)] shadow-[inset_0_2px_5px_rgba(255,255,255,0.12),inset_0_-20px_26px_rgba(0,0,0,0.26)]"
+          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
+        />
+        {/* Felt top highlight */}
+        <div
+          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[78%] sm:h-[64%] w-[86%] sm:w-[82%] rounded-[999px] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0)_28%)]"
+          style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
 
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[6] -translate-x-1/2 -translate-y-1/2 opacity-28">
@@ -228,10 +237,10 @@ export function PokerTableReplay(props: {
             className="pointer-events-none absolute z-[52]"
             style={{ top: dealerTop, left: dealerLeft, transform: "translate(-50%, -50%)" }}
           >
-            <div className="relative h-12 w-12 rounded-full border-2 border-amber-100/90 bg-[radial-gradient(circle_at_30%_26%,#fff8db_0%,#ffe59f_40%,#eab308_85%)] shadow-[0_10px_18px_rgba(0,0,0,0.42),0_0_18px_rgba(250,204,21,0.38)]">
+            <div className="relative h-8 w-8 sm:h-12 sm:w-12 rounded-full border-2 border-amber-100/90 bg-[radial-gradient(circle_at_30%_26%,#fff8db_0%,#ffe59f_40%,#eab308_85%)] shadow-[0_10px_18px_rgba(0,0,0,0.42),0_0_18px_rgba(250,204,21,0.38)]">
               <div className="absolute inset-[3px] rounded-full border border-amber-50/90 bg-[repeating-conic-gradient(from_0deg,rgba(255,255,255,0.9)_0deg_14deg,rgba(234,179,8,0)_14deg_30deg)]" />
-              <div className="absolute inset-[8px] rounded-full border border-amber-200/85 bg-[radial-gradient(circle_at_30%_30%,#fffef7_0%,#fde68a_70%,#f59e0b_100%)]" />
-              <div className="absolute inset-0 flex items-center justify-center text-[13px] font-black tracking-[0.08em] text-slate-900">D</div>
+              <div className="absolute inset-[5px] sm:inset-[8px] rounded-full border border-amber-200/85 bg-[radial-gradient(circle_at_30%_30%,#fffef7_0%,#fde68a_70%,#f59e0b_100%)]" />
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] sm:text-[13px] font-black tracking-[0.08em] text-slate-900">D</div>
             </div>
           </div>
         )}
@@ -431,7 +440,7 @@ export function PokerTableReplay(props: {
       </div>
 
       {props.controls && (
-        <div data-no-back-swipe="true" className="absolute bottom-2 sm:bottom-6 left-1/2 z-50 w-[calc(100%-10px)] sm:w-auto -translate-x-1/2 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/90 px-1.5 sm:px-3 py-1.5 sm:py-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
+        <div data-no-back-swipe="true" className="absolute bottom-2 sm:bottom-6 left-2 sm:left-1/2 sm:-translate-x-1/2 z-50 w-auto sm:w-auto pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/90 px-1.5 sm:px-3 py-1.5 sm:py-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
           <div className="max-w-full overflow-x-auto">
             {props.controls}
           </div>
@@ -439,7 +448,7 @@ export function PokerTableReplay(props: {
       )}
 
       {props.unitToggle && (
-        <div data-no-back-swipe="true" className="absolute bottom-[68px] sm:bottom-6 left-2 sm:left-4 z-50 pointer-events-auto rounded-xl border border-white/15 bg-slate-950/88 px-1 sm:px-2 py-1 sm:py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-md">
+        <div data-no-back-swipe="true" className="absolute top-2 sm:bottom-6 left-2 sm:left-4 sm:top-auto z-50 pointer-events-auto rounded-xl border border-white/15 bg-slate-950/88 px-1 sm:px-2 py-1 sm:py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-md">
           {props.unitToggle}
         </div>
       )}

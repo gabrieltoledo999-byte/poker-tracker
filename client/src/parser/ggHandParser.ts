@@ -193,8 +193,8 @@ function parseGgActionLine(line: string, street: PokerStreet): PokerAction | nul
     };
   }
 
-  // Collect: "PlayerName collected $500"
-  const collect = trimmed.match(/^(.+?):\s*collected\s*\$?([\d.]+)/i);
+  // Collect: "PlayerName collected $500" or "PlayerName collected 500 from pot"
+  const collect = trimmed.match(/^(.+?)(?::)?\s+collected\s*\$?([\d.,]+)/i);
   if (collect) {
     return {
       street,
@@ -534,18 +534,36 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
 
   const heroShowed = lines
     .slice(summaryIndex)
-    .find(l => new RegExp(`${heroName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*shows`, "i").test(l))
+    .find(l => new RegExp(`${heroName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*show`, "i").test(l))
     ?.match(/\[([^\]]+)\]/)?.[1]
     ?.split(/\s+/) ?? [];
 
-  // Villain cards from showdown
-  const villainCards = actions
+  // Villain cards from showdown actions ("shows" in SHOW DOWN section)
+  const villainCardsFromActions = actions
     .filter(a => a.action === "show" && a.player !== heroName)
     .map(a => {
       const cards = a.raw.match(/\[([^\]]+)\]/)?.[1]?.split(/\s+/).filter(Boolean) ?? [];
       return { player: a.player, cards };
     })
     .filter(v => v.cards.length > 0);
+
+  // Villain cards from SUMMARY section ("showed" lines: "Seat N: PlayerName showed [cards]...")
+  const villainCardsFromSummary = summaryLines
+    .filter(l => /^Seat\s+\d+:\s+.+\s+show(?:ed|s)\s+\[[^\]]+\]/i.test(l))
+    .map(l => {
+      const player = l.match(/^Seat\s+\d+:\s+(.+?)\s+show(?:ed|s)\s+\[/i)?.[1]?.trim() ?? "";
+      const cards = l.match(/\[([^\]]+)\]/)?.[1]?.split(/\s+/).filter(Boolean) ?? [];
+      return { player, cards };
+    })
+    .filter(v => v.player && v.player !== heroName && v.cards.length > 0);
+
+  // Merge: actions take priority, supplement with summary entries not already found
+  const villainCards = [...villainCardsFromActions];
+  for (const summaryEntry of villainCardsFromSummary) {
+    if (!villainCards.some(v => v.player === summaryEntry.player)) {
+      villainCards.push(summaryEntry);
+    }
+  }
 
   // Use proper metric calculation from actions (not broken formula)
   const calculations = calculateGgHandMetrics({

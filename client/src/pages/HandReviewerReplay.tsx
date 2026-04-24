@@ -31,7 +31,7 @@ export default function HandReviewerReplay() {
   const [selectedHandIndex, setSelectedHandIndex] = useState(0);
   const [currentActionIndex, setCurrentActionIndex] = useState(0);
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
-  const [displayUnit, setDisplayUnit] = useState<DisplayUnit>("chips");
+  const [displayUnit, setDisplayUnit] = useState<DisplayUnit>("bb");
   const [handFilter, setHandFilter] = useState<HandFilter>("all");
   const [mobilePanel, setMobilePanel] = useState<"none" | "hands" | "timeline">("none");
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -212,7 +212,7 @@ export default function HandReviewerReplay() {
 
   if (!parsedTournament || !selectedHand || !currentStep) {
     return (
-      <div className="hand-review-replay mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1700px] flex-col gap-3 overflow-hidden px-2 py-3 md:mt-1 md:px-3">
+      <div className="hand-review-replay flex h-screen w-full flex-col gap-3 overflow-hidden px-2 py-3">
         <Card className="border-border/60 bg-card/70">
           <CardHeader>
             <CardTitle>Replay nao carregado</CardTitle>
@@ -228,11 +228,11 @@ export default function HandReviewerReplay() {
 
   return (
     <div
-      className="hand-review-replay mx-auto mt-0.5 flex h-[calc(100vh-5rem)] w-full max-w-[1900px] flex-col gap-0 overflow-hidden pb-4 md:mt-1"
+      className="hand-review-replay flex h-screen w-full flex-col gap-0 overflow-hidden"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <section className="grid min-h-0 h-full flex-1 items-stretch gap-2 md:grid-cols-[300px_minmax(0,1fr)]">
+      <section className="grid min-h-0 h-full flex-1 items-stretch gap-2 md:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="hidden h-full flex-col rounded-2xl border border-white/10 bg-slate-950/65 p-2.5 md:flex" style={{ minHeight: 0 }}>
           {/* Top half — hand list */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -318,12 +318,15 @@ export default function HandReviewerReplay() {
           </div>
         </aside>
 
-        <div className="flex min-h-0 h-full flex-1 flex-col">
-          <div className="mb-2 flex items-center gap-1.5 px-1 md:hidden">
+        <div className="relative flex min-h-0 h-full flex-1 flex-col">
+          <div className="absolute top-2 right-2 z-[70] flex items-center gap-1.5 md:hidden">
+            <div className="text-[11px] text-white/65 mr-1">
+              Mao {selectedHandIndex + 1} ┬À {safeActionIndex}/{handActions.length}
+            </div>
             <Button
               size="sm"
               variant={mobilePanel === "hands" ? "default" : "outline"}
-              className="h-7 px-2 text-[10px]"
+              className="h-7 px-2 text-[10px] bg-slate-950/80 backdrop-blur-sm"
               onClick={() => setMobilePanel(prev => (prev === "hands" ? "none" : "hands"))}
             >
               Maos
@@ -331,18 +334,15 @@ export default function HandReviewerReplay() {
             <Button
               size="sm"
               variant={mobilePanel === "timeline" ? "default" : "outline"}
-              className="h-7 px-2 text-[10px]"
+              className="h-7 px-2 text-[10px] bg-slate-950/80 backdrop-blur-sm"
               onClick={() => setMobilePanel(prev => (prev === "timeline" ? "none" : "timeline"))}
             >
               Acoes
             </Button>
-            <div className="ml-auto text-[11px] text-white/65">
-              Mao {selectedHandIndex + 1} · {safeActionIndex}/{handActions.length}
-            </div>
           </div>
 
           <PokerTableReplay
-            className="flex-1 min-h-0"
+            className="flex-1 min-h-0 h-full"
             step={currentStep}
             previousStep={previousStep}
             maxPlayers={selectedHand.maxPlayers}
@@ -392,7 +392,7 @@ export default function HandReviewerReplay() {
             })()}
             controls={(
               <div className="flex min-w-max items-center justify-end gap-1 sm:gap-2">
-                {/* Street jump buttons */}
+                {/* Street jump buttons ÔÇö desktop only */}
                 {(["preflop", "flop", "turn", "river"] as PokerStreet[]).map(street => {
                   const labels: Record<string, string> = { preflop: "PreFlop", flop: "Flop", turn: "Turn", river: "River" };
                   const isActive = currentStreet === street ||
@@ -406,7 +406,7 @@ export default function HandReviewerReplay() {
                       key={street}
                       size="sm"
                       variant={isActive ? "default" : "outline"}
-                      className={`h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm ${
+                      className={`hidden sm:inline-flex h-11 px-4 text-sm ${
                         isActive ? "bg-cyan-500 text-slate-950 hover:bg-cyan-400" : ""
                       }`}
                       onClick={() => jumpToStreet(street)}
@@ -416,48 +416,48 @@ export default function HandReviewerReplay() {
                     </Button>
                   );
                 })}
-                <div className="mx-0.5 h-5 w-px bg-white/15" />
+                <div className="hidden sm:block mx-0.5 h-5 w-px bg-white/15" />
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
+                  className="h-14 sm:h-11 px-4 sm:px-4 text-sm"
                   onClick={goPrevHand}
                   disabled={!canPrevHand}
                 >
-                  <SkipBack className="mr-1 h-4 w-4" />
+                  <SkipBack className="mr-1 h-5 w-5" />
                   <span className="hidden sm:inline">Mao-</span>
                   <span className="sm:hidden">M-</span>
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
+                  className="h-14 w-14 sm:h-11 sm:w-12 px-0 text-sm"
                   variant="outline"
                   onClick={goPrevActionContinuous}
                   disabled={!canPrevAction && !canPrevHand}
                 >
-                  <ArrowLeft className="h-4 w-4" />
+                  <ArrowLeft className="h-6 w-6 sm:h-5 sm:w-5" />
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
+                  className="h-14 w-14 sm:h-11 sm:w-12 px-0 text-sm"
                   variant="outline"
                   onClick={goNextActionContinuous}
                   disabled={!canNextAction && !canNextHand}
                 >
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-6 w-6 sm:h-5 sm:w-5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 sm:h-11 px-2 sm:px-4 text-[10px] sm:text-sm"
+                  className="h-14 sm:h-11 px-4 sm:px-4 text-sm"
                   onClick={goNextHand}
                   disabled={!canNextHand}
                 >
-                  <SkipForward className="mr-1 h-4 w-4" />
+                  <SkipForward className="mr-1 h-5 w-5" />
                   <span className="hidden sm:inline">Mao+</span>
                   <span className="sm:hidden">M+</span>
                 </Button>
-                <span className="rounded-md border border-border/60 px-1.5 py-1 text-[9px] sm:px-2.5 sm:py-1.5 sm:text-xs text-muted-foreground">
+                <span className="rounded-md border border-border/60 px-2 py-1.5 text-xs sm:px-2.5 sm:py-1.5 sm:text-xs text-muted-foreground">
                   {safeActionIndex}/{handActions.length}
                 </span>
                 <Button

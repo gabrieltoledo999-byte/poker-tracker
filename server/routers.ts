@@ -4,7 +4,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { users } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest, removeFriendship, blockUser, resetFriendshipNetworkForUser, resetFriendshipNetworkGlobally, sendMessage, getConversation, getConversationList, markConversationRead, getUnreadCount, toggleMessageReaction } from "./db";
@@ -62,6 +62,9 @@ import {
   getGlobalHandPatternStats,
   registerHandPatternResult,
   updateHandPatternManualStats,
+  getStatsByTournament,
+  deleteOrphanTablesForUser,
+  getDistinctTournamentNames,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getRateToBrl, getAllRates, refreshRates } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
@@ -69,6 +72,8 @@ import { registerUser, loginUser, setupPasswordForExistingUser } from "./auth";
 import { isGGHandHistory, ggHandHistoryToSessionData } from "./parsers/ggIntegration";
 import {
   analyzeReplayTournament,
+  clearReplayHistoryForUser,
+  compactReplayStorageForUser,
   getAbiDashboard,
   getActiveConsent,
   getPlayerHistoricalProfile,
@@ -626,7 +631,7 @@ export const appRouter = router({
           cashOutBrl = await convertToBrl(input.cashOut, input.currency);
         }
 
-        return await createSession({
+        const session = await createSession({
           userId: ctx.user.id,
           type: input.type,
           gameFormat: input.gameFormat,
@@ -648,6 +653,19 @@ export const appRouter = router({
           fieldSize: input.fieldSize,
           location: input.location,
         });
+
+        // Auto-update venue balance for online sessions
+        if (input.venueId && input.type === "online") {
+          const venue = await getVenueById(input.venueId, ctx.user.id);
+          if (venue && venue.currency === input.currency) {
+            const profit = input.currency === "BRL"
+              ? cashOutBrl - buyInBrl
+              : input.cashOut - input.buyIn;
+            await updateVenueBalance(venue.id, ctx.user.id, venue.balance + profit, venue.currency as any, "session", { sessionId: session.id });
+          }
+        }
+
+        return session;
       }),
 
     // Update a session
@@ -693,15 +711,64 @@ export const appRouter = router({
           }
           (data as any).exchangeRate = exchangeRate;
         }
-        
-        return await updateSession(id, ctx.user.id, data);
+
+        const oldSession = await getSessionById(id, ctx.user.id);
+        const updatedSession = await updateSession(id, ctx.user.id, data);
+
+        // Auto-adjust venue balance for online sessions
+        if (oldSession && updatedSession) {
+          const getProfit = (s: any) => s.currency === "BRL"
+            ? s.cashOut - s.buyIn
+            : (s.originalCashOut ?? s.cashOut) - (s.originalBuyIn ?? s.buyIn);
+          const oldVenueId = oldSession.venueId;
+          const newVenueId = updatedSession.venueId;
+
+          if (oldVenueId && oldVenueId === newVenueId && updatedSession.type === "online") {
+            // Same venue ÔÇö apply delta
+            const venue = await getVenueById(newVenueId, ctx.user.id);
+            if (venue && venue.currency === updatedSession.currency && venue.currency === oldSession.currency) {
+              const delta = getProfit(updatedSession) - getProfit(oldSession);
+              if (delta !== 0) {
+                await updateVenueBalance(venue.id, ctx.user.id, venue.balance + delta, venue.currency as any, "session", {});
+              }
+            }
+          } else {
+            // Venue changed or removed ÔÇö revert old, apply new
+            if (oldVenueId && oldSession.type === "online") {
+              const oldVenue = await getVenueById(oldVenueId, ctx.user.id);
+              if (oldVenue && oldVenue.currency === oldSession.currency) {
+                await updateVenueBalance(oldVenue.id, ctx.user.id, oldVenue.balance - getProfit(oldSession), oldVenue.currency as any, "session", {});
+              }
+            }
+            if (newVenueId && updatedSession.type === "online") {
+              const newVenue = await getVenueById(newVenueId, ctx.user.id);
+              if (newVenue && newVenue.currency === updatedSession.currency) {
+                await updateVenueBalance(newVenue.id, ctx.user.id, newVenue.balance + getProfit(updatedSession), newVenue.currency as any, "session", {});
+              }
+            }
+          }
+        }
+
+        return updatedSession;
       }),
 
     // Delete a session
     delete: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
-        return await deleteSession(input.id, ctx.user.id);
+        // Fetch session before deleting to revert venue balance
+        const session = await getSessionById(input.id, ctx.user.id);
+        const result = await deleteSession(input.id, ctx.user.id);
+        if (result && session?.venueId && session.type === "online") {
+          const venue = await getVenueById(session.venueId, ctx.user.id);
+          if (venue && venue.currency === session.currency) {
+            const profit = session.currency === "BRL"
+              ? session.cashOut - session.buyIn
+              : (session.originalCashOut ?? session.cashOut) - (session.originalBuyIn ?? session.buyIn);
+            await updateVenueBalance(venue.id, ctx.user.id, venue.balance - profit, venue.currency as any, "session", {});
+          }
+        }
+        return result;
       }),
 
     // Delete all finalized session history for current user
@@ -1152,6 +1219,18 @@ export const appRouter = router({
     handPatternStats: protectedProcedure
       .query(async ({ ctx }) => {
         return await getHandPatternStats(ctx.user.id);
+      }),
+
+    // Stats grouped by tournament name (table-level, not session-level)
+    statsByTournament: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getStatsByTournament(ctx.user.id);
+      }),
+
+    // All distinct tournament names for autocomplete
+    tournamentNames: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getDistinctTournamentNames(ctx.user.id);
       }),
 
     // Fast increment for premium hand result on dashboard cards
@@ -1918,6 +1997,14 @@ export const appRouter = router({
           throw error;
         }
       }),
+    clearReplayHistory: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        return await clearReplayHistoryForUser(ctx.user.id);
+      }),
+    compactReplayStorage: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        return await compactReplayStorageForUser(ctx.user.id);
+      }),
     analyzeReplay: protectedProcedure
       .input(replayImportInput)
       .mutation(async ({ ctx, input }) => {
@@ -1944,7 +2031,47 @@ export const appRouter = router({
         }
       }),
     playerHistoricalProfile: protectedProcedure.query(async ({ ctx }) => {
-      return await getPlayerHistoricalProfile(ctx.user.id);
+      try {
+        return await getPlayerHistoricalProfile(ctx.user.id);
+      } catch (error) {
+        console.error("[memory.playerHistoricalProfile] failed, returning safe fallback", error);
+        return {
+          summary: {
+            totalTournaments: 0,
+            totalHands: 0,
+            abiAverage: 0,
+            abiAverageCurrency: "USD",
+            abiAverageInMajorUnits: 0,
+            avgPlacement: 0,
+            bestPlacement: null,
+            vpipAvg: 0,
+            pfrAvg: 0,
+            threeBetAvg: 0,
+            bbDefenseAvg: 0,
+            cbetFlopAvg: 0,
+            cbetTurnAvg: 0,
+            foldToCbetAvg: 0,
+            attemptToStealAvg: 0,
+            aggressionFactorAvg: 0,
+            wtsdAvg: 0,
+            wsdAvg: 0,
+          },
+          positions: {
+            byPosition: [],
+            mostProfitable: null,
+            leastProfitable: null,
+            biggestLoss: null,
+            biggestGain: null,
+          },
+          byAbi: [],
+          leakFlags: [],
+          trends: {
+            recentAbi: null,
+            previousAbi: null,
+            note: null,
+          },
+        };
+      }
     }),
     abiDashboard: protectedProcedure
       .input(z.object({ lastN: z.number().int().min(1).max(200).optional() }).optional())
@@ -2074,6 +2201,63 @@ export const appRouter = router({
     unreadCount: protectedProcedure
       .query(async ({ ctx }) => {
         return { count: await getUnreadCount(ctx.user.id) };
+      }),
+  }),
+
+  // Admin diagnostic router (admin-only)
+  admin: router({
+    diagnoseUser: protectedProcedure
+      .input(z.object({ search: z.string().min(1).max(100) }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Somente admin." });
+        }
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable." });
+
+        const like = `%${input.search}%`;
+        const [matchedUsers] = await db.execute(
+          sql`SELECT id, name, email, role, createdAt FROM users WHERE name LIKE ${like} OR email LIKE ${like} LIMIT 5`
+        ) as any;
+
+        const results: any[] = [];
+        for (const u of matchedUsers as any[]) {
+          const [silverRows] = await db.execute(
+            sql`SELECT id, sessionId, activeSessionId, tournamentName, buyIn, cashOut, startedAt, endedAt
+                FROM session_tables WHERE userId = ${u.id} AND tournamentName LIKE '%silver%' ORDER BY id DESC`
+          ) as any;
+
+          const [orphanRows] = await db.execute(
+            sql`SELECT st.id, st.activeSessionId, st.sessionId, st.tournamentName, st.buyIn, st.cashOut,
+                       st.startedAt, st.endedAt, acs.id AS activeSessionExists
+                FROM session_tables st
+                LEFT JOIN active_sessions acs ON acs.id = st.activeSessionId
+                WHERE st.userId = ${u.id} AND st.sessionId IS NULL ORDER BY st.id DESC`
+          ) as any;
+
+          const [allTablesRows] = await db.execute(
+            sql`SELECT st.id, st.sessionId, st.activeSessionId, st.tournamentName, st.buyIn, st.cashOut,
+                       st.startedAt, st.endedAt
+                FROM session_tables st WHERE st.userId = ${u.id} ORDER BY st.id DESC LIMIT 30`
+          ) as any;
+
+          results.push({
+            user: { id: u.id, name: u.name, email: u.email, role: u.role },
+            silverTables: silverRows as any[],
+            orphanTables: orphanRows as any[],
+            recentTables: allTablesRows as any[],
+          });
+        }
+        return results;
+      }),
+    cleanOrphanTables: protectedProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Somente admin." });
+        }
+        const deleted = await deleteOrphanTablesForUser(input.userId);
+        return { deleted };
       }),
   }),
 });

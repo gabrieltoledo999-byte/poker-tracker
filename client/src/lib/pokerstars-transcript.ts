@@ -585,6 +585,15 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
       ?.match(/^Dealt to\s+(.+?)\s+\[/i)?.[1] ?? null;
   const effectiveHeroName = dealtToHeroName ?? header.heroName;
   const normalizedHeroFromHeader = normalizeName(effectiveHeroName);
+
+  // Ignore hands where hero is seated but explicitly marked as out of hand
+  // (common after table move while posting/transitioning blinds).
+  const heroOutOfHand = lines.some(
+    line => /^Seat\s+\d+:\s+.+\(\d+ in chips\).*out of hand/i.test(line)
+      && normalizeName(line.match(/^Seat\s+\d+:\s+(.+?)\s+\(\d+ in chips\)/i)?.[1] ?? "") === normalizedHeroFromHeader,
+  );
+  if (heroOutOfHand) return null;
+
   const seatsWithoutPosition: PokerSeat[] = seatsBase.map(seat => ({
     ...seat,
     isHero: normalizeName(seat.playerName) === normalizedHeroFromHeader,

@@ -52,7 +52,7 @@ export function PlayerSeat(props: {
   return (
     <button
       onClick={props.onClick}
-      className={`w-[110px] sm:w-[172px] overflow-visible rounded-xl sm:rounded-2xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 text-left transition ${tone} ${props.isSelected ? "ring-2 ring-cyan-400/40" : ""} ${props.isActing ? "scale-[1.02] shadow-[0_0_24px_rgba(34,211,238,0.25)]" : ""}`}
+      className={`w-[94px] sm:w-[172px] overflow-visible rounded-xl sm:rounded-2xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 text-left transition ${tone} ${props.isSelected ? "ring-2 ring-cyan-400/40" : ""} ${props.isActing ? "scale-[1.02] shadow-[0_0_24px_rgba(34,211,238,0.25)]" : ""}`}
     >
       <div className="mb-1 flex items-center gap-1">
         {seat.position ? (

@@ -833,6 +833,7 @@ export async function getUserSessions(
     venueIds: Set<number>;
     gameFormats: Set<string>;
     primaryTournamentName: string | null;
+    tournamentNames: Set<string>;
     bestFinalPosition: number | null;
     maxFieldSize: number | null;
     finalPositionSum: number;
@@ -854,6 +855,7 @@ export async function getUserSessions(
         venueIds: new Set<number>(),
         gameFormats: new Set<string>(),
         primaryTournamentName: null,
+        tournamentNames: new Set<string>(),
         bestFinalPosition: null,
         maxFieldSize: null,
         finalPositionSum: 0,
@@ -877,8 +879,9 @@ export async function getUserSessions(
     agg.gameFormats.add(row.gameFormat);
     if (row.type === "online") agg.hasOnlineTables = true;
     if (row.type === "live") agg.hasLiveTables = true;
-    if (!agg.primaryTournamentName && row.tournamentName && row.tournamentName.trim()) {
-      agg.primaryTournamentName = row.tournamentName.trim();
+    if (row.tournamentName && row.tournamentName.trim()) {
+      if (!agg.primaryTournamentName) agg.primaryTournamentName = row.tournamentName.trim();
+      agg.tournamentNames.add(row.tournamentName.trim().toLowerCase());
     }
     if (typeof row.finalPosition === "number" && row.finalPosition > 0) {
       agg.bestFinalPosition = agg.bestFinalPosition === null
@@ -913,6 +916,7 @@ export async function getUserSessions(
       bestTableProfit: agg?.bestTableProfit ?? null,
       worstTableProfit: agg?.worstTableProfit ?? null,
       primaryTournamentName: agg?.primaryTournamentName ?? null,
+      allTournamentNames: agg ? Array.from(agg.tournamentNames) : [],
       bestFinalPosition: agg?.bestFinalPosition ?? s.finalPosition ?? null,
       avgFinalPosition: agg && agg.finalPositionCount > 0
         ? Math.round(agg.finalPositionSum / agg.finalPositionCount)
@@ -2153,6 +2157,181 @@ export async function getStatsByVenue(userId: number) {
   return Object.values(venueStats).sort((a, b) => b.totalProfit - a.totalProfit);
 }
 
+
+// ============== TOURNAMENT STATS BY TABLE ==============
+
+/**
+ * Returns all distinct tournament names ever used by a user (for autocomplete).
+ */
+export async function getDistinctTournamentNames(userId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .selectDistinct({ tournamentName: sessionTables.tournamentName })
+    .from(sessionTables)
+    .where(
+      and(
+        eq(sessionTables.userId, userId),
+        sql`${sessionTables.tournamentName} IS NOT NULL`,
+        sql`TRIM(${sessionTables.tournamentName}) != ''`
+      )
+    );
+
+  return rows
+    .map((r) => (r.tournamentName ?? "").trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+}
+
+/**
+ * Returns stats grouped by session_table.tournamentName (table-level, not session-level).
+ * Only finalized tables (sessionId IS NOT NULL) are included.
+ */
+export async function getStatsByTournament(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const tables = await db
+    .select({
+      tournamentName: sessionTables.tournamentName,
+      buyIn: sessionTables.buyIn,
+      cashOut: sessionTables.cashOut,
+      currency: sessionTables.currency,
+      finalPosition: sessionTables.finalPosition,
+      sessionId: sessionTables.sessionId,
+    })
+    .from(sessionTables)
+    .where(
+      and(
+        eq(sessionTables.userId, userId),
+        sql`(${sessionTables.sessionId} IS NOT NULL OR ${sessionTables.activeSessionId} IS NOT NULL)`,
+        sql`${sessionTables.tournamentName} IS NOT NULL`,
+        sql`TRIM(${sessionTables.tournamentName}) != ''`
+      )
+    );
+
+  const rates = await getAllRates().catch(() => null);
+  const toBrl = (amount: number, currency?: string | null): number => {
+    if (!amount) return 0;
+    if (currency === "USD") return Math.round(amount * (rates?.USD?.rate ?? 5.75));
+    if (currency === "CAD") return Math.round(amount * (rates?.CAD?.rate ?? 4.20));
+    if (currency === "JPY") return Math.round(amount * (rates?.JPY?.rate ?? 0.033));
+    if (currency === "CNY") return Math.round(amount * (rates?.CNY?.rate ?? 0.80));
+    return amount;
+  };
+
+  const grouped = new Map<string, {
+    displayName: string;
+    tables: number;
+    sessions: Set<number>;
+    totalBuyIn: number;
+    totalCashOut: number;
+    itm: number;
+    trophies: number;
+    bestPosition: number | null;
+    bestProfit: number | null;
+  }>();
+
+  for (const t of tables) {
+    const raw = (t.tournamentName ?? "").trim();
+    if (!raw) continue;
+    // Normalize key: lowercase, collapse whitespace
+    const key = raw.toLowerCase().replace(/\s+/g, " ");
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        displayName: raw,
+        tables: 0,
+        sessions: new Set(),
+        totalBuyIn: 0,
+        totalCashOut: 0,
+        itm: 0,
+        trophies: 0,
+        bestPosition: null,
+        bestProfit: null,
+      });
+    }
+    const g = grouped.get(key)!;
+    const buyIn = toBrl(t.buyIn ?? 0, t.currency);
+    const cashOut = toBrl(t.cashOut ?? 0, t.currency);
+    const profit = cashOut - buyIn;
+    g.tables += 1;
+    if (t.sessionId) g.sessions.add(Number(t.sessionId));
+    g.totalBuyIn += buyIn;
+    g.totalCashOut += cashOut;
+    if (cashOut > 0) g.itm += 1;
+    if (typeof t.finalPosition === "number" && t.finalPosition === 1) g.trophies += 1;
+    if (typeof t.finalPosition === "number" && t.finalPosition > 0) {
+      g.bestPosition = g.bestPosition === null ? t.finalPosition : Math.min(g.bestPosition, t.finalPosition);
+    }
+    if (g.bestProfit === null || profit > g.bestProfit) g.bestProfit = profit;
+  }
+
+  const stats = Array.from(grouped.entries()).map(([key, g]) => {
+    const profit = g.totalCashOut - g.totalBuyIn;
+    return {
+      name: g.displayName,
+      key,
+      tables: g.tables,
+      sessions: g.sessions.size,
+      totalBuyIn: g.totalBuyIn,
+      totalCashOut: g.totalCashOut,
+      profit,
+      avgProfit: g.tables > 0 ? Math.round(profit / g.tables) : 0,
+      itmRate: g.tables > 0 ? Math.round((g.itm / g.tables) * 100) : 0,
+      trophies: g.trophies,
+      bestPosition: g.bestPosition,
+      bestProfit: g.bestProfit,
+    };
+  })
+    .filter(r => r.tables > 0)
+    .sort((a, b) => b.tables !== a.tables ? b.tables - a.tables : b.profit - a.profit);
+
+  // Detect similar names: two keys are "similar" if one contains the other (after stripping digits/punctuation)
+  const normalize = (k: string) => k.replace(/[\d#\-_.()/\\]+/g, "").replace(/\s+/g, " ").trim();
+  const keys = stats.map(s => s.key);
+  const similarMap = new Map<string, string[]>();
+  for (let i = 0; i < keys.length; i++) {
+    const na = normalize(keys[i]);
+    for (let j = i + 1; j < keys.length; j++) {
+      const nb = normalize(keys[j]);
+      if (!na || !nb) continue;
+      if (na === nb || na.includes(nb) || nb.includes(na)) {
+        if (!similarMap.has(keys[i])) similarMap.set(keys[i], []);
+        if (!similarMap.has(keys[j])) similarMap.set(keys[j], []);
+        similarMap.get(keys[i])!.push(stats[j].name);
+        similarMap.get(keys[j])!.push(stats[i].name);
+      }
+    }
+  }
+
+  return stats.map(s => ({
+    ...s,
+    similarNames: similarMap.get(s.key) ?? [],
+  }));
+}
+
+/**
+ * Deletes orphaned session_tables rows (sessionId IS NULL and no active session link) for a user.
+ * Returns the number of rows deleted.
+ */
+export async function deleteOrphanTablesForUser(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Find orphans: sessionId is null, and activeSessionId either null or pointing to a deleted active_session
+  const [result] = await db.execute(
+    sql`DELETE FROM session_tables
+        WHERE userId = ${userId}
+          AND sessionId IS NULL
+          AND (
+            activeSessionId IS NULL
+            OR activeSessionId NOT IN (SELECT id FROM active_sessions)
+          )`
+  ) as any;
+
+  return (result as any)?.affectedRows ?? 0;
+}
 
 // ============== INVITE QUERIES ==============
 

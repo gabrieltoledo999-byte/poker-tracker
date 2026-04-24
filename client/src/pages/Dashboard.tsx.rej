@@ -1,0 +1,91 @@
+diff a/client/src/pages/Dashboard.tsx b/client/src/pages/Dashboard.tsx	(rejected hunks)
+@@ -458,7 +459,7 @@ export default function Dashboard() {
+       .filter((v: any) => (v.tables ?? v.sessions) > 0)
+       .map((v: any) => ({
+         venueId: v.venueId,
+-        name: v.venueName.length > 10 ? v.venueName.substring(0, 10) + "ÔÇª" : v.venueName,
++        name: v.venueName.length > 13 ? v.venueName.substring(0, 13) + "ÔÇª" : v.venueName,
+         fullName: v.venueName,
+         roi: (v.totalBuyIn ?? 0) > 0 ? parseFloat(((v.totalProfit / v.totalBuyIn) * 100).toFixed(1)) : 0,
+         winrate: v.winRate,
+@@ -1704,7 +1654,7 @@ export default function Dashboard() {
+                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                     <Trophy className="h-4 w-4 text-amber-500" /> An├ílise por Torneio
+                   </CardTitle>
+-                  <p className="text-xs text-muted-foreground">Sess├Áes agrupadas pelo nome principal do torneio.</p>
++                  <p className="text-xs text-muted-foreground">Mesas agrupadas pelo nome do torneio.</p>
+                 </div>
+                 <Badge variant="outline" className="text-[10px]">Top {tournamentStats.length}</Badge>
+               </div>
+@@ -1721,9 +1672,16 @@ export default function Dashboard() {
+                         className="w-full flex items-center justify-between px-3 py-3 text-left hover:bg-muted/20 transition-colors"
+                       >
+                         <div className="min-w-0">
+-                          <p className="text-sm font-semibold truncate">{tournament.name}</p>
++                          <div className="flex items-center gap-1.5">
++                            <p className="text-sm font-semibold truncate">{tournament.name}</p>
++                            {hasSimilar && (
++                              <span title={`Nome parecido com: ${(tournament as any).similarNames.join(", ")}`} className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
++                                ~similar
++                              </span>
++                            )}
++                          </div>
+                           <p className="text-[11px] text-muted-foreground">
+-                            {tournament.sessions} sess├Á{tournament.sessions === 1 ? "e" : "es"} ┬À {tournament.tables} mesas
++                            {tournament.tables} mesa{tournament.tables === 1 ? "" : "s"} ┬À {tournament.sessions} sess├Á{tournament.sessions === 1 ? "e" : "es"}
+                           </p>
+                         </div>
+                         <div className="flex items-center gap-3 shrink-0">
+@@ -1734,24 +1692,35 @@ export default function Dashboard() {
+                         </div>
+                       </button>
+                       {expanded && (
+-                        <div className="grid grid-cols-3 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
+-                          <div className="rounded-md bg-background/40 px-2 py-2">
+-                            <p className="text-[10px] text-muted-foreground">M├®dia</p>
+-                            <p className={`text-xs font-semibold ${tournament.avgProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+-                              {formatCurrencyCompact(tournament.avgProfit)}
+-                            </p>
+-                          </div>
+-                          <div className="rounded-md bg-background/40 px-2 py-2">
+-                            <p className="text-[10px] text-muted-foreground">Win rate</p>
+-                            <p className="text-xs font-semibold text-cyan-400">{tournament.winRate}%</p>
+-                          </div>
+-                          <div className="rounded-md bg-background/40 px-2 py-2">
+-                            <p className="text-[10px] text-muted-foreground">Saldo</p>
+-                            <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+-                              {formatCurrencyCompact(tournament.profit)}
+-                            </p>
++                        <>
++                          {hasSimilar && (
++                            <div className="px-3 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-400">
++                              ÔÜá´©Å Nome parecido com: <span className="font-semibold">{(tournament as any).similarNames.join(", ")}</span>. Confirme se s├úo o mesmo torneio.
++                            </div>
++                          )}
++                          <div className="grid grid-cols-4 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
++                            <div className="rounded-md bg-background/40 px-2 py-2">
++                              <p className="text-[10px] text-muted-foreground">M├®dia/mesa</p>
++                              <p className={`text-xs font-semibold ${(tournament as any).avgProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
++                                {formatCurrencyCompact((tournament as any).avgProfit)}
++                              </p>
++                            </div>
++                            <div className="rounded-md bg-background/40 px-2 py-2">
++                              <p className="text-[10px] text-muted-foreground">ITM</p>
++                              <p className="text-xs font-semibold text-cyan-400">{(tournament as any).itmRate ?? 0}%</p>
++                            </div>
++                            <div className="rounded-md bg-background/40 px-2 py-2">
++                              <p className="text-[10px] text-muted-foreground">Trof├®us</p>
++                              <p className="text-xs font-semibold text-amber-400">{(tournament as any).trophies ?? 0} ­ƒÅå</p>
++                            </div>
++                            <div className="rounded-md bg-background/40 px-2 py-2">
++                              <p className="text-[10px] text-muted-foreground">Saldo</p>
++                              <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
++                                {formatCurrencyCompact(tournament.profit)}
++                              </p>
++                            </div>
+                           </div>
+-                        </div>
++                        </>
+                       )}
+                     </div>
+                   );
