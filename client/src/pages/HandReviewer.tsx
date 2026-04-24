@@ -1362,7 +1362,7 @@ export default function HandReviewer() {
                 </div>
               )}
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
                   <p className="mb-2 font-semibold text-cyan-100">Onde estÃ¡ mais lucrativo</p>
                   <p>
@@ -1379,6 +1379,29 @@ export default function HandReviewer() {
                       ? `${playerHistoryQuery.data.positions.leastProfitable.position} (${formatBb((playerHistoryQuery.data.positions.leastProfitable as any).netBb)})`
                       : "-"}
                   </p>
+                </div>
+
+                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
+                  <p className="mb-2 font-semibold text-amber-100">PosiÃ§Ã£o de foco</p>
+                  {(() => {
+                    const focusPosition = playerHistoryQuery.data?.positions?.leastProfitable?.position;
+                    const focusSample = playerHistoryQuery.data?.positions?.byPosition?.find((item) => item.position === focusPosition);
+                    if (!focusPosition) {
+                      return <p className="text-white/70">Sem foco definido ainda.</p>;
+                    }
+
+                    return (
+                      <>
+                        <p className="font-semibold text-amber-50">{focusPosition}</p>
+                        <p className="mt-1 text-xs text-amber-100/80">
+                          {focusSample?.handsPlayed ?? 0} mÃ£os analisadas nessa posiÃ§Ã£o.
+                        </p>
+                        <p className="mt-2 text-xs text-amber-200/90">
+                          Prioridade: revisar ranges de open, defesa e linhas de c-bet desse spot.
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1400,9 +1423,16 @@ export default function HandReviewer() {
                       vpip: Number(playerHistoryQuery.data.summary.vpipAvg ?? 0),
                       pfr: Number(playerHistoryQuery.data.summary.pfrAvg ?? 0),
                       threeBet: Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0),
+                      bbDefense: Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0),
+                      attemptToSteal: Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0),
                       cbetFlop: Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0),
                       cbetTurn: Number(playerHistoryQuery.data.summary.cbetTurnAvg ?? 0),
                       foldToCbet: Number((playerHistoryQuery.data.summary as any).foldToCbetAvg ?? 0),
+                      aggressionFactor: Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0),
+                      wtsd: Number((playerHistoryQuery.data.summary as any).wtsdAvg ?? 0),
+                      wsd: Number((playerHistoryQuery.data.summary as any).wsdAvg ?? 0),
+                    };
+
                     const histOpp = ((playerHistoryQuery.data.summary as any)?.opportunities ?? {}) as Record<string, number>;
                     const denominatorFor = (key: MetricKey): number => {
                       if (key === "vpip" || key === "pfr" || key === "threeBet") return Number(histOpp.hands ?? 0);

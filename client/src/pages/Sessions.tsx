@@ -1638,7 +1638,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
       </div>
 
       {/* Premium hand counters */}
-      <div className="rounded-xl border border-border/60 bg-card/40 p-3 space-y-2">
+      <div className="rounded-xl border border-white/10 bg-slate-950/78 p-3 space-y-2 shadow-[0_16px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Mãos Premium</h3>
           <Button
@@ -1702,7 +1702,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
             const profit = isFinished ? (table.cashOut ?? 0) - table.buyIn : null;
 
             return (
-              <div key={table.id} className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg border ${isFinished ? "border-border bg-muted/20" : "border-primary/20 bg-primary/5"}`}>
+              <div key={table.id} className={`flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isFinished ? "border-white/10 bg-slate-950/70" : "border-cyan-400/25 bg-slate-950/82"}`}>
                 {/* Venue logo */}
                 <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {venue?.logoUrl ? (
@@ -2182,9 +2182,9 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
 
   return (
     <>
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden border-white/10 bg-slate-950/76 shadow-[0_18px_44px_rgba(0,0,0,0.24)] backdrop-blur-sm">
       <div
-        className="p-4 cursor-pointer hover:bg-muted/20 transition-colors"
+        className="cursor-pointer p-4 transition-colors hover:bg-white/5"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start gap-3">
@@ -2236,7 +2236,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
         </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/40 pt-3 sm:mt-0 sm:border-t-0 sm:pt-0">
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-3 sm:mt-0 sm:border-t-0 sm:pt-0">
           <div className="text-left sm:ml-auto sm:text-right shrink-0">
             <p className={`font-semibold text-sm ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
               {profit >= 0 ? "+" : ""}R${(profit / 100).toFixed(2)}
@@ -2275,7 +2275,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
+        <div className="space-y-3 border-t border-white/10 px-4 pb-4 pt-3 bg-black/10">
           <div className="grid grid-cols-3 gap-3 text-center text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Buy-in</p>
@@ -2341,7 +2341,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
                 const tDuration = calcTableDuration(t.startedAt, t.endedAt);
                 const tableVenue = venues?.find(v => v.id === t.venueId);
                 return (
-                  <div key={t.id} className="text-xs py-1.5 px-2 rounded bg-muted/30 space-y-0.5">
+                  <div key={t.id} className="space-y-0.5 rounded-lg border border-white/8 bg-slate-950/72 px-2 py-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{tfmt?.emoji} {tfmt?.label} · {t.type === "online" ? "Online" : "Live"}</span>
                       <span className={tp >= 0 ? "text-green-500" : "text-red-500"}>
@@ -2579,7 +2579,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
                   const tp = (t.cashOut ?? 0) - t.buyIn;
                   const tableVenue = venues?.find(v => v.id === t.venueId);
                   return (
-                    <div key={t.id} className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <div key={t.id} className="space-y-2 rounded-lg border border-white/10 bg-slate-950/72 p-3">
                       <div className="flex items-center justify-between">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-sm font-medium">{tfmt?.emoji} {tfmt?.label}</span>
@@ -3325,7 +3325,7 @@ export default function Sessions() {
 
       {/* Active session */}
       {activeSession ? (
-        <Card className="relative z-10 border-primary/30 bg-background shadow-xl">
+        <Card className="relative z-10 border-cyan-400/25 bg-slate-950/82 shadow-[0_24px_56px_rgba(0,0,0,0.3)] backdrop-blur-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -3343,7 +3343,7 @@ export default function Sessions() {
           </CardContent>
         </Card>
       ) : optimisticSessionStartedAt ? (
-        <Card className="relative z-10 border-primary/30 bg-background shadow-xl">
+        <Card className="relative z-10 border-cyan-400/25 bg-slate-950/82 shadow-[0_24px_56px_rgba(0,0,0,0.3)] backdrop-blur-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
