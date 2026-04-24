@@ -1554,126 +1554,90 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
 
   return (
     <div className="space-y-4">
-      {/* Session header — poker table visual */}
-      <div
-        className="relative w-full overflow-hidden rounded-2xl border border-white/5"
-        style={{
-          background: "radial-gradient(ellipse at 50% 100%, #0c2214 0%, #080c18 60%, #06080f 100%)",
-          minHeight: 200,
-        }}
-      >
-        {/* Ambient glow */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: "radial-gradient(ellipse at 50% 85%, rgba(16,120,40,0.22) 0%, transparent 62%)" }}
-        />
-
-        {/* 3-D perspective table */}
-        <div
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{ bottom: "-8%", width: "92%", perspective: "480px", perspectiveOrigin: "50% 100%" }}
-        >
-          {/* Outer rail */}
-          <div
-            style={{
-              transform: "rotateX(32deg)",
-              transformOrigin: "50% 100%",
-              borderRadius: "50%",
-              width: "100%",
-              paddingBottom: "46%",
-              position: "relative",
-              background: "radial-gradient(ellipse at 48% 38%, #7a4f1f 0%, #4a2d0a 55%, #2a1805 100%)",
-              boxShadow: "0 -8px 40px rgba(0,0,0,0.7), inset 0 4px 12px rgba(255,255,255,0.06)",
-            }}
-          >
-            {/* Inner felt */}
-            <div
-              style={{
-                position: "absolute",
-                inset: "6%",
-                borderRadius: "50%",
-                background: "radial-gradient(ellipse at 46% 36%, #1e8c38 0%, #0f5a1f 52%, #073a12 100%)",
-                boxShadow: "inset 0 6px 20px rgba(0,0,0,0.5), inset 0 -2px 8px rgba(255,255,255,0.04)",
-              }}
-            >
-              <div style={{ position: "absolute", inset: "10%", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.07)" }} />
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", paddingBottom: "6%" }}>
-                <span style={{ color: "rgba(255,255,255,0.10)", fontSize: "0.65rem", fontWeight: 800, letterSpacing: "0.25em", textTransform: "uppercase" }}>
-                  THE RAIL
-                </span>
+      <div className="rounded-2xl border border-white/10 bg-slate-950/78 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                Sessão em andamento
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-white/45">Tempo correndo</p>
+                <div className="mt-1 flex items-center gap-2 font-mono text-2xl font-black tracking-tight text-white sm:text-3xl">
+                  <Timer className="h-5 w-5 text-cyan-300" />
+                  {elapsed}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:min-w-[320px]">
+              <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Buy-in</p>
+                <p className="mt-1 text-base font-bold text-white">R${(totalBuyIn / 100).toFixed(2)}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Mesas</p>
+                <p className="mt-1 text-base font-bold text-white">{session.tables.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Resultado</p>
+                <p className={`mt-1 text-base font-bold ${totalProfit === null ? "text-white/45" : totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {totalProfit === null ? "—" : `${totalProfit >= 0 ? "+" : ""}R$${(totalProfit / 100).toFixed(2)}`}
+                </p>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Live indicator + timer */}
-        <div className="relative z-10 flex items-center justify-between px-4 pt-3">
-          <div className="flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-[11px] font-semibold text-green-300/90 tracking-wide uppercase">Ao vivo</span>
-          </div>
-          <div className="flex items-center gap-1.5 font-mono text-sm font-bold text-white/80">
-            <Timer className="h-4 w-4 text-white/50" />
-            {elapsed}
-          </div>
-        </div>
-
-        {/* Stats bar */}
-        <div className="relative z-10 mt-auto px-4 pb-4 pt-28 grid grid-cols-3 text-center gap-1">
-          <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-wide">Buy-in</p>
-            <p className="text-sm font-bold text-white/90">R${(totalBuyIn / 100).toFixed(2)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-wide">Mesas</p>
-            <p className="text-sm font-bold text-white/90">{session.tables.length}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-wide">Resultado</p>
-            <p className={`text-sm font-bold ${totalProfit === null ? "text-white/40" : totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {totalProfit === null ? "—" : `${totalProfit >= 0 ? "+" : ""}R$${(totalProfit / 100).toFixed(2)}`}
-            </p>
-          </div>
-        </div>
       </div>
 
-      {/* Premium hand counters */}
-      <div className="rounded-xl border border-white/10 bg-slate-950/78 p-3 space-y-2 shadow-[0_16px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Mãos Premium</h3>
+      <div className="rounded-2xl border border-white/10 bg-slate-950/78 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Mãos premium</h3>
+            <p className="mt-1 text-xs text-white/55">Toque para registrar vitória ou perda sem poluir a seção.</p>
+          </div>
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-xs text-muted-foreground"
+            className="h-8 justify-start px-2 text-xs text-muted-foreground sm:justify-center"
             onClick={handleUndoLastHandAction}
             disabled={!lastHandStatsSnapshot || registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
           >
-            <RotateCcw className="h-3 w-3 mr-1" /> Desfazer
+            <RotateCcw className="mr-1 h-3 w-3" /> Desfazer último toque
           </Button>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {([
             { key: "kk", wins: handPatternStats?.kk?.wins ?? 0, losses: handPatternStats?.kk?.losses ?? 0 },
             { key: "jj", wins: handPatternStats?.jj?.wins ?? 0, losses: handPatternStats?.jj?.losses ?? 0 },
             { key: "aa", wins: handPatternStats?.aa?.wins ?? 0, losses: handPatternStats?.aa?.losses ?? 0 },
             { key: "ak", wins: handPatternStats?.ak?.wins ?? 0, losses: handPatternStats?.ak?.losses ?? 0 },
           ] as const).map((item) => (
-            <div key={item.key} className="flex items-center gap-2">
-              <span className="w-9 shrink-0 text-center text-sm font-bold tracking-wide text-foreground/80 uppercase">{item.key}</span>
-              <button
-                className="flex-1 h-12 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold text-base active:scale-95 transition-transform disabled:opacity-40"
-                onClick={() => handleRegisterHandResult(item.key, "win")}
-                disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
-              >
-                ✅ {item.wins}
-              </button>
-              <button
-                className="flex-1 h-12 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 font-semibold text-base active:scale-95 transition-transform disabled:opacity-40"
-                onClick={() => handleRegisterHandResult(item.key, "loss")}
-                disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
-              >
-                ❌ {item.losses}
-              </button>
+            <div key={item.key} className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-bold uppercase tracking-[0.18em] text-white/80">{item.key}</span>
+                <span className="text-[11px] uppercase tracking-[0.14em] text-white/40">Registro rápido</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-left transition-colors hover:bg-emerald-500/16 disabled:opacity-40"
+                  onClick={() => handleRegisterHandResult(item.key, "win")}
+                  disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
+                >
+                  <span className="block text-[11px] uppercase tracking-[0.14em] text-emerald-300/80">Vitórias</span>
+                  <span className="mt-1 block text-lg font-bold text-emerald-300">{item.wins}</span>
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-left transition-colors hover:bg-rose-500/16 disabled:opacity-40"
+                  onClick={() => handleRegisterHandResult(item.key, "loss")}
+                  disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
+                >
+                  <span className="block text-[11px] uppercase tracking-[0.14em] text-rose-300/80">Perdas</span>
+                  <span className="mt-1 block text-lg font-bold text-rose-300">{item.losses}</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>
