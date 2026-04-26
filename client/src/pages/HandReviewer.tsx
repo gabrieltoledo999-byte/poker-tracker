@@ -58,6 +58,15 @@ type OpportunityCounts = {
   allInAdjSkipped?: number;
 };
 
+type PositionMetricRow = {
+  position: string;
+  made: number;
+  of: number;
+  pct: number;
+};
+
+const POSITION_ORDER = ["UTG", "UTG+1", "MP", "MP+1", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"];
+
 const HAND_REVIEW_CONSENT_VERSION = "v1.0";
 
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; emoji: string; color: string }> = {
@@ -356,10 +365,30 @@ function formatMinorMoney(value: number | null | undefined, currency: string | n
   }
 }
 
-function MetricLabel({ label, hint, formula }: { label: string; hint: string; formula?: string }) {
+function MetricLabel({
+  label,
+  hint,
+  formula,
+  onOpen,
+}: {
+  label: string;
+  hint: string;
+  formula?: string;
+  onOpen?: () => void;
+}) {
   return (
     <div className="inline-flex items-center gap-1">
-      <span>{label}</span>
+      {onOpen ? (
+        <button
+          type="button"
+          className="text-left underline decoration-dotted underline-offset-2 hover:text-cyan-300"
+          onClick={onOpen}
+        >
+          {label}
+        </button>
+      ) : (
+        <span>{label}</span>
+      )}
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -387,6 +416,34 @@ function MetricLabel({ label, hint, formula }: { label: string; hint: string; fo
           </div>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+function HalfMoonGauge({ row }: { row: PositionMetricRow }) {
+  const clamped = Math.max(0, Math.min(100, Number(row.pct || 0)));
+  const radius = 24;
+  const circumference = Math.PI * radius;
+  const dash = (clamped / 100) * circumference;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+      <p className="text-center text-xs font-bold tracking-wide text-amber-300">{row.position}</p>
+      <div className="mt-1 flex justify-center">
+        <svg viewBox="0 0 64 40" className="h-14 w-20" aria-hidden>
+          <path d="M8 32 A24 24 0 0 1 56 32" fill="none" stroke="rgba(148,163,184,0.35)" strokeWidth="6" strokeLinecap="round" />
+          <path
+            d="M8 32 A24 24 0 0 1 56 32"
+            fill="none"
+            stroke="rgb(34,211,238)"
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circumference}`}
+          />
+        </svg>
+      </div>
+      <p className="-mt-1 text-center text-lg font-black text-cyan-300">{clamped.toFixed(1)}%</p>
+      <p className="text-center text-[11px] text-white/55">{row.made}/{row.of}</p>
     </div>
   );
 }
@@ -524,6 +581,7 @@ export default function HandReviewer() {
   const [activeTab, setActiveTab] = useState<"tournament" | "player" | "positions">("tournament");
   const [lastReplayPayload, setLastReplayPayload] = useState<any | null>(null);
   const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [selectedMetricForPositions, setSelectedMetricForPositions] = useState<MetricKey | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -625,6 +683,109 @@ export default function HandReviewer() {
     () => parseHandHistoryTranscript(rawInput, { preferredPlatform: selectedPlatform }),
     [rawInput, selectedPlatform],
   );
+
+  const metricBreakdownByPosition = useMemo(() => {
+    const metricMap = new Map<MetricKey, Map<string, { made: number; of: number }>>();
+    const keys: MetricKey[] = [
+      "vpip", "pfr", "threeBet", "cbetFlop", "cbetTurn", "foldToCbet", "bbDefense", "attemptToSteal",
+      "wtsd", "wsd", "rfi", "coldCall", "squeeze", "resteal", "foldToSteal", "foldTo3Bet",
+      "cbetIp", "cbetOop", "floatFlop", "checkRaiseFlop", "allInAdjBb100", "aggressionFactor",
+    ];
+
+    for (const key of keys) metricMap.set(key, new Map());
+
+    const bump = (key: MetricKey, position: string, madeInc: number, ofInc: number) => {
+      const bucket = metricMap.get(key);
+      if (!bucket) return;
+      const current = bucket.get(position) ?? { made: 0, of: 0 };
+      bucket.set(position, { made: current.made + madeInc, of: current.of + ofInc });
+    };
+
+    const isAgg = (action?: string | null) => action === "raise" || action === "bet" || action === "all_in";
+    const isCall = (action?: string | null) => action === "call";
+    const isFold = (action?: string | null) => action === "fold";
+    const isForced = (action?: string | null) => action === "post_ante" || action === "post_small_blind" || action === "post_big_blind";
+
+    for (const hand of parsedTournament.hands) {
+      const position = String(hand.heroPosition || "UNKNOWN");
+      const heroName = hand.heroName;
+      const preflop = hand.actions.filter((a) => a.street === "preflop");
+      const heroPreflop = preflop.filter((a) => a.player === heroName);
+      const heroFirstPre = heroPreflop.find((a) => !isForced(a.action)) ?? heroPreflop[0];
+      const priorToHero = heroFirstPre
+        ? preflop.filter((a) => a.player !== heroName && !isForced(a.action) && preflop.indexOf(a) < preflop.indexOf(heroFirstPre))
+        : [];
+
+      const heroVpip = heroPreflop.some((a) => !isForced(a.action) && (isCall(a.action) || isAgg(a.action)));
+      const heroPfr = heroPreflop.some((a) => !isForced(a.action) && isAgg(a.action));
+      const priorAgg = priorToHero.some((a) => isAgg(a.action));
+      const priorCalls = priorToHero.some((a) => isCall(a.action));
+
+      bump("vpip", position, heroVpip ? 1 : 0, 1);
+      bump("pfr", position, heroPfr ? 1 : 0, 1);
+      bump("threeBet", position, priorAgg ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, priorAgg ? 1 : 0);
+      bump("coldCall", position, priorAgg ? (heroPreflop.some((a) => isCall(a.action)) ? 1 : 0) : 0, priorAgg ? 1 : 0);
+      bump("squeeze", position, (priorAgg && priorCalls) ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, (priorAgg && priorCalls) ? 1 : 0);
+      bump("rfi", position, priorToHero.length === 0 ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, priorToHero.length === 0 ? 1 : 0);
+
+      const isStealPos = position === "CO" || position === "BTN" || position === "SB";
+      bump("attemptToSteal", position, (isStealPos && priorToHero.length === 0) ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, (isStealPos && priorToHero.length === 0) ? 1 : 0);
+      bump("bbDefense", position, position === "BB" && priorAgg ? (heroFirstPre && !isFold(heroFirstPre.action) ? 1 : 0) : 0, position === "BB" && priorAgg ? 1 : 0);
+
+      const flop = hand.actions.filter((a) => a.street === "flop");
+      const turn = hand.actions.filter((a) => a.street === "turn");
+      const heroFlop = flop.filter((a) => a.player === heroName);
+      const heroTurn = turn.filter((a) => a.player === heroName);
+      const villainFlopAgg = flop.filter((a) => a.player !== heroName).find((a) => isAgg(a.action));
+
+      bump("cbetFlop", position, heroPfr ? (heroFlop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, heroPfr ? 1 : 0);
+      const heroCbetFlop = heroPfr && heroFlop.some((a) => isAgg(a.action));
+      bump("cbetTurn", position, heroCbetFlop ? (heroTurn.some((a) => isAgg(a.action)) ? 1 : 0) : 0, heroCbetFlop ? 1 : 0);
+      bump("foldToCbet", position, villainFlopAgg ? (heroFlop.some((a) => isFold(a.action)) ? 1 : 0) : 0, villainFlopAgg ? 1 : 0);
+
+      const cbetIpOpp = heroPfr && (position === "CO" || position === "BTN" || position === "SB");
+      const cbetOopOpp = heroPfr && !cbetIpOpp;
+      bump("cbetIp", position, cbetIpOpp ? (heroFlop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, cbetIpOpp ? 1 : 0);
+      bump("cbetOop", position, cbetOopOpp ? (heroFlop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, cbetOopOpp ? 1 : 0);
+      bump("floatFlop", position, villainFlopAgg ? (heroFlop.some((a) => isCall(a.action)) && heroTurn.some((a) => isAgg(a.action)) ? 1 : 0) : 0, villainFlopAgg ? 1 : 0);
+      bump("checkRaiseFlop", position, heroFlop.some((a) => isAgg(a.action)) && heroFlop.some((a) => a.action === "check") ? 1 : 0, heroFlop.length > 0 ? 1 : 0);
+
+      const wentShowdown = Boolean(hand.summary.showdown);
+      const wonShowdown = wentShowdown && Number(hand.calculations.heroNetEstimate ?? 0) > 0;
+      bump("wtsd", position, wentShowdown ? 1 : 0, 1);
+      bump("wsd", position, wonShowdown ? 1 : 0, wentShowdown ? 1 : 0);
+      bump("aggressionFactor", position, heroFlop.concat(heroTurn).filter((a) => isAgg(a.action)).length, heroFlop.concat(heroTurn).filter((a) => isCall(a.action)).length);
+
+      bump("allInAdjBb100", position, 0, 0);
+      bump("resteal", position, 0, 0);
+      bump("foldToSteal", position, 0, 0);
+      bump("foldTo3Bet", position, 0, 0);
+    }
+
+    const out = {} as Record<MetricKey, PositionMetricRow[]>;
+    for (const [key, posMap] of metricMap.entries()) {
+      const rows: PositionMetricRow[] = Array.from(posMap.entries())
+        .map(([position, value]) => ({
+          position,
+          made: Number(value.made ?? 0),
+          of: Number(value.of ?? 0),
+          pct: Number(value.of ?? 0) > 0
+            ? (key === "aggressionFactor" ? Number(value.made ?? 0) : (Number(value.made ?? 0) / Number(value.of ?? 0)) * 100)
+            : 0,
+        }))
+        .filter((r) => r.of > 0 || key === "allInAdjBb100");
+      rows.sort((a, b) => {
+        const ia = POSITION_ORDER.indexOf(a.position);
+        const ib = POSITION_ORDER.indexOf(b.position);
+        if (ia === -1 && ib === -1) return a.position.localeCompare(b.position);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      });
+      out[key] = rows;
+    }
+    return out;
+  }, [parsedTournament.hands]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1178,7 +1339,12 @@ export default function HandReviewer() {
                     const renderCard = (c: CardDef) => (
                       <div key={c.key} className="rounded-xl border border-white/10 bg-slate-950/70 p-3 shadow-inner">
                         <div className="flex items-start justify-between gap-2">
-                          <MetricLabel label={c.label} hint={c.hint} formula={c.formula} />
+                          <MetricLabel
+                            label={c.label}
+                            hint={c.hint}
+                            formula={c.formula}
+                            onOpen={() => setSelectedMetricForPositions(c.key)}
+                          />
                         </div>
                         <p className={`mt-2 text-2xl font-black tracking-tight ${metricColor(c.key, c.value)}`}>{c.display}</p>
                         {sampleText(c.made, c.of) && (
@@ -1521,6 +1687,30 @@ export default function HandReviewer() {
               )}
             </TabsContent>
           </Tabs>
+
+          <Dialog open={!!selectedMetricForPositions} onOpenChange={(open) => { if (!open) setSelectedMetricForPositions(null); }}>
+            <DialogContent className="max-w-3xl border border-cyan-500/20 bg-slate-950 text-slate-100">
+              <DialogHeader>
+                <DialogTitle>
+                  {selectedMetricForPositions ? `${BENCHMARKS[selectedMetricForPositions].label} por posição` : "Métrica por posição"}
+                </DialogTitle>
+              </DialogHeader>
+              <p className="text-xs text-slate-300/90">
+                {selectedMetricForPositions ? BENCHMARKS[selectedMetricForPositions].interpretation : ""}
+              </p>
+              {selectedMetricForPositions && selectedMetricForPositions === "allInAdjBb100" ? (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                  All-in Adj BB/100 está disponível no painel Geral do Revisor. O detalhamento por posição depende de dados de equity por all-in por posição e será exibido aqui conforme essa extração ficar completa.
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {(selectedMetricForPositions ? metricBreakdownByPosition[selectedMetricForPositions] : [])?.map((row) => (
+                    <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
+                  ))}
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
 
