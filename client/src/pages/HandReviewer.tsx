@@ -1031,7 +1031,7 @@ export default function HandReviewer() {
     const data = analyzeMutation.data;
     if (!data) {
       toast.warning("Analise o torneio antes de baixar o PDF.");
-        {analyzeMutation.isPending && <SplashScreen />}
+      return;
     }
 
     try {
