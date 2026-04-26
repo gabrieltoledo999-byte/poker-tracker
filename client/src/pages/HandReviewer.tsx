@@ -395,6 +395,8 @@ function MetricLabel({
             type="button"
             className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/25 text-[10px] text-white/70 hover:border-cyan-400 hover:text-cyan-300 transition-colors"
             aria-label={`Ajuda sobre ${label}`}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
           >
             ?
           </button>
@@ -1064,6 +1066,7 @@ export default function HandReviewer() {
     allInAdjOpportunities: Number((historicalOpp as any)?.allInAdjOpportunities ?? 0),
     allInAdjSkipped: Number((historicalOpp as any)?.allInAdjSkipped ?? 0),
   };
+  const historicalAllInAdjBb100 = Number((playerHistoryQuery.data?.summary as any)?.allInAdjBb100Avg ?? (analyzeMutation.data?.stats as any)?.allInAdjBb100 ?? 0);
 
   const formatMadeOf = (made: number, of: number) => `${Math.max(0, Math.round(made))}/${Math.max(0, Math.round(of))}`;
   const roundMade = (percent: number, of: number) => Math.round((Number(percent || 0) / 100) * Math.max(0, Number(of || 0)));
@@ -1337,7 +1340,20 @@ export default function HandReviewer() {
                       { key: "allInAdjBb100", label: "ALL-IN ADJ BB/100", value: (stats as any).allInAdjBb100 ?? 0, display: `${((stats as any).allInAdjBb100 ?? 0) >= 0 ? "+" : ""}${Number((stats as any).allInAdjBb100 ?? 0).toFixed(2)}`, hint: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown (equity × pote − investimento).", formula: BENCHMARKS.allInAdjBb100.formula, made: Number((opp as any).allInAdjSample ?? 0), of: Number((opp as any).allInAdjOpportunities ?? 0) },
                     ];
                     const renderCard = (c: CardDef) => (
-                      <div key={c.key} className="rounded-xl border border-white/10 bg-slate-950/70 p-3 shadow-inner">
+                      <div
+                        key={c.key}
+                        className="rounded-xl border border-white/10 bg-slate-950/70 p-3 shadow-inner transition-colors hover:border-cyan-400/45 cursor-pointer"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Abrir ${c.label} por posição`}
+                        onClick={() => setSelectedMetricForPositions(c.key)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedMetricForPositions(c.key);
+                          }
+                        }}
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <MetricLabel
                             label={c.label}
@@ -1493,6 +1509,16 @@ export default function HandReviewer() {
                       <p className="mt-1 font-semibold text-cyan-100">{Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0).toFixed(2)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number((historicalOpp as any)?.aggressionActions ?? 0), Number((historicalOpp as any)?.aggressionCalls ?? 0))}</p>
                     </div>
+                    <div className="tokyo-metric rounded-lg p-3 text-sm">
+                      <MetricLabel
+                        label="All-in Adj BB/100 médio"
+                        hint="Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown."
+                        formula={BENCHMARKS.allInAdjBb100.formula}
+                        onOpen={() => setSelectedMetricForPositions("allInAdjBb100")}
+                      />
+                      <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
+                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
+                    </div>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
@@ -1553,7 +1579,7 @@ export default function HandReviewer() {
                 </div>
               )}
 
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-4">
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
                   <p className="mb-2 font-semibold text-cyan-100">Onde está mais lucrativo</p>
                   <p>
@@ -1572,6 +1598,29 @@ export default function HandReviewer() {
                   </p>
                 </div>
 
+                <div
+                  className="tokyo-panel rounded-lg p-3 text-sm cursor-pointer transition-colors hover:border-cyan-400/45"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Abrir All-in Adj BB/100 por posição"
+                  onClick={() => setSelectedMetricForPositions("allInAdjBb100")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedMetricForPositions("allInAdjBb100");
+                    }
+                  }}
+                >
+                  <MetricLabel
+                    label="All-in Adj BB/100 (Geral)"
+                    hint="Win-rate ajustado por all-in no histórico consolidado. Clique para abrir a visão por posição."
+                    formula={BENCHMARKS.allInAdjBb100.formula}
+                    onOpen={() => setSelectedMetricForPositions("allInAdjBb100")}
+                  />
+                  <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
+                  <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
+                </div>
+
                 <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
                   <p className="mb-2 font-semibold text-amber-100">Posição de foco</p>
                   {(() => {
@@ -1586,6 +1635,9 @@ export default function HandReviewer() {
                         <p className="font-semibold text-amber-50">{focusPosition}</p>
                         <p className="mt-1 text-xs text-amber-100/80">
                           {focusSample?.handsPlayed ?? 0} mãos analisadas nessa posição.
+                        </p>
+                        <p className="mt-1 text-xs text-amber-100/80">
+                          All-in Adj BB/100 (geral): {`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}
                         </p>
                         <p className="mt-2 text-xs text-amber-200/90">
                           Prioridade: revisar ranges de open, defesa e linhas de c-bet desse spot.
@@ -1622,6 +1674,7 @@ export default function HandReviewer() {
                       aggressionFactor: Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0),
                       wtsd: Number((playerHistoryQuery.data.summary as any).wtsdAvg ?? 0),
                       wsd: Number((playerHistoryQuery.data.summary as any).wsdAvg ?? 0),
+                      allInAdjBb100: historicalAllInAdjBb100,
                     };
 
                     const histOpp = ((playerHistoryQuery.data.summary as any)?.opportunities ?? {}) as Record<string, number>;
@@ -1633,13 +1686,14 @@ export default function HandReviewer() {
                       if (key === "bbDefense") return Number(histOpp.bbDefense ?? 0);
                       if (key === "attemptToSteal") return Number(histOpp.steal ?? 0);
                       if (key === "wtsd" || key === "wsd") return Number(histOpp.showdownHands ?? 0);
+                      if (key === "allInAdjBb100") return Number(histOpp.allInAdjOpportunities ?? 0);
                       return Number(histOpp.hands ?? 0);
                     };
                     const sections: Array<{ title: string; keys: MetricKey[] }> = [
                       { title: "Pré-flop", keys: ["vpip", "pfr", "threeBet", "attemptToSteal"] },
                       { title: "Defesa Pré-flop", keys: ["bbDefense"] },
                       { title: "Pós-flop", keys: ["cbetFlop", "cbetTurn", "foldToCbet"] },
-                      { title: "Geral", keys: ["aggressionFactor", "wtsd", "wsd"] },
+                      { title: "Geral", keys: ["aggressionFactor", "wtsd", "wsd", "allInAdjBb100"] },
                     ];
                     return (
                       <div className="space-y-4">
@@ -1654,18 +1708,21 @@ export default function HandReviewer() {
                                 const of = denominatorFor(key);
                                 const made = key === "aggressionFactor"
                                   ? Number(histOpp.aggressionActions ?? 0)
+                                  : key === "allInAdjBb100"
+                                  ? Number(histOpp.allInAdjSample ?? 0)
                                   : roundMade(value, of);
                                 const ratioOf = key === "aggressionFactor"
                                   ? Number(histOpp.aggressionCalls ?? 0)
                                   : of;
+                                const percentLike = key !== "aggressionFactor" && key !== "allInAdjBb100";
                                 return (
                                   <div key={`benchmark-${key}`} className="tokyo-metric rounded-md p-2">
                                     <div className="font-semibold text-cyan-100">
                                       <MetricLabel label={benchmark.label} hint={benchmark.interpretation} formula={benchmark.formula} />
-                                      <span>: {key === "aggressionFactor" ? value.toFixed(2) : `${value}%`} · {metricStatusBadge(getMetricStatus(key, value))}</span>
+                                      <span>: {percentLike ? `${value}%` : value.toFixed(2)} · {metricStatusBadge(getMetricStatus(key, value))}</span>
                                     </div>
                                     <p className="text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
-                                    <p className="text-xs text-white/70">Faixa comum: {benchmark.min}{key === "aggressionFactor" ? "" : "%"} - {benchmark.max}{key === "aggressionFactor" ? "" : "%"}</p>
+                                    <p className="text-xs text-white/70">Faixa comum: {benchmark.min}{percentLike ? "%" : ""} - {benchmark.max}{percentLike ? "%" : ""}</p>
                                     <p className="text-xs text-white/60">{metricStatusText(key, value)}</p>
                                   </div>
                                 );
@@ -1698,15 +1755,14 @@ export default function HandReviewer() {
               <p className="text-xs text-slate-300/90">
                 {selectedMetricForPositions ? BENCHMARKS[selectedMetricForPositions].interpretation : ""}
               </p>
-              {selectedMetricForPositions && selectedMetricForPositions === "allInAdjBb100" ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {(selectedMetricForPositions ? metricBreakdownByPosition[selectedMetricForPositions] : [])?.map((row) => (
+                  <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
+                ))}
+              </div>
+              {selectedMetricForPositions && (metricBreakdownByPosition[selectedMetricForPositions]?.length ?? 0) === 0 && (
                 <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-                  All-in Adj BB/100 está disponível no painel Geral do Revisor. O detalhamento por posição depende de dados de equity por all-in por posição e será exibido aqui conforme essa extração ficar completa.
-                </div>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {(selectedMetricForPositions ? metricBreakdownByPosition[selectedMetricForPositions] : [])?.map((row) => (
-                    <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
-                  ))}
+                  Sem amostra suficiente no texto de mãos atual para exibir o gráfico dessa métrica por posição.
                 </div>
               )}
             </DialogContent>
