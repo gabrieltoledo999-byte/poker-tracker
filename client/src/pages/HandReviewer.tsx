@@ -597,7 +597,7 @@ export default function HandReviewer() {
     },
   });
 
-  const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery({ recalculate: true }, {
+  const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery({}, {
     refetchOnWindowFocus: false,
   });
 
