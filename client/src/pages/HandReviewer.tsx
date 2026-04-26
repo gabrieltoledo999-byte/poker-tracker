@@ -13,6 +13,7 @@ import {
 } from "@/parser/handHistoryDispatcher";
 import { loadHandReviewSession, saveHandReviewSession } from "@/lib/hand-review-session";
 import { trpc } from "@/lib/trpc";
+import { SplashScreen } from "@/components/SplashScreen";
 import { jsPDF } from "jspdf";
 import {
   Bar,
@@ -212,29 +213,29 @@ function TabConfidenceHeader({ hands, level }: { hands: number; level: Confidenc
   );
 }
 
-const BENCHMARKS: Record<MetricKey, { min: number; max: number; label: string; interpretation: string }> = {
-  vpip: { min: 18, max: 28, label: "VPIP", interpretation: "Participação voluntária de mãos no pote." },
-  pfr: { min: 14, max: 24, label: "PFR", interpretation: "Agressão pré-flop via raise." },
-  threeBet: { min: 5, max: 10, label: "3-Bet", interpretation: "Re-raise pré-flop contra open." },
-  cbetFlop: { min: 55, max: 75, label: "C-Bet Flop", interpretation: "Continuação de agressão no flop." },
-  cbetTurn: { min: 40, max: 60, label: "C-Bet Turn", interpretation: "Segundo barril no turn após agressão prévia." },
-  foldToCbet: { min: 40, max: 55, label: "Fold to C-Bet", interpretation: "Frequência de fold contra c-bet." },
-  bbDefense: { min: 35, max: 55, label: "Defesa de BB", interpretation: "Defesa do big blind quando atacado." },
-  attemptToSteal: { min: 30, max: 50, label: "Attempt to Steal", interpretation: "Tentativa de roubo em posição final." },
-  aggressionFactor: { min: 2, max: 3.5, label: "Aggression Factor", interpretation: "Razão entre ações agressivas e calls." },
-  wtsd: { min: 25, max: 35, label: "WTSD", interpretation: "Frequência de ida ao showdown." },
-  wsd: { min: 50, max: 60, label: "WSD", interpretation: "Vitória quando chega ao showdown." },
-  rfi: { min: 20, max: 32, label: "RFI", interpretation: "Raise first in: abriu o pote com raise." },
-  coldCall: { min: 2, max: 8, label: "Cold Call", interpretation: "Pagou um raise sem ter investido antes." },
-  squeeze: { min: 4, max: 10, label: "Squeeze", interpretation: "3-bet contra raise + caller(s)." },
-  resteal: { min: 8, max: 18, label: "Resteal", interpretation: "3-bet em blind contra tentativa de roubo." },
-  foldToSteal: { min: 50, max: 70, label: "Fold to Steal", interpretation: "Fold no blind contra raise em posição final." },
-  foldTo3Bet: { min: 50, max: 65, label: "Fold to 3-Bet", interpretation: "Fold ao open-raise quando sofre 3-bet." },
-  cbetIp: { min: 60, max: 80, label: "C-Bet IP", interpretation: "C-bet flop em posição." },
-  cbetOop: { min: 45, max: 65, label: "C-Bet OOP", interpretation: "C-bet flop fora de posição." },
-  floatFlop: { min: 8, max: 18, label: "Float Flop", interpretation: "Pagou c-bet flop IP e atacou turn." },
-  checkRaiseFlop: { min: 6, max: 14, label: "Check-Raise Flop", interpretation: "Check + raise no flop." },
-  allInAdjBb100: { min: 0, max: 9999, label: "All-in Adj BB/100", interpretation: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown." },
+const BENCHMARKS: Record<MetricKey, { min: number; max: number; label: string; interpretation: string; formula?: string }> = {
+  vpip: { min: 18, max: 28, label: "VPIP", interpretation: "Participação voluntária de mãos no pote.", formula: "Mãos com entrada voluntária / Total de mãos × 100" },
+  pfr: { min: 14, max: 24, label: "PFR", interpretation: "Agressão pré-flop via raise.", formula: "Mãos com raise pré-flop / Total de mãos × 100" },
+  threeBet: { min: 5, max: 10, label: "3-Bet", interpretation: "Re-raise pré-flop contra open.", formula: "Re-raises pré-flop / Oportunidades de 3-bet × 100" },
+  cbetFlop: { min: 60, max: 75, label: "C-Bet Flop", interpretation: "Aposta no flop após ser o agressor pré-flop, quando a ação chega em check até você.", formula: "C-bets feitos / Oportunidades de c-bet × 100" },
+  cbetTurn: { min: 45, max: 60, label: "C-Bet Turn", interpretation: "Second barrel no turn após C-Bet flop receber call e a ação chegar em check até você.", formula: "C-bets turn / Oportunidades de c-bet turn × 100" },
+  foldToCbet: { min: 40, max: 55, label: "Fold to C-Bet", interpretation: "Frequência de fold contra c-bet.", formula: "Folds contra c-bet / Oportunidades enfrentando c-bet × 100" },
+  bbDefense: { min: 35, max: 55, label: "Defesa de BB", interpretation: "Defesa do big blind quando atacado.", formula: "Defesas (call/raise) no BB / Ataques ao BB × 100" },
+  attemptToSteal: { min: 30, max: 50, label: "Attempt to Steal", interpretation: "Open raise em CO/BTN/SB quando a ação chega limpa (fold) até você.", formula: "Raises de roubo / Oportunidades de roubo × 100" },
+  aggressionFactor: { min: 2, max: 3.5, label: "Aggression Factor", interpretation: "Razão entre ações agressivas e calls.", formula: "(Bets + Raises) / Calls (sem blinds)" },
+  wtsd: { min: 25, max: 35, label: "WTSD", interpretation: "Frequência de ida ao showdown.", formula: "Mãos ao showdown / Total de mãos × 100" },
+  wsd: { min: 50, max: 60, label: "WSD", interpretation: "Vitória quando chega ao showdown.", formula: "Vitórias no showdown / Mãos no showdown × 100" },
+  rfi: { min: 20, max: 32, label: "RFI", interpretation: "Raise first in: abriu o pote com raise.", formula: "Raises primeiro a entrar / Total de mãos × 100" },
+  coldCall: { min: 2, max: 8, label: "Cold Call", interpretation: "Pagou um raise sem ter investido antes.", formula: "Cold calls / Oportunidades de cold call × 100" },
+  squeeze: { min: 4, max: 10, label: "Squeeze", interpretation: "3-bet contra raise + caller(s).", formula: "Squeezes / Oportunidades de squeeze × 100" },
+  resteal: { min: 8, max: 18, label: "Resteal", interpretation: "3-bet em blind contra tentativa de roubo.", formula: "Resteals nos blinds / Ataques aos blinds × 100" },
+  foldToSteal: { min: 50, max: 70, label: "Fold to Steal", interpretation: "Fold no blind contra raise em posição final.", formula: "Folds nos blinds vs roubo / Ataques aos blinds × 100" },
+  foldTo3Bet: { min: 50, max: 65, label: "Fold to 3-Bet", interpretation: "Fold ao open-raise quando sofre 3-bet.", formula: "Folds vs 3-bet / 3-bets enfrentados × 100" },
+  cbetIp: { min: 60, max: 80, label: "C-Bet IP", interpretation: "C-bet flop em posição.", formula: "C-bets em posição / Oportunidades em posição × 100" },
+  cbetOop: { min: 45, max: 65, label: "C-Bet OOP", interpretation: "C-bet flop fora de posição.", formula: "C-bets fora de posição / Oportunidades fora de posição × 100" },
+  floatFlop: { min: 8, max: 18, label: "Float Flop", interpretation: "Pagou c-bet flop IP e atacou turn.", formula: "Floats bem-sucedidos / Oportunidades de float × 100" },
+  checkRaiseFlop: { min: 6, max: 14, label: "Check-Raise Flop", interpretation: "Check + raise no flop.", formula: "Check-raises / Flops jogados × 100" },
+  allInAdjBb100: { min: 0, max: 9999, label: "All-in Adj BB/100", interpretation: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown.", formula: "(Equity × Pote − Investimento) / BB / 100 mãos" },
 };
 
 const SPECIFIC_PATTERN_SAMPLE_DATA = [
@@ -354,7 +355,7 @@ function formatMinorMoney(value: number | null | undefined, currency: string | n
   }
 }
 
-function MetricLabel({ label, hint }: { label: string; hint: string }) {
+function MetricLabel({ label, hint, formula }: { label: string; hint: string; formula?: string }) {
   return (
     <div className="inline-flex items-center gap-1">
       <span>{label}</span>
@@ -362,14 +363,22 @@ function MetricLabel({ label, hint }: { label: string; hint: string }) {
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/25 text-[10px] text-white/70"
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/25 text-[10px] text-white/70 hover:border-cyan-400 hover:text-cyan-300 transition-colors"
             aria-label={`Ajuda sobre ${label}`}
           >
             ?
           </button>
         </TooltipTrigger>
-        <TooltipContent sideOffset={8} className="max-w-[260px] text-left">
-          {hint}
+        <TooltipContent sideOffset={8} className="max-w-[280px] text-left">
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-cyan-200">{hint}</p>
+            {formula && (
+              <div className="border-t border-white/20 pt-2">
+                <p className="text-[11px] text-white/70 font-semibold mb-1">Fórmula:</p>
+                <p className="text-[11px] text-white/60 bg-black/40 px-2 py-1 rounded font-mono">{formula}</p>
+              </div>
+            )}
+          </div>
         </TooltipContent>
       </Tooltip>
     </div>
@@ -575,20 +584,20 @@ export default function HandReviewer() {
     },
   });
 
-  const compactReplayStorageMutation = trpc.memory.compactReplayStorage.useMutation({
+  const recalculateHistoryMutation = trpc.memory.recalculateHistory.useMutation({
     onSuccess: (result) => {
-      toast.success("Armazenamento do revisor compactado.", {
-        description: `${Number(result?.compactedHands ?? 0)} mãos e ${Number(result?.compactedActions ?? 0)} ações tiveram o payload pesado removido.`,
+      toast.success("Recalculo concluido pelo site.", {
+        description: `${Number(result?.updated ?? 0)} de ${Number(result?.totalTournaments ?? 0)} torneios atualizados.`,
       });
       utils.memory.playerHistoricalProfile.invalidate();
       setActiveTab("player");
     },
     onError: (error) => {
-      toast.error("Falha ao compactar armazenamento", { description: error.message });
+      toast.error("Falha ao recalcular historico", { description: error.message });
     },
   });
 
-  const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery(undefined, {
+  const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery({ recalculate: true }, {
     refetchOnWindowFocus: false,
   });
 
@@ -681,18 +690,18 @@ export default function HandReviewer() {
     clearReplayHistoryMutation.mutate();
   };
 
-  const handleCompactReplayStorage = () => {
+  const handleRecalculateHistory = () => {
     if (requiresConsent) {
-      toast.warning("Aceite o termo de consentimento para compactar os dados do revisor.");
+      toast.warning("Aceite o termo de consentimento para recalcular os dados do revisor.");
       return;
     }
 
-    const shouldCompact = window.confirm(
-      "Compactar o armazenamento remove texto bruto e JSON auxiliar das mãos já salvas, mas preserva estatísticas, ações e histórico útil para estudo/GTO. Deseja continuar?",
+    const shouldRecalculate = window.confirm(
+      "Deseja recalcular todas as estatisticas salvas com as regras mais recentes?",
     );
-    if (!shouldCompact) return;
+    if (!shouldRecalculate) return;
 
-    compactReplayStorageMutation.mutate();
+    recalculateHistoryMutation.mutate();
   };
 
   const handleSubmitToTable = () => {
@@ -765,7 +774,7 @@ export default function HandReviewer() {
     const data = analyzeMutation.data;
     if (!data) {
       toast.warning("Analise o torneio antes de baixar o PDF.");
-      return;
+        {analyzeMutation.isPending && <SplashScreen />}
     }
 
     try {
@@ -1036,13 +1045,6 @@ export default function HandReviewer() {
               >
                 {clearReplayHistoryMutation.isPending ? "Limpando histórico..." : "Limpar histórico do revisor"}
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleCompactReplayStorage}
-                disabled={compactReplayStorageMutation.isPending}
-              >
-                {compactReplayStorageMutation.isPending ? "Compactando armazenamento..." : "Compactar armazenamento do revisor"}
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -1131,45 +1133,46 @@ export default function HandReviewer() {
                       value: number;
                       display: string;
                       hint: string;
+                      formula?: string;
                       made: number | null;
                       of: number | null;
                     };
                     const pct = (v: number) => formatPercent(v);
                     const roundMade = (percent: number, of: number) => Math.round((percent / 100) * of);
                     const preFlop: CardDef[] = [
-                      { key: "vpip", label: "VPIP", value: stats.vpip, display: pct(stats.vpip), hint: "Mãos em que você entrou voluntariamente no pote.", made: roundMade(stats.vpip, opp.hands), of: opp.hands },
-                      { key: "pfr", label: "PFR", value: stats.pfr, display: pct(stats.pfr), hint: "Mãos com raise pré-flop.", made: roundMade(stats.pfr, opp.hands), of: opp.hands },
-                      { key: "rfi", label: "RFI", value: (stats as any).rfi ?? 0, display: pct((stats as any).rfi ?? 0), hint: "Raise first in: abriu o pote com raise.", made: opp.rfi ? roundMade((stats as any).rfi ?? 0, opp.rfi) : null, of: opp.rfi || null },
-                      { key: "coldCall", label: "COLD CALL", value: (stats as any).coldCall ?? 0, display: pct((stats as any).coldCall ?? 0), hint: "Pagou um raise pré-flop sem investimento prévio.", made: opp.coldCall ? roundMade((stats as any).coldCall ?? 0, opp.coldCall) : null, of: opp.coldCall || null },
-                      { key: "threeBet", label: "3-BET", value: stats.threeBet, display: pct(stats.threeBet), hint: "Re-raise pré-flop contra um open.", made: roundMade(stats.threeBet, opp.hands), of: opp.hands },
-                      { key: "squeeze", label: "SQUEEZE", value: (stats as any).squeeze ?? 0, display: pct((stats as any).squeeze ?? 0), hint: "3-bet contra raise + caller(s).", made: opp.squeeze ? roundMade((stats as any).squeeze ?? 0, opp.squeeze) : null, of: opp.squeeze || null },
-                      { key: "resteal", label: "RESTEAL", value: (stats as any).resteal ?? 0, display: pct((stats as any).resteal ?? 0), hint: "3-bet em blind contra tentativa de roubo.", made: opp.resteal ? roundMade((stats as any).resteal ?? 0, opp.resteal) : null, of: opp.resteal || null },
-                      { key: "attemptToSteal", label: "ATTEMPT TO STEAL", value: stats.attemptToSteal, display: pct(stats.attemptToSteal), hint: "Tentativa de roubo em posição final (CO/BTN/SB).", made: opp.steal > 0 ? roundMade(stats.attemptToSteal, opp.steal) : null, of: opp.steal || null },
+                      { key: "vpip", label: "VPIP", value: stats.vpip, display: pct(stats.vpip), hint: "Mãos em que você entrou voluntariamente no pote.", formula: BENCHMARKS.vpip.formula, made: roundMade(stats.vpip, opp.hands), of: opp.hands },
+                      { key: "pfr", label: "PFR", value: stats.pfr, display: pct(stats.pfr), hint: "Mãos com raise pré-flop.", formula: BENCHMARKS.pfr.formula, made: roundMade(stats.pfr, opp.hands), of: opp.hands },
+                      { key: "rfi", label: "RFI", value: (stats as any).rfi ?? 0, display: pct((stats as any).rfi ?? 0), hint: "Raise first in: abriu o pote com raise.", formula: BENCHMARKS.rfi.formula, made: opp.rfi ? roundMade((stats as any).rfi ?? 0, opp.rfi) : null, of: opp.rfi || null },
+                      { key: "coldCall", label: "COLD CALL", value: (stats as any).coldCall ?? 0, display: pct((stats as any).coldCall ?? 0), hint: "Pagou um raise pré-flop sem investimento prévio.", formula: BENCHMARKS.coldCall.formula, made: opp.coldCall ? roundMade((stats as any).coldCall ?? 0, opp.coldCall) : null, of: opp.coldCall || null },
+                      { key: "threeBet", label: "3-BET", value: stats.threeBet, display: pct(stats.threeBet), hint: "Re-raise pré-flop contra um open.", formula: BENCHMARKS.threeBet.formula, made: roundMade(stats.threeBet, opp.hands), of: opp.hands },
+                      { key: "squeeze", label: "SQUEEZE", value: (stats as any).squeeze ?? 0, display: pct((stats as any).squeeze ?? 0), hint: "3-bet contra raise + caller(s).", formula: BENCHMARKS.squeeze.formula, made: opp.squeeze ? roundMade((stats as any).squeeze ?? 0, opp.squeeze) : null, of: opp.squeeze || null },
+                      { key: "resteal", label: "RESTEAL", value: (stats as any).resteal ?? 0, display: pct((stats as any).resteal ?? 0), hint: "3-bet em blind contra tentativa de roubo.", formula: BENCHMARKS.resteal.formula, made: opp.resteal ? roundMade((stats as any).resteal ?? 0, opp.resteal) : null, of: opp.resteal || null },
+                      { key: "attemptToSteal", label: "ATTEMPT TO STEAL", value: stats.attemptToSteal, display: pct(stats.attemptToSteal), hint: "Open raise em CO/BTN/SB após fold geral, sem limp/raise/straddle antes.", formula: BENCHMARKS.attemptToSteal.formula, made: opp.steal > 0 ? roundMade(stats.attemptToSteal, opp.steal) : null, of: opp.steal || null },
                     ];
                     const preFlopDefense: CardDef[] = [
-                      { key: "bbDefense", label: "DEFESA DE BB", value: stats.bbDefense, display: pct(stats.bbDefense), hint: "Defesa do big blind em vez de foldar.", made: opp.bbDefense > 0 ? roundMade(stats.bbDefense, opp.bbDefense) : null, of: opp.bbDefense || null },
-                      { key: "foldToSteal", label: "FOLD TO STEAL", value: (stats as any).foldToSteal ?? 0, display: pct((stats as any).foldToSteal ?? 0), hint: "Fold no blind contra raise em posição final.", made: opp.foldToSteal ? roundMade((stats as any).foldToSteal ?? 0, opp.foldToSteal) : null, of: opp.foldToSteal || null },
-                      { key: "foldTo3Bet", label: "FOLD TO 3-BET", value: (stats as any).foldTo3Bet ?? 0, display: pct((stats as any).foldTo3Bet ?? 0), hint: "Fold ao open-raise quando sofre 3-bet.", made: opp.foldTo3Bet ? roundMade((stats as any).foldTo3Bet ?? 0, opp.foldTo3Bet) : null, of: opp.foldTo3Bet || null },
+                      { key: "bbDefense", label: "DEFESA DE BB", value: stats.bbDefense, display: pct(stats.bbDefense), hint: "Defesa do big blind em vez de foldar.", formula: BENCHMARKS.bbDefense.formula, made: opp.bbDefense > 0 ? roundMade(stats.bbDefense, opp.bbDefense) : null, of: opp.bbDefense || null },
+                      { key: "foldToSteal", label: "FOLD TO STEAL", value: (stats as any).foldToSteal ?? 0, display: pct((stats as any).foldToSteal ?? 0), hint: "Fold no blind contra raise em posição final.", formula: BENCHMARKS.foldToSteal.formula, made: opp.foldToSteal ? roundMade((stats as any).foldToSteal ?? 0, opp.foldToSteal) : null, of: opp.foldToSteal || null },
+                      { key: "foldTo3Bet", label: "FOLD TO 3-BET", value: (stats as any).foldTo3Bet ?? 0, display: pct((stats as any).foldTo3Bet ?? 0), hint: "Fold ao open-raise quando sofre 3-bet.", formula: BENCHMARKS.foldTo3Bet.formula, made: opp.foldTo3Bet ? roundMade((stats as any).foldTo3Bet ?? 0, opp.foldTo3Bet) : null, of: opp.foldTo3Bet || null },
                     ];
                     const postFlop: CardDef[] = [
-                      { key: "cbetFlop", label: "C-BET FLOP", value: stats.cbetFlop, display: pct(stats.cbetFlop), hint: "C-bet no flop como agressor pré-flop.", made: opp.cbetFlop > 0 ? roundMade(stats.cbetFlop, opp.cbetFlop) : null, of: opp.cbetFlop || null },
-                      { key: "cbetIp", label: "C-BET IP", value: (stats as any).cbetIp ?? 0, display: pct((stats as any).cbetIp ?? 0), hint: "C-bet flop em posição.", made: opp.cbetIp ? roundMade((stats as any).cbetIp ?? 0, opp.cbetIp) : null, of: opp.cbetIp || null },
-                      { key: "cbetOop", label: "C-BET OOP", value: (stats as any).cbetOop ?? 0, display: pct((stats as any).cbetOop ?? 0), hint: "C-bet flop fora de posição.", made: opp.cbetOop ? roundMade((stats as any).cbetOop ?? 0, opp.cbetOop) : null, of: opp.cbetOop || null },
-                      { key: "cbetTurn", label: "C-BET TURN", value: stats.cbetTurn, display: pct(stats.cbetTurn), hint: "Segundo barril no turn após c-bet flop.", made: opp.cbetTurn > 0 ? roundMade(stats.cbetTurn, opp.cbetTurn) : null, of: opp.cbetTurn || null },
-                      { key: "foldToCbet", label: "FOLD VS C-BET", value: stats.foldToCbet, display: pct(stats.foldToCbet), hint: "Fold contra c-bet no flop.", made: opp.foldToCbet > 0 ? roundMade(stats.foldToCbet, opp.foldToCbet) : null, of: opp.foldToCbet || null },
-                      { key: "floatFlop", label: "FLOAT FLOP", value: (stats as any).floatFlop ?? 0, display: pct((stats as any).floatFlop ?? 0), hint: "Pagou c-bet flop IP e atacou o turn.", made: opp.floatFlop ? roundMade((stats as any).floatFlop ?? 0, opp.floatFlop) : null, of: opp.floatFlop || null },
-                      { key: "checkRaiseFlop", label: "CHECK-RAISE FLOP", value: (stats as any).checkRaiseFlop ?? 0, display: pct((stats as any).checkRaiseFlop ?? 0), hint: "Check + raise no flop.", made: opp.checkRaiseFlop ? roundMade((stats as any).checkRaiseFlop ?? 0, opp.checkRaiseFlop) : null, of: opp.checkRaiseFlop || null },
+                      { key: "cbetFlop", label: "C-BET FLOP", value: stats.cbetFlop, display: pct(stats.cbetFlop), hint: "Aposta no flop após seu raise pré-flop, quando ninguém lidera antes de você.", formula: BENCHMARKS.cbetFlop.formula, made: opp.cbetFlop > 0 ? roundMade(stats.cbetFlop, opp.cbetFlop) : null, of: opp.cbetFlop || null },
+                      { key: "cbetIp", label: "C-BET IP", value: (stats as any).cbetIp ?? 0, display: pct((stats as any).cbetIp ?? 0), hint: "C-bet flop em posição.", formula: BENCHMARKS.cbetIp.formula, made: opp.cbetIp ? roundMade((stats as any).cbetIp ?? 0, opp.cbetIp) : null, of: opp.cbetIp || null },
+                      { key: "cbetOop", label: "C-BET OOP", value: (stats as any).cbetOop ?? 0, display: pct((stats as any).cbetOop ?? 0), hint: "C-bet flop fora de posição.", formula: BENCHMARKS.cbetOop.formula, made: opp.cbetOop ? roundMade((stats as any).cbetOop ?? 0, opp.cbetOop) : null, of: opp.cbetOop || null },
+                      { key: "cbetTurn", label: "C-BET TURN", value: stats.cbetTurn, display: pct(stats.cbetTurn), hint: "Aposta no turn após C-Bet no flop receber call, sem lead do vilão antes de você.", formula: BENCHMARKS.cbetTurn.formula, made: opp.cbetTurn > 0 ? roundMade(stats.cbetTurn, opp.cbetTurn) : null, of: opp.cbetTurn || null },
+                      { key: "foldToCbet", label: "FOLD VS C-BET", value: stats.foldToCbet, display: pct(stats.foldToCbet), hint: "Fold contra c-bet no flop.", formula: BENCHMARKS.foldToCbet.formula, made: opp.foldToCbet > 0 ? roundMade(stats.foldToCbet, opp.foldToCbet) : null, of: opp.foldToCbet || null },
+                      { key: "floatFlop", label: "FLOAT FLOP", value: (stats as any).floatFlop ?? 0, display: pct((stats as any).floatFlop ?? 0), hint: "Pagou c-bet flop IP e atacou o turn.", formula: BENCHMARKS.floatFlop.formula, made: opp.floatFlop ? roundMade((stats as any).floatFlop ?? 0, opp.floatFlop) : null, of: opp.floatFlop || null },
+                      { key: "checkRaiseFlop", label: "CHECK-RAISE FLOP", value: (stats as any).checkRaiseFlop ?? 0, display: pct((stats as any).checkRaiseFlop ?? 0), hint: "Check + raise no flop.", formula: BENCHMARKS.checkRaiseFlop.formula, made: opp.checkRaiseFlop ? roundMade((stats as any).checkRaiseFlop ?? 0, opp.checkRaiseFlop) : null, of: opp.checkRaiseFlop || null },
                     ];
                     const general: CardDef[] = [
-                      { key: "aggressionFactor", label: "AGGRESSION", value: stats.aggressionFactor, display: stats.aggressionFactor.toFixed(2), hint: "Razão entre ações agressivas (bet/raise) e calls pós-flop.", made: Number((opp as any).aggressionActions ?? 0), of: Number((opp as any).aggressionCalls ?? 0) },
-                      { key: "wtsd", label: "WTSD", value: stats.wtsd, display: pct(stats.wtsd), hint: "Frequência de ida ao showdown.", made: roundMade(stats.wtsd, opp.hands), of: opp.hands },
-                      { key: "wsd", label: "WSD", value: stats.wsd, display: pct(stats.wsd), hint: "Vitória quando chega ao showdown.", made: (() => { const sd = roundMade(stats.wtsd, opp.hands); return sd > 0 ? roundMade(stats.wsd, sd) : 0; })(), of: roundMade(stats.wtsd, opp.hands) },
-                      { key: "allInAdjBb100", label: "ALL-IN ADJ BB/100", value: (stats as any).allInAdjBb100 ?? 0, display: `${((stats as any).allInAdjBb100 ?? 0) >= 0 ? "+" : ""}${Number((stats as any).allInAdjBb100 ?? 0).toFixed(2)}`, hint: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown (equity × pote − investimento).", made: Number((opp as any).allInAdjSample ?? 0), of: Number((opp as any).allInAdjOpportunities ?? 0) },
+                      { key: "aggressionFactor", label: "AGGRESSION", value: stats.aggressionFactor, display: stats.aggressionFactor.toFixed(2), hint: "Razão entre ações agressivas (bet/raise) e calls pós-flop.", formula: BENCHMARKS.aggressionFactor.formula, made: Number((opp as any).aggressionActions ?? 0), of: Number((opp as any).aggressionCalls ?? 0) },
+                      { key: "wtsd", label: "WTSD", value: stats.wtsd, display: pct(stats.wtsd), hint: "Frequência de ida ao showdown.", formula: BENCHMARKS.wtsd.formula, made: roundMade(stats.wtsd, opp.hands), of: opp.hands },
+                      { key: "wsd", label: "WSD", value: stats.wsd, display: pct(stats.wsd), hint: "Vitória quando chega ao showdown.", formula: BENCHMARKS.wsd.formula, made: (() => { const sd = roundMade(stats.wtsd, opp.hands); return sd > 0 ? roundMade(stats.wsd, sd) : 0; })(), of: roundMade(stats.wtsd, opp.hands) },
+                      { key: "allInAdjBb100", label: "ALL-IN ADJ BB/100", value: (stats as any).allInAdjBb100 ?? 0, display: `${((stats as any).allInAdjBb100 ?? 0) >= 0 ? "+" : ""}${Number((stats as any).allInAdjBb100 ?? 0).toFixed(2)}`, hint: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown (equity × pote − investimento).", formula: BENCHMARKS.allInAdjBb100.formula, made: Number((opp as any).allInAdjSample ?? 0), of: Number((opp as any).allInAdjOpportunities ?? 0) },
                     ];
                     const renderCard = (c: CardDef) => (
                       <div key={c.key} className="rounded-xl border border-white/10 bg-slate-950/70 p-3 shadow-inner">
                         <div className="flex items-start justify-between gap-2">
-                          <MetricLabel label={c.label} hint={c.hint} />
+                          <MetricLabel label={c.label} hint={c.hint} formula={c.formula} />
                         </div>
                         <p className={`mt-2 text-2xl font-black tracking-tight ${metricColor(c.key, c.value)}`}>{c.display}</p>
                         {sampleText(c.made, c.of) && (
@@ -1284,37 +1287,37 @@ export default function HandReviewer() {
 
                   <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="VPIP médio" hint="Percentual médio de mãos em que você entra voluntariamente no pote." />
+                      <MetricLabel label="VPIP médio" hint="Percentual médio de mãos em que você entra voluntariamente no pote." formula={BENCHMARKS.vpip.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.vpipAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.vpipAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="PFR médio" hint="Percentual médio de mãos com aumento pré-flop." />
+                      <MetricLabel label="PFR médio" hint="Percentual médio de mãos com aumento pré-flop." formula={BENCHMARKS.pfr.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.pfrAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.pfrAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="3-bet médio" hint="Frequência média de reaumento pré-flop." />
+                      <MetricLabel label="3-bet médio" hint="Frequência média de reaumento pré-flop." formula={BENCHMARKS.threeBet.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.threeBetAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Defesa média de BB" hint="Percentual médio de defesa do big blind em spots aplicáveis." />
+                      <MetricLabel label="Defesa média de BB" hint="Percentual médio de defesa do big blind em spots aplicáveis." formula={BENCHMARKS.bbDefense.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.bbDefenseAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0), historicalOppSafe.bbDefense), historicalOppSafe.bbDefense)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="C-bet média" hint="Frequência média de c-bet no flop." />
+                      <MetricLabel label="C-bet média" hint="Frequência média de c-bet no flop." formula={BENCHMARKS.cbetFlop.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.cbetFlopAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0), historicalOppSafe.cbetFlop), historicalOppSafe.cbetFlop)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Attempt to Steal médio" hint="Frequência média de tentativa de steal em posição final." />
+                      <MetricLabel label="Attempt to Steal médio" hint="Frequência média de tentativa de steal em posição final." formula={BENCHMARKS.attemptToSteal.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.attemptToStealAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0), historicalOppSafe.steal), historicalOppSafe.steal)}</p>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Aggression Factor médio" hint="Razão média entre ações agressivas e calls no histórico." />
+                      <MetricLabel label="Aggression Factor médio" hint="Razão média entre ações agressivas e calls no histórico." formula={BENCHMARKS.aggressionFactor.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0).toFixed(2)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number((historicalOpp as any)?.aggressionActions ?? 0), Number((historicalOpp as any)?.aggressionCalls ?? 0))}</p>
                     </div>
@@ -1467,7 +1470,8 @@ export default function HandReviewer() {
                       { title: "Geral", keys: ["aggressionFactor", "wtsd", "wsd"] },
                     ];
                     return (
-                      <div className="space-y-3">
+                      <div className="space-y-4">
+                        {analyzeMutation.isPending && <SplashScreen />}
                         {sections.map((section) => (
                           <section key={section.title} className="space-y-2">
                             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">{section.title}</p>
@@ -1485,7 +1489,7 @@ export default function HandReviewer() {
                                 return (
                                   <div key={`benchmark-${key}`} className="tokyo-metric rounded-md p-2">
                                     <div className="font-semibold text-cyan-100">
-                                      <MetricLabel label={benchmark.label} hint={benchmark.interpretation} />
+                                      <MetricLabel label={benchmark.label} hint={benchmark.interpretation} formula={benchmark.formula} />
                                       <span>: {key === "aggressionFactor" ? value.toFixed(2) : `${value}%`} · {metricStatusBadge(getMetricStatus(key, value))}</span>
                                     </div>
                                     <p className="text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
@@ -1495,6 +1499,13 @@ export default function HandReviewer() {
                                 );
                               })}
                             </div>
+                                <Button
+                                  variant="outline"
+                                  onClick={handleRecalculateHistory}
+                                  disabled={recalculateHistoryMutation.isPending}
+                                >
+                                  {recalculateHistoryMutation.isPending ? "Recalculando no site..." : "Recalcular estatísticas salvas"}
+                                </Button>
                           </section>
                         ))}
                       </div>

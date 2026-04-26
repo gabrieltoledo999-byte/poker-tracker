@@ -165,6 +165,21 @@ function normalizeStoredPosition(position: string | undefined): "UTG" | "UTG1" |
   }
 }
 
+function resolveHeroPositionWithFallback<T extends { position?: string | null }>(
+  handHeroPosition: string | undefined,
+  preflopActions: T[],
+  isHeroAction: (action: T) => boolean,
+): "UTG" | "UTG1" | "UTG2" | "LJ" | "HJ" | "CO" | "BTN" | "SB" | "BB" | "UNKNOWN" {
+  const direct = normalizeStoredPosition(handHeroPosition);
+  if (direct !== "UNKNOWN") return direct;
+
+  const firstHeroActionWithPosition = preflopActions.find(
+    (action) => isHeroAction(action) && normalizeStoredPosition(action.position ?? undefined) !== "UNKNOWN",
+  );
+
+  return normalizeStoredPosition(firstHeroActionWithPosition?.position ?? undefined);
+}
+
 function inferHeroFromFlags(actions: ReplayActionInput[]): string {
   const counts = new Map<string, number>();
   for (const action of actions) {
@@ -212,6 +227,76 @@ function getTrueFlopCbetActor(flopActions: ReplayActionInput[], preflopAggressor
 
   const actorName = normalizePlayerName(firstAggressiveAction.playerName);
   return actorName === preflopAggressorName ? actorName : "";
+}
+
+function getFlopCbetOpportunityAndMade(
+  flopActions: ReplayActionInput[],
+  isAggressorAction: (action: ReplayActionInput) => boolean,
+): { hasOpportunity: boolean; madeCbet: boolean } {
+  if (flopActions.length === 0) {
+    return { hasOpportunity: false, madeCbet: false };
+  }
+
+  const aggressorFirstActionIndex = flopActions.findIndex((action) => isAggressorAction(action));
+  if (aggressorFirstActionIndex < 0) {
+    return { hasOpportunity: false, madeCbet: false };
+  }
+
+  const facedLeadBeforeActing = flopActions
+    .slice(0, aggressorFirstActionIndex)
+    .some((action) => !isAggressorAction(action) && isAggressiveAction({ actionType: action.actionType ?? undefined }));
+
+  if (facedLeadBeforeActing) {
+    return { hasOpportunity: false, madeCbet: false };
+  }
+
+  const firstAggressorAction = flopActions[aggressorFirstActionIndex];
+  const madeCbet = !!firstAggressorAction && isAggressiveAction({ actionType: firstAggressorAction.actionType ?? undefined });
+
+  return { hasOpportunity: true, madeCbet };
+}
+
+function didStreetBetGetCalled(
+  streetActions: ReplayActionInput[],
+  isAggressorAction: (action: ReplayActionInput) => boolean,
+): boolean {
+  const aggressorBetIndex = streetActions.findIndex(
+    (action) => isAggressorAction(action) && isAggressiveAction({ actionType: action.actionType ?? undefined }),
+  );
+  if (aggressorBetIndex < 0) return false;
+
+  const reactions = streetActions.slice(aggressorBetIndex + 1);
+  for (const action of reactions) {
+    if (isAggressorAction(action)) continue;
+    if (isCallAction({ actionType: action.actionType ?? undefined })) return true;
+    if (isAggressiveAction({ actionType: action.actionType ?? undefined })) return false;
+  }
+
+  return false;
+}
+
+function didStreetBetWinImmediately(
+  streetActions: ReplayActionInput[],
+  isAggressorAction: (action: ReplayActionInput) => boolean,
+): boolean {
+  const aggressorBetIndex = streetActions.findIndex(
+    (action) => isAggressorAction(action) && isAggressiveAction({ actionType: action.actionType ?? undefined }),
+  );
+  if (aggressorBetIndex < 0) return false;
+
+  let foldedOpponent = false;
+  const reactions = streetActions.slice(aggressorBetIndex + 1);
+  for (const action of reactions) {
+    if (isAggressorAction(action)) continue;
+    if (isCallAction({ actionType: action.actionType ?? undefined }) || isAggressiveAction({ actionType: action.actionType ?? undefined })) {
+      return false;
+    }
+    if (isFoldAction({ actionType: action.actionType ?? undefined })) {
+      foldedOpponent = true;
+    }
+  }
+
+  return foldedOpponent;
 }
 
 function getDirectHeroResponseToFlopCbetIndex(
@@ -492,6 +577,12 @@ function isVoluntaryPreflopAction(action: { actionType?: string; isForced?: bool
   return type === "call" || type === "bet" || type === "raise" || type === "all_in";
 }
 
+function isStealBlockingPreflopAction(action: { actionType?: string; isForced?: boolean | null }): boolean {
+  if (action.isForced) return false;
+  const type = normalizeActionType(action.actionType);
+  return type === "call" || type === "bet" || type === "raise" || type === "all_in" || type === "straddle" || type === "post_blind";
+}
+
 const CBET_ALL_IN_OUTLIER_MULTIPLIER = 10;
 
 function getActionCommitAmount(action: { amount?: number | null; toAmount?: number | null }): number {
@@ -580,6 +671,7 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
       actionOrder: centralHandActions.actionOrder,
       playerName: centralHandActions.playerName,
       seat: centralHandActions.seat,
+      position: centralHandActions.position,
       actionType: centralHandActions.actionType,
       amount: centralHandActions.amount,
       toAmount: centralHandActions.toAmount,
@@ -596,7 +688,12 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     street: string | null;
     playerName: string | null;
     seat: number | null;
+    position: string | null;
     actionType: string | null;
+    amount: number | null;
+    toAmount: number | null;
+    potBefore: number | null;
+    isAllIn: number | null;
     isForced: number | null;
     heroInHand: number | null;
   }>>();
@@ -608,6 +705,7 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
       street: action.street,
       playerName: action.playerName,
       seat: action.seat,
+      position: action.position,
       actionType: action.actionType,
       amount: action.amount,
       toAmount: action.toAmount,
@@ -669,11 +767,19 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     const preflopAggressorName = normalizePlayerName(preflopAggressor?.playerName ?? undefined);
 
     const flop = handActions.filter((a) => normalizeStreet(a.street ?? undefined) === "flop");
-    const flopCbetActor = flop.length > 0 ? getTrueFlopCbetActor(flop, preflopAggressorName) : "";
+    const flopCbetActor = flop.length > 0 ? getTrueFlopCbetActor(flop as ReplayActionInput[], preflopAggressorName) : "";
     let heroCbetFlopThisHand = false;
     if (preflopAggressorIsHero && flop.length > 0) {
-      cbetOpportunities += 1;
-      const heroFlopCbet = flopCbetActor.length > 0 && flopCbetActor === normalizePlayerName(profileHeroName);
+      const cbetEval = getFlopCbetOpportunityAndMade(
+        flop as ReplayActionInput[],
+        (action) => isHeroAction(action),
+      );
+      if (cbetEval.hasOpportunity) {
+        cbetOpportunities += 1;
+      }
+      // Historical profile must trust hero markers in hand actions (heroInHand/seat),
+      // not profile display name matching, which can differ from hand-history aliases.
+      const heroFlopCbet = cbetEval.hasOpportunity && cbetEval.madeCbet;
       if (heroFlopCbet) cbetMade += 1;
       heroCbetFlopThisHand = heroFlopCbet;
     } else if (preflopAggressorName && !preflopAggressorIsHero && flopCbetActor === preflopAggressorName) {
@@ -698,13 +804,26 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     }
 
     const turn = handActions.filter((a) => normalizeStreet(a.street ?? undefined) === "turn");
-    if (heroCbetFlopThisHand && turn.length > 0) {
-      cbetTurnOpportunities += 1;
-      const heroTurnCbet = turn.some((a) => isHeroAction(a) && isAggressiveAction({ actionType: a.actionType ?? undefined }));
-      if (heroTurnCbet) cbetTurnMade += 1;
+    const flopCbetCalled = heroCbetFlopThisHand && didStreetBetGetCalled(
+      flop as ReplayActionInput[],
+      (action) => isHeroAction(action),
+    );
+    if (flopCbetCalled && turn.length > 0) {
+      const turnBarrelEval = getFlopCbetOpportunityAndMade(
+        turn as ReplayActionInput[],
+        (action) => isHeroAction(action),
+      );
+      if (turnBarrelEval.hasOpportunity) {
+        cbetTurnOpportunities += 1;
+        if (turnBarrelEval.madeCbet) cbetTurnMade += 1;
+      }
     }
 
-    const heroPosition = String(hand.heroPosition ?? "UNKNOWN");
+    const heroPosition = resolveHeroPositionWithFallback(
+      hand.heroPosition ?? undefined,
+      preflop,
+      isHeroAction,
+    );
     if (heroPosition === "BB") {
       const heroVoluntaryPreflopIndex = preflop.findIndex((a) => isHeroAction(a) && Number(a.isForced ?? 0) !== 1);
       if (heroVoluntaryPreflopIndex >= 0) {
@@ -721,13 +840,19 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
 
     const inStealPosition = heroPosition === "CO" || heroPosition === "BTN" || heroPosition === "SB";
     if (inStealPosition) {
-      stealOpportunities += 1;
-      const firstHeroPreflopIndex = preflop.findIndex((a) => isHeroAction(a));
-      if (firstHeroPreflopIndex >= 0) {
-        const action = preflop[firstHeroPreflopIndex];
-        const priorVoluntary = preflop.slice(0, firstHeroPreflopIndex).some((a) => isVoluntaryPreflopAction({ actionType: a.actionType ?? undefined, isForced: Number(a.isForced ?? 0) === 1 }));
-        if (!priorVoluntary && action && isAggressiveAction({ actionType: action.actionType ?? undefined })) {
-          stealAttemptCount += 1;
+      const firstHeroDecisionIndex = preflop.findIndex(
+        (a) => isHeroAction(a) && Number(a.isForced ?? 0) !== 1,
+      );
+      if (firstHeroDecisionIndex >= 0) {
+        const action = preflop[firstHeroDecisionIndex];
+        const hadPriorEntry = preflop
+          .slice(0, firstHeroDecisionIndex)
+          .some((a) => !isHeroAction(a) && isStealBlockingPreflopAction({ actionType: a.actionType ?? undefined, isForced: Number(a.isForced ?? 0) === 1 }));
+        if (!hadPriorEntry) {
+          stealOpportunities += 1;
+          if (action && isAggressiveAction({ actionType: action.actionType ?? undefined })) {
+            stealAttemptCount += 1;
+          }
         }
       }
     }
@@ -843,14 +968,22 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
   let foldToStealCount = 0;
   let foldTo3BetOpportunities = 0;
   let foldTo3BetCount = 0;
+  let fourBetRatioOpportunities = 0;
+  let fourBetRatioCount = 0;
+  let foldTo4BetOpportunities = 0;
+  let foldTo4BetCount = 0;
   let cbetIpOpportunities = 0;
   let cbetIpMade = 0;
   let cbetOopOpportunities = 0;
   let cbetOopMade = 0;
+  let cbetFlopSuccessOpportunities = 0;
+  let cbetFlopSuccessCount = 0;
   let floatFlopOpportunities = 0;
   let floatFlopCount = 0;
   let checkRaiseFlopOpportunities = 0;
   let checkRaiseFlopCount = 0;
+  let sawFlopHands = 0;
+  let wonWhenSawFlopCount = 0;
 
   // === All-in Adj (EV BB/100) ===
   // Soma o resultado em BB "ajustado pela sorte":
@@ -895,7 +1028,11 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       if (hadPriorRaise) threeBetHands += 1;
     }
 
-    const heroPosition = hand.heroPosition?.trim() || "UNKNOWN";
+    const heroPosition = resolveHeroPositionWithFallback(
+      hand.heroPosition?.trim() || undefined,
+      preflop,
+      (action) => normalizePlayerName(action.playerName) === heroName,
+    );
     const handResult = Number(hand.result ?? 0);
     const handBigBlind = Number(hand.bigBlind ?? 0);
     const handResultBb = handBigBlind > 0 ? handResult / handBigBlind : 0;
@@ -910,14 +1047,30 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
     const preflopAggressorName = normalizePlayerName(preflopAggressor?.playerName);
 
     const flop = handActions.filter((a) => normalizeStreet(a.street) === "flop");
+    if (flop.length > 0) {
+      sawFlopHands += 1;
+      if (handResult > 0) wonWhenSawFlopCount += 1;
+    }
     let heroCbetFlopThisHand = false;
     const flopCbetActor = flop.length > 0 ? getTrueFlopCbetActor(flop, preflopAggressorName) : "";
 
     if (preflopAggressorName === heroName && flop.length > 0) {
-      cbetOpportunities += 1;
-      const heroFlopCbet = flopCbetActor === heroName;
+      const cbetEval = getFlopCbetOpportunityAndMade(
+        flop,
+        (action) => normalizePlayerName(action.playerName) === heroName,
+      );
+      if (cbetEval.hasOpportunity) {
+        cbetOpportunities += 1;
+      }
+      const heroFlopCbet = cbetEval.hasOpportunity && cbetEval.madeCbet && flopCbetActor === heroName;
       if (heroFlopCbet) cbetMade += 1;
       heroCbetFlopThisHand = heroFlopCbet;
+      if (heroFlopCbet) {
+        cbetFlopSuccessOpportunities += 1;
+        if (didStreetBetWinImmediately(flop, (action) => normalizePlayerName(action.playerName) === heroName)) {
+          cbetFlopSuccessCount += 1;
+        }
+      }
     } else if (preflopAggressorName && preflopAggressorName !== heroName && flopCbetActor === preflopAggressorName) {
       const villainCbetIndex = flop.findIndex(
         (a) => normalizePlayerName(a.playerName) === preflopAggressorName && isAggressiveAction(a),
@@ -939,12 +1092,19 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
     }
 
     const turn = handActions.filter((a) => normalizeStreet(a.street) === "turn");
-    if (heroCbetFlopThisHand && turn.length > 0) {
-      cbetTurnOpportunities += 1;
-      const heroTurnCbet = turn.some(
-        (a) => normalizePlayerName(a.playerName) === heroName && isAggressiveAction(a),
+    const flopCbetCalled = heroCbetFlopThisHand && didStreetBetGetCalled(
+      flop,
+      (action) => normalizePlayerName(action.playerName) === heroName,
+    );
+    if (flopCbetCalled && turn.length > 0) {
+      const turnBarrelEval = getFlopCbetOpportunityAndMade(
+        turn,
+        (action) => normalizePlayerName(action.playerName) === heroName,
       );
-      if (heroTurnCbet) cbetTurnMade += 1;
+      if (turnBarrelEval.hasOpportunity) {
+        cbetTurnOpportunities += 1;
+        if (turnBarrelEval.madeCbet) cbetTurnMade += 1;
+      }
     }
 
     if (heroPosition === "BB") {
@@ -971,15 +1131,19 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
 
     const inStealPosition = heroPosition === "CO" || heroPosition === "BTN" || heroPosition === "SB";
     if (inStealPosition) {
-      stealOpportunities += 1;
-      const firstHeroPreflopIndex = preflop.findIndex((a) => normalizePlayerName(a.playerName) === heroName);
-      if (firstHeroPreflopIndex >= 0) {
-        const action = preflop[firstHeroPreflopIndex];
-        const priorVoluntary = preflop.slice(0, firstHeroPreflopIndex).some(
-          (a) => isVoluntaryPreflopAction(a),
-        );
-        if (!priorVoluntary && action && isAggressiveAction(action)) {
-          stealAttemptCount += 1;
+      const firstHeroDecisionIndex = preflop.findIndex(
+        (a) => normalizePlayerName(a.playerName) === heroName && !a.isForced,
+      );
+      if (firstHeroDecisionIndex >= 0) {
+        const action = preflop[firstHeroDecisionIndex];
+        const hadPriorEntry = preflop
+          .slice(0, firstHeroDecisionIndex)
+          .some((a) => normalizePlayerName(a.playerName) !== heroName && isStealBlockingPreflopAction(a));
+        if (!hadPriorEntry) {
+          stealOpportunities += 1;
+          if (action && isAggressiveAction(action)) {
+            stealAttemptCount += 1;
+          }
         }
       }
     }
@@ -1039,6 +1203,30 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
             foldTo3BetOpportunities += 1;
             if (isFoldAction(heroResponse)) foldTo3BetCount += 1;
           }
+        }
+      }
+    }
+
+    // === 4-bet ratio / Fold to 4-bet (flow v4.0) ===
+    const heroThreeBetIdx = preflop.findIndex((action, idx) => {
+      if (normalizePlayerName(action.playerName) !== heroName || !isAggressiveAction(action)) return false;
+      const priorRaises = preflop.slice(0, idx).filter((a) => normalizePlayerName(a.playerName) !== heroName && isAggressiveAction(a)).length;
+      return priorRaises === 1;
+    });
+    if (heroThreeBetIdx >= 0) {
+      fourBetRatioOpportunities += 1;
+      const afterHeroThreeBet = preflop.slice(heroThreeBetIdx + 1);
+      const villainFourBetIdx = afterHeroThreeBet.findIndex(
+        (a) => normalizePlayerName(a.playerName) !== heroName && isAggressiveAction(a),
+      );
+      if (villainFourBetIdx >= 0) {
+        const heroResponse = afterHeroThreeBet.slice(villainFourBetIdx + 1).find(
+          (a) => normalizePlayerName(a.playerName) === heroName,
+        );
+        if (heroResponse) {
+          foldTo4BetOpportunities += 1;
+          if (isFoldAction(heroResponse)) foldTo4BetCount += 1;
+          if (isAggressiveAction(heroResponse)) fourBetRatioCount += 1;
         }
       }
     }
@@ -1222,28 +1410,42 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
   const attemptToSteal = toPct(stealAttemptCount, stealOpportunities);
   const aggressionFactor = callActions > 0 ? round2(aggressionActions / callActions) : (aggressionActions > 0 ? round2(aggressionActions) : 0);
   const cbetTurn = toPct(cbetTurnMade, cbetTurnOpportunities);
+  const cbetSuccessRate = toPct(cbetFlopSuccessCount, cbetFlopSuccessOpportunities);
   const rfi = toPct(rfiAttempts, rfiOpportunities);
   const coldCall = toPct(coldCallCount, coldCallOpportunities);
   const squeeze = toPct(squeezeCount, squeezeOpportunities);
   const resteal = toPct(restealCount, restealOpportunities);
   const foldToSteal = toPct(foldToStealCount, foldToStealOpportunities);
   const foldTo3Bet = toPct(foldTo3BetCount, foldTo3BetOpportunities);
+  const fourBetRatio = toPct(fourBetRatioCount, fourBetRatioOpportunities);
+  const foldTo4Bet = toPct(foldTo4BetCount, foldTo4BetOpportunities);
   const cbetIp = toPct(cbetIpMade, cbetIpOpportunities);
   const cbetOop = toPct(cbetOopMade, cbetOopOpportunities);
   const floatFlop = toPct(floatFlopCount, floatFlopOpportunities);
   const checkRaiseFlop = toPct(checkRaiseFlopCount, checkRaiseFlopOpportunities);
   const allInAdjBb100 = hands.length > 0 ? round2((allInAdjTotalBb / hands.length) * 100) : 0;
   const showdownHands = hands.filter((h) => Boolean(h.showdown));
-  const wtsd = toPct(showdownHands.length, hands.length);
+  const wtsd = toPct(showdownHands.length, sawFlopHands);
   const wonAtShowdown = showdownHands.filter((h) => Number(h.result ?? 0) > 0).length;
   const wsd = toPct(wonAtShowdown, showdownHands.length);
+  const wwsf = toPct(wonWhenSawFlopCount, sawFlopHands);
 
   const alerts: string[] = [];
   const strengths: string[] = [];
+  const unknownPositionHands = positionHands.get("UNKNOWN") ?? 0;
+  if (unknownPositionHands > 0) {
+    const unknownRatio = (unknownPositionHands / Math.max(1, hands.length)) * 100;
+    if (unknownRatio >= 10) {
+      alerts.push(`Qualidade de dados: ${unknownPositionHands} mãos (${unknownRatio.toFixed(1)}%) sem posição identificada. Revise parser/import para precisão por posição.`);
+    }
+  }
   if (vpip > 42) alerts.push("VPIP alto no torneio: possivel excesso de mãos marginais.");
   if (pfr > 0 && vpip > 0 && pfr / Math.max(vpip, 1) < 0.5) alerts.push("Gap VPIP vs PFR sugere tendencia passiva preflop.");
   if (bbDefense < 25 && bbDefenseOpportunities >= 3) alerts.push("Defesa de BB baixa nas oportunidades observadas.");
   if (aggressionFactor < 1.2) alerts.push("Aggression Factor baixo; tendencia mais passiva que agressiva.");
+  if (cbetFlop >= 60 && cbetTurn <= 45 && cbetOpportunities >= 6 && cbetTurnOpportunities >= 4) {
+    alerts.push("Gap C-Bet Flop vs Turn sugere padrao one-and-done (desiste apos call no flop).");
+  }
   if (cbetFlop >= 55 && cbetOpportunities >= 3) strengths.push("Boa frequencia de c-bet flop como agressor preflop.");
   if (attemptToSteal >= 30 && stealOpportunities >= 4) strengths.push("Steal ativo em posicoes finais quando abriu o pote.");
   if (aggressionFactor >= 2) strengths.push("Perfil agressivo consistente nas decisões pós-flop.");
@@ -1284,18 +1486,22 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       threeBet,
       cbetFlop,
       cbetTurn,
+      cbetSuccessRate,
       foldToCbet,
       bbDefense,
       attemptToSteal,
       aggressionFactor,
       wtsd,
       wsd,
+      wwsf,
       rfi,
       coldCall,
       squeeze,
       resteal,
       foldToSteal,
       foldTo3Bet,
+      fourBetRatio,
+      foldTo4Bet,
       cbetIp,
       cbetOop,
       floatFlop,
@@ -1306,9 +1512,11 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       hands: hands.length,
       cbetFlop: cbetOpportunities,
       cbetTurn: cbetTurnOpportunities,
+      cbetSuccess: cbetFlopSuccessOpportunities,
       foldToCbet: foldToCbetOpportunities,
       bbDefense: bbDefenseOpportunities,
       steal: stealOpportunities,
+      sawFlop: sawFlopHands,
       aggressionActions,
       aggressionCalls: callActions,
       rfi: rfiOpportunities,
@@ -1317,6 +1525,8 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       resteal: restealOpportunities,
       foldToSteal: foldToStealOpportunities,
       foldTo3Bet: foldTo3BetOpportunities,
+      fourBetRatio: fourBetRatioOpportunities,
+      foldTo4Bet: foldTo4BetOpportunities,
       cbetIp: cbetIpOpportunities,
       cbetOop: cbetOopOpportunities,
       floatFlop: floatFlopOpportunities,
@@ -1338,6 +1548,44 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       : null,
     alerts,
     strengths,
+    flowValidation: {
+      logicVersion: "flow-v4.0-final",
+      steps: {
+        parse: {
+          hands: hands.length,
+          actions: input.actions.length,
+          showdowns: input.showdowns.length,
+          ok: hands.length > 0,
+        },
+        preflop: {
+          evaluatedHands: hands.length,
+          vpipOpportunities: hands.length,
+          pfrOpportunities: hands.length,
+          stealOpportunities,
+          bbDefenseOpportunities,
+          ok: true,
+        },
+        postflop: {
+          sawFlopHands,
+          cbetFlopOpportunities: cbetOpportunities,
+          cbetTurnOpportunities,
+          cbetSuccessOpportunities: cbetFlopSuccessOpportunities,
+          ok: true,
+        },
+        general: {
+          aggressionActions,
+          aggressionCalls: callActions,
+          showdownHands: showdownHands.length,
+          ok: true,
+        },
+        advanced: {
+          foldTo3BetOpportunities,
+          foldTo4BetOpportunities,
+          squeezeOpportunities,
+          ok: true,
+        },
+      },
+    },
   };
 }
 
@@ -2082,6 +2330,241 @@ export async function clearReplayHistoryForUser(userId: number) {
   await db.delete(centralTournaments).where(eq(centralTournaments.userId, userId));
 
   return { success: true };
+}
+
+export async function recalculateReplayStatsForUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const tournaments = await db
+    .select({
+      id: centralTournaments.id,
+      externalTournamentId: centralTournaments.externalTournamentId,
+      site: centralTournaments.site,
+      format: centralTournaments.format,
+      buyIn: centralTournaments.buyIn,
+      fee: centralTournaments.fee,
+      currency: centralTournaments.currency,
+      importedAt: centralTournaments.importedAt,
+      totalHands: centralTournaments.totalHands,
+      finalPosition: centralTournaments.finalPosition,
+      wasEliminated: centralTournaments.wasEliminated,
+      rawSourceId: centralTournaments.rawSourceId,
+      abiBucket: centralTournaments.abiBucket,
+      totalCost: centralTournaments.totalCost,
+    })
+    .from(centralTournaments)
+    .where(eq(centralTournaments.userId, userId))
+    .orderBy(asc(centralTournaments.id));
+
+  const touchedSiteBuckets = new Set<string>();
+  const failures: Array<{ tournamentId: number; reason: string }> = [];
+  let updated = 0;
+
+  for (const tournament of tournaments) {
+    try {
+      const handsRows = await db
+        .select({
+          id: centralHands.id,
+          externalHandId: centralHands.externalHandId,
+          handNumber: centralHands.handNumber,
+          datetimeOriginal: centralHands.datetimeOriginal,
+          buttonSeat: centralHands.buttonSeat,
+          heroSeat: centralHands.heroSeat,
+          heroPosition: centralHands.heroPosition,
+          smallBlind: centralHands.smallBlind,
+          bigBlind: centralHands.bigBlind,
+          ante: centralHands.ante,
+          board: centralHands.board,
+          heroCards: centralHands.heroCards,
+          totalPot: centralHands.totalPot,
+          rake: centralHands.rake,
+          result: centralHands.result,
+          showdown: centralHands.showdown,
+        })
+        .from(centralHands)
+        .where(and(eq(centralHands.userId, userId), eq(centralHands.tournamentId, tournament.id)))
+        .orderBy(asc(centralHands.id));
+
+      const handRefById = new Map<number, string>();
+      const hands = handsRows.map((hand) => {
+        const handRef = String(hand.id);
+        handRefById.set(hand.id, handRef);
+        return {
+          handRef,
+          externalHandId: hand.externalHandId ?? undefined,
+          handNumber: hand.handNumber ?? undefined,
+          datetimeOriginal: hand.datetimeOriginal instanceof Date ? hand.datetimeOriginal : undefined,
+          buttonSeat: hand.buttonSeat ?? undefined,
+          heroSeat: hand.heroSeat ?? undefined,
+          heroPosition: hand.heroPosition ?? undefined,
+          smallBlind: Number(hand.smallBlind ?? 0),
+          bigBlind: Number(hand.bigBlind ?? 0),
+          ante: Number(hand.ante ?? 0),
+          board: hand.board ?? undefined,
+          heroCards: hand.heroCards ?? undefined,
+          totalPot: hand.totalPot ?? undefined,
+          rake: hand.rake ?? undefined,
+          result: hand.result ?? undefined,
+          showdown: Number(hand.showdown ?? 0) === 1,
+        };
+      });
+
+      const actionsRows = await db
+        .select({
+          handId: centralHandActions.handId,
+          street: centralHandActions.street,
+          actionOrder: centralHandActions.actionOrder,
+          playerName: centralHandActions.playerName,
+          seat: centralHandActions.seat,
+          position: centralHandActions.position,
+          actionType: centralHandActions.actionType,
+          amount: centralHandActions.amount,
+          toAmount: centralHandActions.toAmount,
+          stackBefore: centralHandActions.stackBefore,
+          stackAfter: centralHandActions.stackAfter,
+          potBefore: centralHandActions.potBefore,
+          potAfter: centralHandActions.potAfter,
+          isAllIn: centralHandActions.isAllIn,
+          isForced: centralHandActions.isForced,
+          facingActionType: centralHandActions.facingActionType,
+          facingSizeBb: centralHandActions.facingSizeBb,
+          heroInHand: centralHandActions.heroInHand,
+          showdownVisible: centralHandActions.showdownVisible,
+          contextJson: centralHandActions.contextJson,
+        })
+        .from(centralHandActions)
+        .where(and(eq(centralHandActions.userId, userId), eq(centralHandActions.tournamentId, tournament.id)))
+        .orderBy(asc(centralHandActions.handId), asc(centralHandActions.actionOrder));
+
+      const actions = actionsRows
+        .map((action) => {
+          const handRef = handRefById.get(Number(action.handId));
+          if (!handRef) return null;
+          return {
+            handRef,
+            street: action.street,
+            actionOrder: Number(action.actionOrder ?? 0),
+            playerName: action.playerName,
+            seat: action.seat ?? undefined,
+            position: action.position ?? undefined,
+            actionType: action.actionType,
+            amount: action.amount ?? undefined,
+            toAmount: action.toAmount ?? undefined,
+            stackBefore: action.stackBefore ?? undefined,
+            stackAfter: action.stackAfter ?? undefined,
+            potBefore: action.potBefore ?? undefined,
+            potAfter: action.potAfter ?? undefined,
+            isAllIn: Number(action.isAllIn ?? 0) === 1,
+            isForced: Number(action.isForced ?? 0) === 1,
+            facingActionType: action.facingActionType ?? undefined,
+            facingSizeBb: action.facingSizeBb ?? undefined,
+            heroInHand: Number(action.heroInHand ?? 0) === 1,
+            showdownVisible: Number(action.showdownVisible ?? 0) === 1,
+            contextJson: action.contextJson ?? undefined,
+          };
+        })
+        .filter((action): action is NonNullable<typeof action> => action !== null);
+
+      const showdownRows = await db
+        .select({
+          handId: showdownRecords.handId,
+          playerName: showdownRecords.playerName,
+          seat: showdownRecords.seat,
+          position: showdownRecords.position,
+          holeCards: showdownRecords.holeCards,
+          finalHandDescription: showdownRecords.finalHandDescription,
+          wonPot: showdownRecords.wonPot,
+          amountWon: showdownRecords.amountWon,
+        })
+        .from(showdownRecords)
+        .where(and(eq(showdownRecords.userId, userId), eq(showdownRecords.tournamentId, tournament.id)))
+        .orderBy(asc(showdownRecords.handId));
+
+      const showdowns = showdownRows
+        .map((show) => {
+          const handRef = handRefById.get(Number(show.handId));
+          if (!handRef) return null;
+          return {
+            handRef,
+            playerName: show.playerName,
+            seat: show.seat ?? undefined,
+            position: show.position ?? undefined,
+            holeCards: show.holeCards ?? undefined,
+            finalHandDescription: show.finalHandDescription ?? undefined,
+            wonPot: Number(show.wonPot ?? 0) === 1,
+            amountWon: show.amountWon ?? undefined,
+          };
+        })
+        .filter((show): show is NonNullable<typeof show> => show !== null);
+
+      const analysis = await analyzeReplayTournament({
+        tournament: {
+          externalTournamentId: tournament.externalTournamentId ?? undefined,
+          site: tournament.site,
+          format: tournament.format,
+          buyIn: Number(tournament.buyIn ?? 0),
+          fee: Number(tournament.fee ?? 0),
+          currency: tournament.currency,
+          importedAt: tournament.importedAt instanceof Date ? tournament.importedAt : undefined,
+          totalHands: Number(tournament.totalHands ?? hands.length),
+          finalPosition: tournament.finalPosition ?? undefined,
+          wasEliminated: Number(tournament.wasEliminated ?? 0) === 1,
+          rawSourceId: tournament.rawSourceId ?? undefined,
+        },
+        hands,
+        actions,
+        showdowns,
+      });
+
+      await db.delete(playerTournamentStats).where(
+        and(eq(playerTournamentStats.userId, userId), eq(playerTournamentStats.tournamentId, tournament.id)),
+      );
+
+      await db.insert(playerTournamentStats).values({
+        userId,
+        tournamentId: tournament.id,
+        handsPlayed: hands.length,
+        vpip: Number(analysis.stats.vpip ?? 0),
+        pfr: Number(analysis.stats.pfr ?? 0),
+        threeBet: Number(analysis.stats.threeBet ?? 0),
+        cbetFlop: Number(analysis.stats.cbetFlop ?? 0),
+        cbetTurn: Number(analysis.stats.cbetTurn ?? 0),
+        foldToCbet: Number(analysis.stats.foldToCbet ?? 0),
+        bbDefense: Number(analysis.stats.bbDefense ?? 0),
+        stealAttempt: Number(analysis.stats.attemptToSteal ?? 0),
+        aggressionFactor: Math.round(Number(analysis.stats.aggressionFactor ?? 0)),
+        wtsd: Number(analysis.stats.wtsd ?? 0),
+        wsd: Number(analysis.stats.wsd ?? 0),
+        finalPosition: tournament.finalPosition ?? null,
+        abiBucket: tournament.abiBucket ?? "micro",
+        totalCost: Number(tournament.totalCost ?? 0),
+      });
+
+      touchedSiteBuckets.add(`${tournament.site}::${tournament.abiBucket ?? "micro"}`);
+      updated += 1;
+    } catch (error) {
+      failures.push({
+        tournamentId: Number(tournament.id),
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  await refreshUserAbiAggregates(userId);
+
+  for (const key of touchedSiteBuckets) {
+    const [site, abiBucket] = key.split("::");
+    if (!site || !abiBucket) continue;
+    await refreshFieldAbiAggregates(site, abiBucket);
+  }
+
+  return {
+    totalTournaments: tournaments.length,
+    updated,
+    failed: failures.length,
+    failures,
+  };
 }
 
 export async function compactReplayStorageForUser(userId: number, existingDb?: Awaited<ReturnType<typeof getDb>>) {

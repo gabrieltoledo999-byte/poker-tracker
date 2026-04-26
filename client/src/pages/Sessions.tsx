@@ -311,10 +311,32 @@ function toDateTimeLocalValue(value: string | Date | null | undefined): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+function parseDecimalInput(value: string): number {
+  const normalized = value.trim().replace(",", ".");
+  return Number.parseFloat(normalized);
+}
+
+function formatDecimalInput(value: number, prefersComma: boolean): string {
+  const rounded = Math.round(value * 100) / 100;
+  const asString = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return prefersComma ? asString.replace(".", ",") : asString;
+}
+
+function stepDecimalInput(value: string, step: number, min = 0): string {
+  const parsed = parseDecimalInput(value);
+  const base = Number.isFinite(parsed) ? parsed : 0;
+  const next = Math.max(min, base + step);
+  const prefersComma = value.includes(",");
+  return formatDecimalInput(next, prefersComma);
+}
+
 function playPositiveCashOutCelebration() {
   if (typeof window === "undefined") return;
   const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextCtor) return;
+  if (!AudioContextCtor) {
+    window.dispatchEvent(new CustomEvent("cashout-positive-celebration"));
+    return;
+  }
 
   try {
     const ctx = new AudioContextCtor();
@@ -377,10 +399,12 @@ function playPositiveCashOutCelebration() {
       void ctx.close();
     }, 2600);
 
-    window.dispatchEvent(new CustomEvent("cashout-positive-celebration"));
   } catch {
     // Silent fallback
   }
+
+  // Keep visual celebration independent from audio capabilities/errors.
+  window.dispatchEvent(new CustomEvent("cashout-positive-celebration"));
 }
 
 type RewardDropKind = "bill" | "coin";
@@ -398,7 +422,20 @@ type RewardDrop = {
 
 function renderRewardDrop(drop: RewardDrop) {
   if (drop.kind === "bill") {
-    return <span style={{ fontSize: `${drop.size}px` }}>💵</span>;
+    return (
+      <span
+        className="relative inline-flex items-center justify-center rounded-md border border-emerald-200/80 text-[10px] font-black text-emerald-900 shadow-[0_4px_10px_rgba(0,0,0,0.35)]"
+        style={{
+          width: `${Math.max(18, drop.size * 1.1)}px`,
+          height: `${Math.max(12, drop.size * 0.68)}px`,
+          background: "linear-gradient(135deg, #bbf7d0 0%, #4ade80 42%, #16a34a 100%)",
+        }}
+      >
+        $
+        <span className="pointer-events-none absolute left-[2px] top-[2px] h-[4px] w-[4px] rounded-full bg-emerald-100/85" />
+        <span className="pointer-events-none absolute bottom-[2px] right-[2px] h-[4px] w-[4px] rounded-full bg-emerald-100/75" />
+      </span>
+    );
   }
   return (
     <span
@@ -417,7 +454,9 @@ function renderRewardDrop(drop: RewardDrop) {
 function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
   const drops = useMemo(
     () => Array.from({ length: 42 }).map((_, index) => {
-      const kind: RewardDropKind = Math.random() > 0.45 ? "coin" : "bill";
+      // Guarantee some bills in every celebration; random-only could look like coin-only in practice.
+      const guaranteedBill = index < 12;
+      const kind: RewardDropKind = guaranteedBill || Math.random() <= 0.45 ? "bill" : "coin";
       return {
         id: index,
         kind,
@@ -437,7 +476,9 @@ function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
     return () => window.clearTimeout(timer);
   }, [onDone]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div className="pointer-events-none fixed inset-0 z-[140] overflow-hidden" aria-hidden>
       <style>{`
         @keyframes cash-rain-fall {
@@ -482,7 +523,8 @@ function MoneyRainOverlay({ onDone }: { onDone: () => void }) {
           {renderRewardDrop(drop)}
         </span>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -658,11 +700,19 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Buy-in ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" inputMode="decimal" step="0.5" min="0" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
+              <div className="mt-1 flex items-center gap-1">
+                <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => setBuyIn((prev) => stepDecimalInput(prev, -0.5))}>
+                  <span aria-hidden>−</span>
+                </Button>
+                <Input className="h-8 text-sm" type="text" inputMode="decimal" value={buyIn} onChange={e => setBuyIn(e.target.value)} />
+                <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => setBuyIn((prev) => stepDecimalInput(prev, 0.5))}>
+                  <span aria-hidden>+</span>
+                </Button>
+              </div>
             </div>
             <div>
               <Label className="text-xs">Cash-out ({currency})</Label>
-              <Input className="h-8 text-sm mt-1" type="number" inputMode="decimal" step="0.5" min="0" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
+              <Input className="h-8 text-sm mt-1" type="text" inputMode="decimal" value={cashOut} onChange={e => setCashOut(e.target.value)} placeholder="—" />
             </div>
           </div>
           <div>
@@ -1031,16 +1081,22 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
         </div>
         <div className="space-y-1">
           <Label>Buy-in ({currency === "USD" ? "$" : currency === "CAD" ? "CA$" : currency === "JPY" ? "¥" : currency === "CNY" ? "CN¥" : currency === "EUR" ? "EUR" : "R$"})</Label>
-          <Input
-            type="number"
-            inputMode="decimal"
-            step="0.5"
-            min="0"
-            placeholder="0.00"
-            value={buyIn}
-            onChange={(e) => setBuyIn(e.target.value)}
-            required
-          />
+          <div className="flex items-center gap-1">
+            <Button type="button" size="icon" variant="outline" className="h-9 w-9" onClick={() => setBuyIn((prev) => stepDecimalInput(prev, -0.5))}>
+              <span aria-hidden>−</span>
+            </Button>
+            <Input
+              type="text"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={buyIn}
+              onChange={(e) => setBuyIn(e.target.value)}
+              required
+            />
+            <Button type="button" size="icon" variant="outline" className="h-9 w-9" onClick={() => setBuyIn((prev) => stepDecimalInput(prev, 0.5))}>
+              <span aria-hidden>+</span>
+            </Button>
+          </div>
           {suggestedBuyIns.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
               {venueBuyIns && venueBuyIns.length > 0 && (
@@ -1120,6 +1176,7 @@ interface CashOutDialogProps {
   currency: string;
   buyIn: number;
   onClose: () => void;
+  onPositiveCelebration?: () => void;
   onCashOutSaved?: (payload: {
     tableId: number;
     currency: string;
@@ -1129,7 +1186,7 @@ interface CashOutDialogProps {
   }) => void;
 }
 
-function CashOutDialog({ tableId, currency, buyIn, onClose, onCashOutSaved }: CashOutDialogProps) {
+function CashOutDialog({ tableId, currency, buyIn, onClose, onPositiveCelebration, onCashOutSaved }: CashOutDialogProps) {
   const utils = trpc.useUtils();
   const [cashOut, setCashOut] = useState("0");
   const [finalPosition, setFinalPosition] = useState("");
@@ -1142,6 +1199,7 @@ function CashOutDialog({ tableId, currency, buyIn, onClose, onCashOutSaved }: Ca
       utils.sessions.getActive.invalidate();
       if ((lastSubmittedProfitRef.current ?? 0) > 0) {
         playPositiveCashOutCelebration();
+        onPositiveCelebration?.();
       }
       if (typeof lastSubmittedCashOutRef.current === "number" && typeof lastSubmittedProfitRef.current === "number") {
         onCashOutSaved?.({
@@ -1402,9 +1460,10 @@ interface ActiveSessionPanelProps {
     profitText: string;
     cashOutText: string;
   }) => void;
+  onPositiveCashOutCelebration?: () => void;
 }
 
-function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }: ActiveSessionPanelProps) {
+function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, onPositiveCashOutCelebration }: ActiveSessionPanelProps) {
   const utils = trpc.useUtils();
   const [elapsed, setElapsed] = useState(formatDuration(session.startedAt));
   const [showAddTable, setShowAddTable] = useState(false);
@@ -1888,6 +1947,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut }:
               tableId={cashOutTable.id}
               currency={cashOutTable.currency}
               buyIn={cashOutTable.buyIn}
+              onPositiveCelebration={onPositiveCashOutCelebration}
               onCashOutSaved={({ tableId, profit, cashOut, currency }) => {
                 const profitBrlCents = convertToBrlCents(profit, currency, fxRates);
                 const sourceTable = session.tables.find((t) => t.id === tableId);
@@ -2468,13 +2528,21 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Buy-in</Label>
-                  <Input
-                    className="h-8 text-sm mt-1"
-                    type="text"
-                    inputMode="decimal"
-                    value={editBuyIn}
-                    onChange={e => setEditBuyIn(e.target.value)}
-                  />
+                  <div className="mt-1 flex items-center gap-1">
+                    <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => setEditBuyIn((prev) => stepDecimalInput(prev, -0.5))}>
+                      <span aria-hidden>−</span>
+                    </Button>
+                    <Input
+                      className="h-8 text-sm"
+                      type="text"
+                      inputMode="decimal"
+                      value={editBuyIn}
+                      onChange={e => setEditBuyIn(e.target.value)}
+                    />
+                    <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => setEditBuyIn((prev) => stepDecimalInput(prev, 0.5))}>
+                      <span aria-hidden>+</span>
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <Label className="text-xs">Cash-out</Label>
@@ -2623,28 +2691,32 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
 }
 
 // ─── Main Sessions Page ────────────────────────────────────────────────────────
-const FALLING_CHIP_PALETTE = [
-  { value: "25", color: "#c81e1e" },
-  { value: "100", color: "#1653d1" },
-  { value: "500", color: "#111827" },
-  { value: "5", color: "#16a34a" },
-  { value: "1", color: "#e5e7eb" },
-  { value: "1000", color: "#7c3aed" },
-  { value: "50", color: "#f59e0b" },
+const FALLING_CHIP_IMAGES = [
+  { src: "/branding/session-chips/1.png", zoom: 150, posY: 50 },
+  { src: "/branding/session-chips/5.png", zoom: 148, posY: 50 },
+  { src: "/branding/session-chips/10.png", zoom: 152, posY: 49 },
+  { src: "/branding/session-chips/25.png", zoom: 150, posY: 50 },
+  { src: "/branding/session-chips/100.png", zoom: 150, posY: 50 },
+  { src: "/branding/session-chips/500.png", zoom: 151, posY: 50 },
+  { src: "/branding/session-chips/1000.png", zoom: 153, posY: 49 },
+  { src: "/branding/session-chips/5000.png", zoom: 154, posY: 49 },
 ] as const;
 
-function FallingChip({ left, size, delay, duration, value, color, sway, rotateFrom, rotateTo }: {
-  left: number; size: number; delay: number; duration: number; value: string; color: string; sway: number; rotateFrom: number; rotateTo: number;
+function FallingChip({ left, size, delay, duration, imageSrc, imageZoom, imagePosY, sway, rotateFrom, rotateTo }: {
+  left: number; size: number; delay: number; duration: number; imageSrc: string; imageZoom: number; imagePosY: number; sway: number; rotateFrom: number; rotateTo: number;
 }) {
   return (
     <div
-      className="absolute top-0 rounded-full opacity-[0.22] shadow-[0_18px_32px_rgba(0,0,0,0.3)]"
+      className="absolute top-0 overflow-hidden rounded-full opacity-[0.28] shadow-[0_18px_32px_rgba(0,0,0,0.35)]"
       style={{
         left: `${left}%`,
         width: `${size}px`,
         height: `${size}px`,
-        background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.26) 0%, ${color} 52%, rgba(8,8,10,0.84) 100%)`,
-        border: "1px solid rgba(255,255,255,0.48)",
+        backgroundImage: `url(${imageSrc})`,
+        backgroundSize: `${imageZoom}%`,
+        backgroundPosition: `50% ${imagePosY}%`,
+        backgroundRepeat: "no-repeat",
+        border: "1px solid rgba(255,255,255,0.25)",
         animation: `chipFall ${duration}s linear ${delay}s infinite, chipSway ${(duration / 2).toFixed(2)}s ease-in-out ${delay}s infinite alternate`,
         // custom props consumed by keyframes
         ["--chip-sway" as any]: `${sway}px`,
@@ -2652,13 +2724,8 @@ function FallingChip({ left, size, delay, duration, value, color, sway, rotateFr
         ["--chip-rot-to" as any]: `${rotateTo}deg`,
       }}
     >
-      <div className="absolute inset-[9%] rounded-full border-2 border-dashed border-white/80" />
-      <div className="absolute inset-[26%] rounded-full border border-white/55" />
-      <div className="absolute inset-0 flex items-center justify-center font-black tracking-tight text-white/85" style={{ fontSize: `${Math.max(10, size * 0.18)}px` }}>{value}</div>
-      <span className="absolute left-[18%] top-[21%] h-1.5 w-1.5 rounded-full bg-white/90" />
-      <span className="absolute left-[22%] top-[73%] h-1.5 w-1.5 rounded-full bg-white/90" />
-      <span className="absolute right-[17%] top-[26%] h-1.5 w-1.5 rounded-full bg-white/90" />
-      <span className="absolute right-[21%] top-[69%] h-1.5 w-1.5 rounded-full bg-white/90" />
+      <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_28%_20%,rgba(255,255,255,0.22),transparent_38%)]" />
+      <div className="absolute inset-[7%] rounded-full border border-white/30" />
     </div>
   );
 }
@@ -2667,15 +2734,16 @@ function SessionsPageBackdropChips() {
   const chips = useMemo(() => {
     const count = 18;
     return Array.from({ length: count }).map((_, i) => {
-      const palette = FALLING_CHIP_PALETTE[i % FALLING_CHIP_PALETTE.length];
+      const image = FALLING_CHIP_IMAGES[i % FALLING_CHIP_IMAGES.length];
       return {
         id: i,
         left: Math.random() * 96,
         size: 48 + Math.random() * 80,
         delay: -Math.random() * 14,
         duration: 10 + Math.random() * 10,
-        value: palette.value,
-        color: palette.color,
+        imageSrc: image.src,
+        imageZoom: image.zoom,
+        imagePosY: image.posY,
         sway: 20 + Math.random() * 60,
         rotateFrom: -180 + Math.random() * 180,
         rotateTo: 180 + Math.random() * 360,
@@ -2888,6 +2956,11 @@ export default function Sessions() {
       window.removeEventListener("cashout-positive-celebration", handler as EventListener);
     };
   }, []);
+
+  const triggerMoneyRain = () => {
+    setMoneyRainVisible(false);
+    window.setTimeout(() => setMoneyRainVisible(true), 0);
+  };
 
   if (!user) return null;
   const needsPlayStyleOnboarding = !user.onboardingCompletedAt;
@@ -3303,8 +3376,14 @@ export default function Sessions() {
               session={activeSession as any}
               onFinalized={(payload) => {
                 utils.sessions.list.invalidate();
+                if (!payload) return;
+                if (payload.shouldSuggestFeedPost) {
+                  playPositiveCashOutCelebration();
+                  openFeedPromptFromWin(payload);
+                }
               }}
               onSignificantTableCashOut={openFeedPromptFromTableCashOut}
+              onPositiveCashOutCelebration={triggerMoneyRain}
             />
           </CardContent>
         </Card>

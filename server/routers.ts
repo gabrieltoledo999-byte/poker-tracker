@@ -78,6 +78,7 @@ import {
   getActiveConsent,
   getPlayerHistoricalProfile,
   getTournamentOverview,
+  recalculateReplayStatsForUser,
   grantConsent,
   importReplayToCentralMemory,
   revokeConsent,
@@ -2001,8 +2002,15 @@ export const appRouter = router({
       .mutation(async ({ ctx }) => {
         return await clearReplayHistoryForUser(ctx.user.id);
       }),
+    recalculateHistory: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        return await recalculateReplayStatsForUser(ctx.user.id);
+      }),
     compactReplayStorage: protectedProcedure
       .mutation(async ({ ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Compactação disponível apenas para admin." });
+        }
         return await compactReplayStorageForUser(ctx.user.id);
       }),
     analyzeReplay: protectedProcedure
@@ -2030,8 +2038,13 @@ export const appRouter = router({
           throw error;
         }
       }),
-    playerHistoricalProfile: protectedProcedure.query(async ({ ctx }) => {
+    playerHistoricalProfile: protectedProcedure
+      .input(z.object({ recalculate: z.boolean().optional() }).optional())
+      .query(async ({ ctx, input }) => {
       try {
+        if (input?.recalculate) {
+          await recalculateReplayStatsForUser(ctx.user.id);
+        }
         return await getPlayerHistoricalProfile(ctx.user.id);
       } catch (error) {
         console.error("[memory.playerHistoricalProfile] failed, returning safe fallback", error);
