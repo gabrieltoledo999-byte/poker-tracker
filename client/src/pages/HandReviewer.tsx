@@ -93,8 +93,15 @@ function getConfidenceLevel(key: MetricKey, opp: OpportunityCounts): ConfidenceL
     case "wtsd":
     case "wsd":
     case "aggressionFactor":
-    case "allInAdjBb100":
       return getHandsConfidenceLevel(h);
+    case "allInAdjBb100": {
+      const o = Number(opp.allInAdjOpportunities ?? 0);
+      if (o < 200) return "low";
+      if (o < 1000) return "moderate";
+      if (o < 5000) return "medium";
+      if (o < 20000) return "high";
+      return "very_high";
+    }
     case "threeBet":
       return getHandsConfidenceLevel(h);
     case "cbetFlop": {
@@ -245,7 +252,7 @@ const BENCHMARKS: Record<MetricKey, { min: number; max: number; label: string; i
   cbetOop: { min: 45, max: 65, label: "C-Bet OOP", interpretation: "C-bet flop fora de posição.", formula: "C-bets fora de posição / Oportunidades fora de posição × 100" },
   floatFlop: { min: 8, max: 18, label: "Float Flop", interpretation: "Pagou c-bet flop IP e atacou turn.", formula: "Floats bem-sucedidos / Oportunidades de float × 100" },
   checkRaiseFlop: { min: 6, max: 14, label: "Check-Raise Flop", interpretation: "Check + raise no flop.", formula: "Check-raises / Flops jogados × 100" },
-  allInAdjBb100: { min: 0, max: 9999, label: "All-in Adj BB/100", interpretation: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown.", formula: "(Equity × Pote − Investimento) / BB / 100 mãos" },
+  allInAdjBb100: { min: 1, max: 8, label: "All-in Adj BB/100", interpretation: "EV BB/100 dos all-ins: calcula por mão com (Equidade × Pote Total − Investimento) e projeta para 100 mãos.", formula: "((Σ(Equidade × Pote Total − Investimento) / BB) / Mãos) × 100" },
 };
 
 const SPECIFIC_PATTERN_SAMPLE_DATA = [
@@ -369,11 +376,13 @@ function MetricLabel({
   label,
   hint,
   formula,
+  details,
   onOpen,
 }: {
   label: string;
   hint: string;
   formula?: string;
+  details?: string[];
   onOpen?: () => void;
 }) {
   return (
@@ -381,7 +390,7 @@ function MetricLabel({
       {onOpen ? (
         <button
           type="button"
-          className="text-left underline decoration-dotted underline-offset-2 hover:text-cyan-300"
+          className="text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-300 hover:text-amber-200"
           onClick={onOpen}
         >
           {label}
@@ -413,6 +422,16 @@ function MetricLabel({
               <div className="border-t border-slate-700 pt-2">
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300">Formula</p>
                 <p className="rounded bg-slate-900 px-2 py-1 text-[11px] font-mono leading-relaxed text-slate-200">{formula}</p>
+              </div>
+            )}
+            {details && details.length > 0 && (
+              <div className="border-t border-slate-700 pt-2">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300">Detalhes</p>
+                <ul className="space-y-1 text-[11px] text-slate-300">
+                  {details.map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -1310,6 +1329,18 @@ export default function HandReviewer() {
                       made: number | null;
                       of: number | null;
                     };
+                    const isPercentMetric = (key: MetricKey) => key !== "aggressionFactor" && key !== "allInAdjBb100";
+                    const buildMetricDetails = (c: CardDef) => {
+                      const benchmark = BENCHMARKS[c.key];
+                      const rangeSuffix = isPercentMetric(c.key) ? "%" : "";
+                      const lines = [
+                        `Faixa comum: ${benchmark.min}${rangeSuffix} - ${benchmark.max}${rangeSuffix}`,
+                        metricStatusText(c.key, c.value),
+                      ];
+                      const sample = sampleText(c.made, c.of);
+                      if (sample) lines.unshift(`Amostra: ${sample}`);
+                      return lines;
+                    };
                     const pct = (v: number) => formatPercent(v);
                     const roundMade = (percent: number, of: number) => Math.round((percent / 100) * of);
                     const preFlop: CardDef[] = [
@@ -1345,7 +1376,11 @@ export default function HandReviewer() {
                     const renderCard = (c: CardDef) => (
                       <div
                         key={c.key}
-                        className="rounded-xl border border-white/10 bg-slate-950/70 p-3 shadow-inner transition-colors hover:border-cyan-400/45 cursor-pointer"
+                        className={`rounded-xl border p-3 shadow-inner transition-all cursor-pointer ${
+                          selectedMetricForPositions === c.key
+                            ? "border-amber-400/70 bg-amber-500/12 shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
+                            : "border-white/10 bg-slate-950/70 hover:border-cyan-400/45"
+                        }`}
                         role="button"
                         tabIndex={0}
                         aria-label={`Abrir ${c.label} por posição`}
@@ -1362,13 +1397,11 @@ export default function HandReviewer() {
                             label={c.label}
                             hint={c.hint}
                             formula={c.formula}
+                            details={buildMetricDetails(c)}
                             onOpen={() => openMetricDrilldown(c.key)}
                           />
                         </div>
-                        <p className={`mt-2 text-2xl font-black tracking-tight ${metricColor(c.key, c.value)}`}>{c.display}</p>
-                        {sampleText(c.made, c.of) && (
-                          <p className="mt-1 text-[11px] text-white/50">{sampleText(c.made, c.of)}</p>
-                        )}
+                        <p className={`mt-2 text-4xl font-black tracking-tight leading-none ${metricColor(c.key, c.value)}`}>{c.display}</p>
                       </div>
                     );
                     return (

@@ -625,6 +625,7 @@ type LiveHistoricalStats = {
   aggressionFactor: number;
   wtsd: number;
   wsd: number;
+  allInAdjBb100: number;
   opportunities: {
     hands: number;
     cbetFlop: number;
@@ -635,6 +636,9 @@ type LiveHistoricalStats = {
     aggressionActions: number;
     aggressionCalls: number;
     showdownHands: number;
+    allInAdjOpportunities: number;
+    allInAdjSample: number;
+    allInAdjSkipped: number;
   };
 };
 
@@ -1980,6 +1984,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
     aggressionFactorAvg: Number(aggregate?.aggressionFactorAvg ?? tournamentMetricAverages?.aggressionFactorAvg ?? 0),
     wtsdAvg: Number(tournamentMetricAverages?.wtsdAvg ?? 0),
     wsdAvg: Number(tournamentMetricAverages?.wsdAvg ?? 0),
+    allInAdjBb100Avg: 0,
   };
 
   const finalMetrics = liveStats
@@ -1995,6 +2000,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
         aggressionFactorAvg: liveStats.aggressionFactor,
         wtsdAvg: liveStats.wtsd,
         wsdAvg: liveStats.wsd,
+        allInAdjBb100Avg: liveStats.allInAdjBb100,
       }
     : metricFromAggregate;
 
@@ -2022,6 +2028,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
       aggressionFactorAvg: finalMetrics.aggressionFactorAvg,
       wtsdAvg: finalMetrics.wtsdAvg,
       wsdAvg: finalMetrics.wsdAvg,
+      allInAdjBb100Avg: Number(finalMetrics.allInAdjBb100Avg ?? 0),
       opportunities: {
         hands: Number(liveStats?.opportunities.hands ?? totalHands),
         cbetFlop: Number(liveStats?.opportunities.cbetFlop ?? 0),
@@ -2032,6 +2039,9 @@ export async function getPlayerHistoricalProfile(userId: number) {
         aggressionActions: Number(liveStats?.opportunities.aggressionActions ?? 0),
         aggressionCalls: Number(liveStats?.opportunities.aggressionCalls ?? 0),
         showdownHands: Number(liveStats?.opportunities.showdownHands ?? Math.round((Number(finalMetrics.wtsdAvg ?? 0) / 100) * Math.max(totalHands, 0))),
+        allInAdjOpportunities: Number(liveStats?.opportunities.allInAdjOpportunities ?? 0),
+        allInAdjSample: Number(liveStats?.opportunities.allInAdjSample ?? 0),
+        allInAdjSkipped: Number(liveStats?.opportunities.allInAdjSkipped ?? 0),
       },
     },
     positions: {
