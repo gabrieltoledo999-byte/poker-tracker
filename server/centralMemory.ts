@@ -349,6 +349,26 @@ function buildInputDedupFingerprint(input: ImportReplayInput) {
     const actions = actionsByHand.get(hand.handRef) ?? [];
     const actionCount = actions.length;
     const betLikeCount = actions.filter((a) => a.actionType === "bet" || a.actionType === "raise" || a.actionType === "all_in").length;
+    const playersSignature = Array.from(
+      new Set(
+        actions
+          .map((a) => normalizePlayerName(a.playerName))
+          .filter(Boolean),
+      ),
+    )
+      .sort()
+      .join(",");
+    const actionsSignature = actions
+      .filter((a) => !a.isForced)
+      .slice(0, 60)
+      .map((a) => {
+        const player = normalizePlayerName(a.playerName);
+        const type = normalizeActionType(a.actionType ?? undefined);
+        const amount = Number(a.amount ?? 0);
+        const toAmount = Number(a.toAmount ?? 0);
+        return `${player}:${type}:${amount}:${toAmount}`;
+      })
+      .join(";");
 
     for (const action of actions) {
       const normalized = normalizePlayerName(action.playerName);
@@ -364,6 +384,8 @@ function buildInputDedupFingerprint(input: ImportReplayInput) {
         Number(hand.smallBlind ?? 0),
         Number(hand.bigBlind ?? 0),
         Number(hand.ante ?? 0),
+        playersSignature,
+        actionsSignature,
         actionCount,
         betLikeCount,
       ].join("|"),
@@ -404,6 +426,9 @@ async function buildStoredTournamentDedupFingerprint(db: any, tournamentId: numb
       handId: centralHandActions.handId,
       actionType: centralHandActions.actionType,
       playerName: centralHandActions.playerName,
+      amount: centralHandActions.amount,
+      toAmount: centralHandActions.toAmount,
+      isForced: centralHandActions.isForced,
       actionOrder: centralHandActions.actionOrder,
     })
     .from(centralHandActions)
@@ -411,10 +436,16 @@ async function buildStoredTournamentDedupFingerprint(db: any, tournamentId: numb
     .orderBy(asc(centralHandActions.handId), asc(centralHandActions.actionOrder));
 
   const filteredActions = actionRows.filter((a: any) => handIds.includes(Number(a.handId)));
-  const byHand = new Map<number, Array<{ actionType: string; playerName: string }>>();
+  const byHand = new Map<number, Array<{ actionType: string; playerName: string; amount: number | null; toAmount: number | null; isForced: number | null }>>();
   for (const action of filteredActions) {
     const bucket = byHand.get(Number(action.handId)) ?? [];
-    bucket.push({ actionType: action.actionType, playerName: action.playerName });
+    bucket.push({
+      actionType: action.actionType,
+      playerName: action.playerName,
+      amount: action.amount,
+      toAmount: action.toAmount,
+      isForced: action.isForced,
+    });
     byHand.set(Number(action.handId), bucket);
   }
 
@@ -423,6 +454,26 @@ async function buildStoredTournamentDedupFingerprint(db: any, tournamentId: numb
     const actions = byHand.get(hand.id) ?? [];
     const actionCount = actions.length;
     const betLikeCount = actions.filter((a) => a.actionType === "bet" || a.actionType === "raise" || a.actionType === "all_in").length;
+    const playersSignature = Array.from(
+      new Set(
+        actions
+          .map((a) => normalizePlayerName(a.playerName))
+          .filter(Boolean),
+      ),
+    )
+      .sort()
+      .join(",");
+    const actionsSignature = actions
+      .filter((a) => Number(a.isForced ?? 0) !== 1)
+      .slice(0, 60)
+      .map((a) => {
+        const player = normalizePlayerName(a.playerName);
+        const type = normalizeActionType(a.actionType ?? undefined);
+        const amount = Number(a.amount ?? 0);
+        const toAmount = Number(a.toAmount ?? 0);
+        return `${player}:${type}:${amount}:${toAmount}`;
+      })
+      .join(";");
 
     for (const action of actions) {
       const normalized = normalizePlayerName(action.playerName);
@@ -436,6 +487,8 @@ async function buildStoredTournamentDedupFingerprint(db: any, tournamentId: numb
       Number(hand.smallBlind ?? 0),
       Number(hand.bigBlind ?? 0),
       Number(hand.ante ?? 0),
+      playersSignature,
+      actionsSignature,
       actionCount,
       betLikeCount,
     ].join("|");
@@ -2310,31 +2363,20 @@ export async function importReplayToCentralMemory(userId: number, input: ImportR
       (dedupInput.externalTournamentId && dedupInput.externalTournamentId === candidateExternalId)
       || (dedupInput.rawSourceId && dedupInput.rawSourceId === candidateRawSourceId);
 
-    if (hasExactTournamentIdMatch) {
-      const incomingHands = Math.max(Number(input.tournament.totalHands ?? 0), Number(input.hands.length ?? 0));
-      const storedHands = Number(candidate.totalHands ?? 0);
-
-      // If the same tournament ID arrives with a larger hand sample,
-      // treat it as a newer/fuller snapshot and replace the old one.
-      if (incomingHands > storedHands) {
-        await deleteTournamentCascade(db, userId, candidate.id);
-        await refreshUserAbiAggregates(userId);
-        break;
-      }
-
-      return await reuseExistingReplayImport(db, userId, candidate.id, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
-    }
-
-    const enoughHandsForPattern = dedupInput.handFingerprints.length >= DUPLICATE_HAND_WINDOW;
-    if (!enoughHandsForPattern) continue;
-    if (Number(candidate.totalHands ?? 0) !== dedupInput.totalHands) continue;
+    if (!hasExactTournamentIdMatch) continue;
 
     const stored = await buildStoredTournamentDedupFingerprint(db, candidate.id, dedupInput.heroName);
-    const hasSameOpponents = stored.opponentSignature.length > 0 && stored.opponentSignature === dedupInput.opponentSignature;
-    if (!hasSameOpponents) continue;
-
     const inputSequence = dedupInput.handFingerprints.map((h) => h.signature);
-    if (hasConsecutiveFingerprintMatch(inputSequence, stored.handFingerprints, DUPLICATE_HAND_WINDOW)) {
+
+    const hasMinimumWindow =
+      inputSequence.length >= DUPLICATE_HAND_WINDOW && stored.handFingerprints.length >= DUPLICATE_HAND_WINDOW;
+    if (!hasMinimumWindow) continue;
+
+    const firstWindowMatches = inputSequence
+      .slice(0, DUPLICATE_HAND_WINDOW)
+      .every((signature, index) => signature === stored.handFingerprints[index]);
+
+    if (firstWindowMatches) {
       return await reuseExistingReplayImport(db, userId, candidate.id, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
     }
   }
