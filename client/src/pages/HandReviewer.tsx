@@ -271,8 +271,17 @@ const WINRATE_SAMPLE_DATA = [
 ];
 
 function getMetricStatus(key: MetricKey, value: number | null | undefined): "below" | "ok" | "above" {
-  const benchmark = BENCHMARKS[key];
   const numeric = Number(value ?? 0);
+  
+  // All-in Adj BB/100 is a performance metric: higher is better
+  if (key === "allInAdjBb100") {
+    if (numeric >= 8) return "above";     // Excellent+
+    if (numeric >= 4) return "ok";        // Good/Solid
+    return "below";                       // Marginal or losing
+  }
+  
+  // Standard range-based metrics
+  const benchmark = BENCHMARKS[key];
   if (numeric < benchmark.min) return "below";
   if (numeric > benchmark.max) return "above";
   return "ok";
@@ -300,7 +309,67 @@ function metricStatusBadge(status: "below" | "ok" | "above") {
   );
 }
 
+function metricStatusIndicator(status: "below" | "ok" | "above", isPerformanceMetric: boolean = false) {
+  if (isPerformanceMetric) {
+    // For performance metrics (like All-in Adj BB/100): higher is better
+    if (status === "below") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+          → Marginal
+        </span>
+      );
+    }
+    if (status === "ok") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+          ✓ Bom/Sólido
+        </span>
+      );
+    }
+    // above
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-semibold text-cyan-200">
+        ⬆ Excelente
+      </span>
+    );
+  }
+  
+  // Standard range-based indicators
+  if (status === "below") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold text-red-300">
+        ↓ Fora do padrão
+      </span>
+    );
+  }
+  if (status === "above") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/45 bg-amber-400/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+        ↑ Fora do padrão
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+      ✓ Dentro do padrão
+    </span>
+  );
+}
+
 function metricStatusText(key: MetricKey, value: number | null | undefined): string {
+  const numeric = Number(value ?? 0);
+  
+  // All-in Adj BB/100 has special performance-tier feedback
+  if (key === "allInAdjBb100") {
+    if (numeric < 0) return "Jogador perdedor; precisa revisar fundamentos e spots de all-in.";
+    if (numeric < 1) return "Taxa 0-1 BB/100: marginal/breakeven. Batendo o rake, mas alta exposição à variância.";
+    if (numeric < 4) return "Taxa 1-3 BB/100: vencedor marginal. Batendo rake com vantagem discreta.";
+    if (numeric < 8) return "Taxa 4-7 BB/100: bom/sólido. Vantagem clara sobre o field.";
+    if (numeric < 12) return "Taxa 8-11 BB/100: excelente. Você está esmagando o limite atual.";
+    return "Taxa > 12 BB/100: excepcional. Parabéns! Considere subir de nível.";
+  }
+  
+  // Standard range-based feedback
   const status = getMetricStatus(key, value);
   if (status === "below") {
     return "Abaixo da faixa comum. Vale revisar spots em que essa ação está faltando.";
@@ -1392,15 +1461,21 @@ export default function HandReviewer() {
                           }
                         }}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <MetricLabel
-                            label={c.label}
-                            hint={c.hint}
-                            formula={c.formula}
-                            details={buildMetricDetails(c)}
-                            onOpen={() => openMetricDrilldown(c.key)}
-                          />
-                        </div>
+                        {(() => {
+                          const status = getMetricStatus(c.key, c.value);
+                          return (
+                            <div className="flex items-start justify-between gap-2">
+                              <MetricLabel
+                                label={c.label}
+                                hint={c.hint}
+                                formula={c.formula}
+                                details={buildMetricDetails(c)}
+                                onOpen={() => openMetricDrilldown(c.key)}
+                              />
+                              {metricStatusIndicator(status, c.key === "allInAdjBb100")}
+                            </div>
+                          );
+                        })()}
                         <p className={`mt-2 text-4xl font-black tracking-tight leading-none ${metricColor(c.key, c.value)}`}>{c.display}</p>
                       </div>
                     );
@@ -1771,19 +1846,27 @@ export default function HandReviewer() {
                                       }
                                     }}
                                   >
-                                    <div className="font-semibold text-cyan-100">
-                                      <MetricLabel
-                                        label={benchmark.label}
-                                        hint={benchmark.interpretation}
-                                        formula={benchmark.formula}
-                                        details={[
-                                          `Faixa comum: ${benchmark.min}${percentLike ? "%" : ""} - ${benchmark.max}${percentLike ? "%" : ""}`,
-                                          metricStatusText(key, value),
-                                          `Amostra: ${formatMadeOf(made, ratioOf)}`,
-                                        ]}
-                                        onOpen={() => openMetricDrilldown(key)}
-                                      />
-                                    </div>
+                                    {(() => {
+                                      const status = getMetricStatus(key, value);
+                                      return (
+                                        <div className="mb-1 flex items-start justify-between gap-2">
+                                          <div className="font-semibold text-cyan-100">
+                                            <MetricLabel
+                                              label={benchmark.label}
+                                              hint={benchmark.interpretation}
+                                              formula={benchmark.formula}
+                                              details={[
+                                                `Faixa comum: ${benchmark.min}${percentLike ? "%" : ""} - ${benchmark.max}${percentLike ? "%" : ""}`,
+                                                metricStatusText(key, value),
+                                                `Amostra: ${formatMadeOf(made, ratioOf)}`,
+                                              ]}
+                                              onOpen={() => openMetricDrilldown(key)}
+                                            />
+                                          </div>
+                                          {metricStatusIndicator(status, key === "allInAdjBb100")}
+                                        </div>
+                                      );
+                                    })()}
                                     <p className="mt-1 text-2xl font-semibold text-cyan-100">
                                       {percentLike
                                         ? `${value.toFixed(1)}%`
@@ -1791,7 +1874,6 @@ export default function HandReviewer() {
                                         ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
                                         : value.toFixed(2)}
                                     </p>
-                                    <p className="text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
                                   </div>
                                 );
                               })}
