@@ -1463,20 +1463,24 @@ export default function HandReviewer() {
                       >
                         {(() => {
                           const status = getMetricStatus(c.key, c.value);
+                          const ratioLabel = sampleText(c.made, c.of);
                           return (
-                            <div className="flex items-start justify-between gap-2">
-                              <MetricLabel
-                                label={c.label}
-                                hint={c.hint}
-                                formula={c.formula}
-                                details={buildMetricDetails(c)}
-                                onOpen={() => openMetricDrilldown(c.key)}
-                              />
-                              {metricStatusIndicator(status, c.key === "allInAdjBb100")}
-                            </div>
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <MetricLabel
+                                  label={c.label}
+                                  hint={c.hint}
+                                  formula={c.formula}
+                                  details={buildMetricDetails(c)}
+                                  onOpen={() => openMetricDrilldown(c.key)}
+                                />
+                                {metricStatusIndicator(status, c.key === "allInAdjBb100")}
+                              </div>
+                              <p className={`mt-2 text-4xl font-black tracking-tight leading-none ${metricColor(c.key, c.value)}`}>{c.display}</p>
+                              {ratioLabel && <p className="mt-1 text-xs text-white/50">{ratioLabel}</p>}
+                            </>
                           );
                         })()}
-                        <p className={`mt-2 text-4xl font-black tracking-tight leading-none ${metricColor(c.key, c.value)}`}>{c.display}</p>
                       </div>
                     );
                     return (
@@ -1900,6 +1904,7 @@ export default function HandReviewer() {
                                         ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
                                         : value.toFixed(2)}
                                     </p>
+                                    <p className="mt-1 text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
                                   </div>
                                 );
                               })}
