@@ -1544,7 +1544,7 @@ export default function HandReviewer() {
                   </div>
 
                   {selectedMetricForPositions && (
-                    <div className="rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
+                    <div className="mt-4 rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-bold text-cyan-200">{BENCHMARKS[selectedMetricForPositions].label} por posição</p>
@@ -1555,15 +1555,17 @@ export default function HandReviewer() {
                         </Button>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
-                          <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
-                        ))}
+                        {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).length > 0 ? (
+                          (metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
+                            <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
+                          ))
+                        ) : (
+                          <div className="col-span-full rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-center text-xs text-amber-100">
+                            <p className="font-semibold mb-1">Sem dados suficientes de hand history</p>
+                            <p>Cole um hand history e clique em "Analisar torneio" para visualizar o breakdown por posição.</p>
+                          </div>
+                        )}
                       </div>
-                      {(metricBreakdownByPosition[selectedMetricForPositions]?.length ?? 0) === 0 && (
-                        <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-                          Sem amostra suficiente no texto de mãos atual para exibir o gráfico dessa métrica por posição.
-                        </div>
-                      )}
                     </div>
                   )}
                 </>
