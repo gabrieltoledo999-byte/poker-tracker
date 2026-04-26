@@ -369,13 +369,16 @@ function MetricLabel({ label, hint, formula }: { label: string; hint: string; fo
             ?
           </button>
         </TooltipTrigger>
-        <TooltipContent sideOffset={8} className="max-w-[280px] text-left">
+        <TooltipContent
+          sideOffset={8}
+          className="max-w-[320px] border border-slate-700 bg-slate-950 text-slate-100 shadow-xl"
+        >
           <div className="space-y-2">
-            <p className="text-xs font-medium text-cyan-200">{hint}</p>
+            <p className="text-xs font-medium leading-relaxed text-slate-100">{hint}</p>
             {formula && (
-              <div className="border-t border-white/20 pt-2">
-                <p className="text-[11px] text-white/70 font-semibold mb-1">Fórmula:</p>
-                <p className="text-[11px] text-white/60 bg-black/40 px-2 py-1 rounded font-mono">{formula}</p>
+              <div className="border-t border-slate-700 pt-2">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300">Formula</p>
+                <p className="rounded bg-slate-900 px-2 py-1 text-[11px] font-mono leading-relaxed text-slate-200">{formula}</p>
               </div>
             )}
           </div>
