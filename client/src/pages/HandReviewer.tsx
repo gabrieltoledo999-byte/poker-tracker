@@ -1070,6 +1070,9 @@ export default function HandReviewer() {
 
   const formatMadeOf = (made: number, of: number) => `${Math.max(0, Math.round(made))}/${Math.max(0, Math.round(of))}`;
   const roundMade = (percent: number, of: number) => Math.round((Number(percent || 0) / 100) * Math.max(0, Number(of || 0)));
+  const openMetricDrilldown = (key: MetricKey) => {
+    setSelectedMetricForPositions((prev) => (prev === key ? null : key));
+  };
 
   return (
     <div className="tokyo-reviewer mx-auto w-full max-w-[1400px] flex flex-col gap-3 px-2 py-3 md:px-4 pb-10">
@@ -1346,11 +1349,11 @@ export default function HandReviewer() {
                         role="button"
                         tabIndex={0}
                         aria-label={`Abrir ${c.label} por posição`}
-                        onClick={() => setSelectedMetricForPositions(c.key)}
+                        onClick={() => openMetricDrilldown(c.key)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setSelectedMetricForPositions(c.key);
+                            openMetricDrilldown(c.key);
                           }
                         }}
                       >
@@ -1359,7 +1362,7 @@ export default function HandReviewer() {
                             label={c.label}
                             hint={c.hint}
                             formula={c.formula}
-                            onOpen={() => setSelectedMetricForPositions(c.key)}
+                            onOpen={() => openMetricDrilldown(c.key)}
                           />
                         </div>
                         <p className={`mt-2 text-2xl font-black tracking-tight ${metricColor(c.key, c.value)}`}>{c.display}</p>
@@ -1514,7 +1517,7 @@ export default function HandReviewer() {
                         label="All-in Adj BB/100 médio"
                         hint="Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown."
                         formula={BENCHMARKS.allInAdjBb100.formula}
-                        onOpen={() => setSelectedMetricForPositions("allInAdjBb100")}
+                        onOpen={() => openMetricDrilldown("allInAdjBb100")}
                       />
                       <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
@@ -1603,11 +1606,11 @@ export default function HandReviewer() {
                   role="button"
                   tabIndex={0}
                   aria-label="Abrir All-in Adj BB/100 por posição"
-                  onClick={() => setSelectedMetricForPositions("allInAdjBb100")}
+                  onClick={() => openMetricDrilldown("allInAdjBb100")}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      setSelectedMetricForPositions("allInAdjBb100");
+                      openMetricDrilldown("allInAdjBb100");
                     }
                   }}
                 >
@@ -1615,7 +1618,7 @@ export default function HandReviewer() {
                     label="All-in Adj BB/100 (Geral)"
                     hint="Win-rate ajustado por all-in no histórico consolidado. Clique para abrir a visão por posição."
                     formula={BENCHMARKS.allInAdjBb100.formula}
-                    onOpen={() => setSelectedMetricForPositions("allInAdjBb100")}
+                    onOpen={() => openMetricDrilldown("allInAdjBb100")}
                   />
                   <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
                   <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
@@ -1745,28 +1748,29 @@ export default function HandReviewer() {
             </TabsContent>
           </Tabs>
 
-          <Dialog open={!!selectedMetricForPositions} onOpenChange={(open) => { if (!open) setSelectedMetricForPositions(null); }}>
-            <DialogContent className="max-w-3xl border border-cyan-500/20 bg-slate-950 text-slate-100">
-              <DialogHeader>
-                <DialogTitle>
-                  {selectedMetricForPositions ? `${BENCHMARKS[selectedMetricForPositions].label} por posição` : "Métrica por posição"}
-                </DialogTitle>
-              </DialogHeader>
-              <p className="text-xs text-slate-300/90">
-                {selectedMetricForPositions ? BENCHMARKS[selectedMetricForPositions].interpretation : ""}
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {(selectedMetricForPositions ? metricBreakdownByPosition[selectedMetricForPositions] : [])?.map((row) => (
+          {selectedMetricForPositions && (
+            <div className="mt-5 rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-cyan-200">{BENCHMARKS[selectedMetricForPositions].label} por posição</p>
+                  <p className="text-xs text-slate-300/90">{BENCHMARKS[selectedMetricForPositions].interpretation}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setSelectedMetricForPositions(null)}>
+                  Fechar
+                </Button>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
                   <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
                 ))}
               </div>
-              {selectedMetricForPositions && (metricBreakdownByPosition[selectedMetricForPositions]?.length ?? 0) === 0 && (
-                <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+              {(metricBreakdownByPosition[selectedMetricForPositions]?.length ?? 0) === 0 && (
+                <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
                   Sem amostra suficiente no texto de mãos atual para exibir o gráfico dessa métrica por posição.
                 </div>
               )}
-            </DialogContent>
-          </Dialog>
+            </div>
+          )}
         </CardContent>
       </Card>
 
