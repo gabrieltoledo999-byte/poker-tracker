@@ -1619,36 +1619,43 @@ export default function HandReviewer() {
                       <MetricLabel label="VPIP médio" hint="Percentual médio de mãos em que você entra voluntariamente no pote." formula={BENCHMARKS.vpip.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.vpipAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.vpipAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("vpip", Number(playerHistoryQuery.data.summary.vpipAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel label="PFR médio" hint="Percentual médio de mãos com aumento pré-flop." formula={BENCHMARKS.pfr.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.pfrAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.pfrAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("pfr", Number(playerHistoryQuery.data.summary.pfrAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel label="3-bet médio" hint="Frequência média de reaumento pré-flop." formula={BENCHMARKS.threeBet.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.threeBetAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("threeBet", Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel label="Defesa média de BB" hint="Percentual médio de defesa do big blind em spots aplicáveis." formula={BENCHMARKS.bbDefense.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.bbDefenseAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0), historicalOppSafe.bbDefense), historicalOppSafe.bbDefense)}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("bbDefense", Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel label="C-bet média" hint="Frequência média de c-bet no flop." formula={BENCHMARKS.cbetFlop.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.cbetFlopAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0), historicalOppSafe.cbetFlop), historicalOppSafe.cbetFlop)}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("cbetFlop", Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel label="Attempt to Steal médio" hint="Frequência média de tentativa de steal em posição final." formula={BENCHMARKS.attemptToSteal.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.attemptToStealAvg)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0), historicalOppSafe.steal), historicalOppSafe.steal)}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("attemptToSteal", Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel label="Aggression Factor médio" hint="Razão média entre ações agressivas e calls no histórico." formula={BENCHMARKS.aggressionFactor.formula} />
                       <p className="mt-1 font-semibold text-cyan-100">{Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0).toFixed(2)}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number((historicalOpp as any)?.aggressionActions ?? 0), Number((historicalOpp as any)?.aggressionCalls ?? 0))}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("aggressionFactor", Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0)))}</div>
                     </div>
                     <div className="tokyo-metric rounded-lg p-3 text-sm">
                       <MetricLabel
@@ -1659,6 +1666,7 @@ export default function HandReviewer() {
                       />
                       <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
                       <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
+                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
                     </div>
                   </div>
 
@@ -1760,6 +1768,7 @@ export default function HandReviewer() {
                   />
                   <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
                   <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
+                  <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
                 </div>
 
                 <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
@@ -1788,6 +1797,7 @@ export default function HandReviewer() {
                           />
                         </div>
                         <p className="mt-1 font-semibold text-amber-50">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
+                        <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
                       </>
                     );
                   })()}
