@@ -1817,8 +1817,6 @@ export default function HandReviewer() {
                 </p>
               </div>
 
-              {metricDrilldownPanel}
-
               {playerHistoryQuery.data && (
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
                   <p className="mb-2 font-semibold text-cyan-100">Leitura rápida por benchmark (histórico do jogador)</p>
@@ -1924,6 +1922,9 @@ export default function HandReviewer() {
                                 );
                               })}
                             </div>
+                            {selectedMetricForPositions && section.keys.includes(selectedMetricForPositions)
+                              ? <div className="pt-1">{metricDrilldownPanel}</div>
+                              : null}
                                 <Button
                                   variant="outline"
                                   onClick={handleRecalculateHistory}
