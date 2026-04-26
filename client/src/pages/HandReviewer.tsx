@@ -716,9 +716,10 @@ export default function HandReviewer() {
   });
 
   const saveToHistoryMutation = trpc.memory.importReplay.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Torneio adicionado ao histórico do jogador.");
-      utils.memory.playerHistoricalProfile.invalidate();
+      await utils.memory.playerHistoricalProfile.invalidate();
+      await playerHistoryQuery.refetch();
       setActiveTab("player");
     },
     onError: (error) => {
