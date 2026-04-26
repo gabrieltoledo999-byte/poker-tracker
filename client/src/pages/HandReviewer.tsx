@@ -1163,6 +1163,32 @@ export default function HandReviewer() {
     setSelectedMetricForPositions((prev) => (prev === key ? null : key));
   };
 
+  const metricDrilldownPanel = selectedMetricForPositions ? (
+    <div className="mt-4 rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-cyan-200">{BENCHMARKS[selectedMetricForPositions].label} por posição</p>
+          <p className="text-xs text-slate-300/90">{BENCHMARKS[selectedMetricForPositions].interpretation}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setSelectedMetricForPositions(null)}>
+          Fechar
+        </Button>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).length > 0 ? (
+          (metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
+            <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
+          ))
+        ) : (
+          <div className="col-span-full rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-center text-xs text-amber-100">
+            <p className="font-semibold mb-1">Sem dados suficientes de hand history</p>
+            <p>Cole um hand history e clique em "Analisar torneio" para visualizar o breakdown por posição.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="tokyo-reviewer mx-auto w-full max-w-[1400px] flex flex-col gap-3 px-2 py-3 md:px-4 pb-10">
       <div className="tokyo-grid-overlay" />
@@ -1548,31 +1574,7 @@ export default function HandReviewer() {
                     )}
                   </div>
 
-                  {selectedMetricForPositions && (
-                    <div className="mt-4 rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-bold text-cyan-200">{BENCHMARKS[selectedMetricForPositions].label} por posição</p>
-                          <p className="text-xs text-slate-300/90">{BENCHMARKS[selectedMetricForPositions].interpretation}</p>
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => setSelectedMetricForPositions(null)}>
-                          Fechar
-                        </Button>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).length > 0 ? (
-                          (metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
-                            <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
-                          ))
-                        ) : (
-                          <div className="col-span-full rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-center text-xs text-amber-100">
-                            <p className="font-semibold mb-1">Sem dados suficientes de hand history</p>
-                            <p>Cole um hand history e clique em "Analisar torneio" para visualizar o breakdown por posição.</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  {metricDrilldownPanel}
                 </>
               )}
             </TabsContent>
@@ -1814,6 +1816,8 @@ export default function HandReviewer() {
                   Em versões futuras, este bloco vai integrar treino automático por posição e por leak recorrente.
                 </p>
               </div>
+
+              {metricDrilldownPanel}
 
               {playerHistoryQuery.data && (
                 <div className="tokyo-panel rounded-lg p-3 text-sm">
