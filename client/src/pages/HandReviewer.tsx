@@ -1668,16 +1668,21 @@ export default function HandReviewer() {
 
                     return (
                       <>
-                        <p className="font-semibold text-amber-50">{focusPosition}</p>
-                        <p className="mt-1 text-xs text-amber-100/80">
-                          {focusSample?.handsPlayed ?? 0} mãos analisadas nessa posição.
-                        </p>
-                        <p className="mt-1 text-xs text-amber-100/80">
-                          All-in Adj BB/100 (geral): {`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}
-                        </p>
-                        <p className="mt-2 text-xs text-amber-200/90">
-                          Prioridade: revisar ranges de open, defesa e linhas de c-bet desse spot.
-                        </p>
+                        <p className="text-lg font-semibold text-amber-50">{focusPosition}</p>
+                        <p className="mt-1 text-xs text-amber-100/80">{focusSample?.handsPlayed ?? 0} mãos</p>
+                        <div className="mt-2 text-xs text-amber-100/90">
+                          <MetricLabel
+                            label="ALL-IN ADJ BB/100 (GERAL)"
+                            hint="Win-rate ajustado para all-ins no histórico consolidado."
+                            formula={BENCHMARKS.allInAdjBb100.formula}
+                            details={[
+                              "Spot de foco: revisar ranges de open, defesa e linhas de c-bet.",
+                              `Amostra all-in: ${formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}`,
+                            ]}
+                            onOpen={() => openMetricDrilldown("allInAdjBb100")}
+                          />
+                        </div>
+                        <p className="mt-1 font-semibold text-amber-50">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
                       </>
                     );
                   })()}
@@ -1752,14 +1757,41 @@ export default function HandReviewer() {
                                   : of;
                                 const percentLike = key !== "aggressionFactor" && key !== "allInAdjBb100";
                                 return (
-                                  <div key={`benchmark-${key}`} className="tokyo-metric rounded-md p-2">
+                                  <div
+                                    key={`benchmark-${key}`}
+                                    className="tokyo-metric rounded-md p-3 transition-colors hover:border-amber-300/40 hover:bg-slate-900/70"
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`Abrir ${benchmark.label} por posição`}
+                                    onClick={() => openMetricDrilldown(key)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault();
+                                        openMetricDrilldown(key);
+                                      }
+                                    }}
+                                  >
                                     <div className="font-semibold text-cyan-100">
-                                      <MetricLabel label={benchmark.label} hint={benchmark.interpretation} formula={benchmark.formula} />
-                                      <span>: {percentLike ? `${value}%` : value.toFixed(2)} · {metricStatusBadge(getMetricStatus(key, value))}</span>
+                                      <MetricLabel
+                                        label={benchmark.label}
+                                        hint={benchmark.interpretation}
+                                        formula={benchmark.formula}
+                                        details={[
+                                          `Faixa comum: ${benchmark.min}${percentLike ? "%" : ""} - ${benchmark.max}${percentLike ? "%" : ""}`,
+                                          metricStatusText(key, value),
+                                          `Amostra: ${formatMadeOf(made, ratioOf)}`,
+                                        ]}
+                                        onOpen={() => openMetricDrilldown(key)}
+                                      />
                                     </div>
+                                    <p className="mt-1 text-2xl font-semibold text-cyan-100">
+                                      {percentLike
+                                        ? `${value.toFixed(1)}%`
+                                        : key === "allInAdjBb100"
+                                        ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
+                                        : value.toFixed(2)}
+                                    </p>
                                     <p className="text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
-                                    <p className="text-xs text-white/70">Faixa comum: {benchmark.min}{percentLike ? "%" : ""} - {benchmark.max}{percentLike ? "%" : ""}</p>
-                                    <p className="text-xs text-white/60">{metricStatusText(key, value)}</p>
                                   </div>
                                 );
                               })}
