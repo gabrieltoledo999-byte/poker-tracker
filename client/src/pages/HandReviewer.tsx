@@ -1542,6 +1542,30 @@ export default function HandReviewer() {
                       <p className="text-white/70">Sem distribuição de posição disponível.</p>
                     )}
                   </div>
+
+                  {selectedMetricForPositions && (
+                    <div className="rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-cyan-200">{BENCHMARKS[selectedMetricForPositions].label} por posição</p>
+                          <p className="text-xs text-slate-300/90">{BENCHMARKS[selectedMetricForPositions].interpretation}</p>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => setSelectedMetricForPositions(null)}>
+                          Fechar
+                        </Button>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
+                          <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
+                        ))}
+                      </div>
+                      {(metricBreakdownByPosition[selectedMetricForPositions]?.length ?? 0) === 0 && (
+                        <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                          Sem amostra suficiente no texto de mãos atual para exibir o gráfico dessa métrica por posição.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </TabsContent>
@@ -1895,29 +1919,7 @@ export default function HandReviewer() {
             </TabsContent>
           </Tabs>
 
-          {selectedMetricForPositions && (
-            <div className="mt-5 rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold text-cyan-200">{BENCHMARKS[selectedMetricForPositions].label} por posição</p>
-                  <p className="text-xs text-slate-300/90">{BENCHMARKS[selectedMetricForPositions].interpretation}</p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setSelectedMetricForPositions(null)}>
-                  Fechar
-                </Button>
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
-                  <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
-                ))}
-              </div>
-              {(metricBreakdownByPosition[selectedMetricForPositions]?.length ?? 0) === 0 && (
-                <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-                  Sem amostra suficiente no texto de mãos atual para exibir o gráfico dessa métrica por posição.
-                </div>
-              )}
-            </div>
-          )}
+
         </CardContent>
       </Card>
 
