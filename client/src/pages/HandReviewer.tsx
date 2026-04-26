@@ -1524,6 +1524,78 @@ export default function HandReviewer() {
           <p className="mt-2 text-amber-100/75">
             Conteúdo avançado com gráficos, faixas, fórmula e premissas. Expanda apenas quando quiser aprofundar.
           </p>
+          
+          {/* Fluxograma de Extração de Dados */}
+          <div className="mt-4 rounded-xl bg-slate-950/40 p-4 border border-amber-400/20">
+            <p className="mb-3 text-xs font-semibold text-amber-300">📊 Como seus dados são extraídos:</p>
+            <div className="space-y-2 font-mono text-[11px] leading-relaxed">
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">1.</span>
+                <div>
+                  <span className="text-cyan-300">Você cola</span> o hand history (.txt) do PokerStars/GG na caixa de input
+                </div>
+              </div>
+              <div className="flex justify-center text-amber-500 py-1">↓</div>
+              
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">2.</span>
+                <div>
+                  <span className="text-cyan-300">Parser</span> reconhece o formato (PokerStars, GG, etc.) e extrai cada mão
+                </div>
+              </div>
+              <div className="flex justify-center text-amber-500 py-1">↓</div>
+              
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">3.</span>
+                <div>
+                  <span className="text-cyan-300">Análise por mão</span>: identifica sua posição, ações (fold/call/raise), resultado
+                </div>
+              </div>
+              <div className="flex justify-center text-amber-500 py-1">↓</div>
+              
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">4.</span>
+                <div>
+                  <span className="text-cyan-300">Cálculo de métricas</span>: VPIP, PFR, 3-bet, C-bet, WSD, etc. por torneio
+                </div>
+              </div>
+              <div className="flex justify-center text-amber-500 py-1">↓</div>
+              
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">5.</span>
+                <div>
+                  <span className="text-cyan-300">Agregação</span> por ABI bucket (micro, small, medium, etc.) + posição
+                </div>
+              </div>
+              <div className="flex justify-center text-amber-500 py-1">↓</div>
+              
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">6.</span>
+                <div>
+                  <span className="text-cyan-300">Armazenamento</span> no banco MySQL e cálculo de tendências
+                </div>
+              </div>
+              <div className="flex justify-center text-amber-500 py-1">↓</div>
+              
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">7.</span>
+                <div>
+                  <span className="text-cyan-300">Exibição</span> em gráficos, alertas de leaks e consolidação histórica
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-3 pt-3 border-t border-amber-400/10 text-[10px] text-amber-100/60">
+              <p className="mb-1"><span className="text-amber-300">💡 Fórmulas das métricas:</span></p>
+              <ul className="space-y-1 ml-2">
+                <li>• <span className="text-amber-200">VPIP</span>: (mãos com entrada voluntária) / total × 100</li>
+                <li>• <span className="text-amber-200">PFR</span>: (raises pré-flop) / total × 100</li>
+                <li>• <span className="text-amber-200">C-BET</span>: (c-bets feitos) / oportunidades × 100</li>
+                <li>• <span className="text-amber-200">WSD</span>: (vitórias no showdown) / showdowns × 100</li>
+              </ul>
+            </div>
+          </div>
+
           <div className="mt-3 space-y-2 rounded-2xl bg-black/15 p-3">
 
         <div className="grid gap-3 xl:grid-cols-2">
