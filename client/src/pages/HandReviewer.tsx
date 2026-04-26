@@ -716,8 +716,12 @@ export default function HandReviewer() {
   });
 
   const saveToHistoryMutation = trpc.memory.importReplay.useMutation({
-    onSuccess: async () => {
-      toast.success("Torneio adicionado ao histórico do jogador.");
+    onSuccess: async (result) => {
+      if ((result as any)?.reusedExisting) {
+        toast.warning("Torneio identificado como duplicado e não foi somado novamente.");
+      } else {
+        toast.success("Torneio adicionado ao histórico do jogador.");
+      }
       await utils.memory.playerHistoricalProfile.invalidate();
       await playerHistoryQuery.refetch();
       setActiveTab("player");
@@ -920,18 +924,14 @@ export default function HandReviewer() {
       return;
     }
 
-    if (!lastReplayPayload) {
-      const built = buildReplayPayload(rawInput, selectedPlatform);
-      if (!built || built.parsed.hands.length === 0) {
-        toast.warning("Analise um torneio válido antes de salvar no histórico.");
-        return;
-      }
-      setLastReplayPayload(built.payload);
-      saveToHistoryMutation.mutate(built.payload);
+    const built = buildReplayPayload(rawInput, selectedPlatform);
+    if (!built || built.parsed.hands.length === 0) {
+      toast.warning("Analise um torneio válido antes de salvar no histórico.");
       return;
     }
 
-    saveToHistoryMutation.mutate(lastReplayPayload);
+    setLastReplayPayload(built.payload);
+    saveToHistoryMutation.mutate(built.payload);
   };
 
   const handleClearReplayHistory = () => {
