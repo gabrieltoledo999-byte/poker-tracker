@@ -5,6 +5,7 @@ import { HandHistoryInput } from "@/components/hand-reviewer/HandHistoryInput";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
@@ -359,8 +360,8 @@ function MetricLabel({ label, hint, formula }: { label: string; hint: string; fo
   return (
     <div className="inline-flex items-center gap-1">
       <span>{label}</span>
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Popover>
+        <PopoverTrigger asChild>
           <button
             type="button"
             className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/25 text-[10px] text-white/70 hover:border-cyan-400 hover:text-cyan-300 transition-colors"
@@ -368,8 +369,10 @@ function MetricLabel({ label, hint, formula }: { label: string; hint: string; fo
           >
             ?
           </button>
-        </TooltipTrigger>
-        <TooltipContent
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
           sideOffset={8}
           className="max-w-[320px] border border-slate-700 bg-slate-950 text-slate-100 shadow-xl"
         >
@@ -382,8 +385,8 @@ function MetricLabel({ label, hint, formula }: { label: string; hint: string; fo
               </div>
             )}
           </div>
-        </TooltipContent>
-      </Tooltip>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
