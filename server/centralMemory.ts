@@ -2311,6 +2311,17 @@ export async function importReplayToCentralMemory(userId: number, input: ImportR
       || (dedupInput.rawSourceId && dedupInput.rawSourceId === candidateRawSourceId);
 
     if (hasExactTournamentIdMatch) {
+      const incomingHands = Math.max(Number(input.tournament.totalHands ?? 0), Number(input.hands.length ?? 0));
+      const storedHands = Number(candidate.totalHands ?? 0);
+
+      // If the same tournament ID arrives with a larger hand sample,
+      // treat it as a newer/fuller snapshot and replace the old one.
+      if (incomingHands > storedHands) {
+        await deleteTournamentCascade(db, userId, candidate.id);
+        await refreshUserAbiAggregates(userId);
+        break;
+      }
+
       return await reuseExistingReplayImport(db, userId, candidate.id, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
     }
 
