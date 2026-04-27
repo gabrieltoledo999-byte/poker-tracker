@@ -795,6 +795,7 @@ export default function HandReviewer() {
   });
 
   const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery({}, {
+    enabled: hasAcceptedCurrentConsent && activeTab === "player",
     initialData: loadHistorySnapshot,
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60 * 24,
@@ -808,20 +809,6 @@ export default function HandReviewer() {
       saveHistorySnapshot(playerHistoryQuery.data);
     }
   }, [playerHistoryQuery.data]);
-
-  // Debug logging for player history query
-  useEffect(() => {
-    console.log("[playerHistoryQuery]", {
-      isLoading: playerHistoryQuery.isLoading,
-      isError: playerHistoryQuery.isError,
-      error: playerHistoryQuery.error?.message,
-      data: playerHistoryQuery.data ? "has data" : "no data",
-      dataDetails: playerHistoryQuery.data ? {
-        totalTournaments: playerHistoryQuery.data.summary.totalTournaments,
-        totalHands: playerHistoryQuery.data.summary.totalHands,
-      } : null,
-    });
-  }, [playerHistoryQuery.data, playerHistoryQuery.isLoading, playerHistoryQuery.isError]);
 
   const parsedTournament = useMemo(
     () => parseHandHistoryTranscript(rawInput, { preferredPlatform: selectedPlatform }),

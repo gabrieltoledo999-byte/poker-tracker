@@ -204,9 +204,32 @@ const DUPLICATE_HAND_WINDOW = 10;
 const DUPLICATE_SCAN_HAND_LIMIT = 20;
 const HISTORICAL_PROFILE_SYNC_MAX_HANDS = Number(process.env.HAND_REVIEW_SYNC_MAX_HANDS ?? 4000);
 const REPLAY_RECALC_IMPORT_DELAY_MS = 60 * 60 * 1000;
+const HISTORICAL_PROFILE_CACHE_TTL_MS = Number(process.env.HAND_REVIEW_PROFILE_CACHE_TTL_MS ?? (5 * 60 * 1000));
 
 const replayRecalcTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const replayRecalcRunning = new Set<number>();
+const historicalProfileCache = new Map<number, { value: any; expiresAt: number }>();
+
+function getHistoricalProfileFromCache(userId: number) {
+  const cached = historicalProfileCache.get(userId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    historicalProfileCache.delete(userId);
+    return null;
+  }
+  return cached.value;
+}
+
+function setHistoricalProfileCache(userId: number, value: any) {
+  historicalProfileCache.set(userId, {
+    value,
+    expiresAt: Date.now() + HISTORICAL_PROFILE_CACHE_TTL_MS,
+  });
+}
+
+function invalidateHistoricalProfileCache(userId: number) {
+  historicalProfileCache.delete(userId);
+}
 
 function normalizeCards(value: string | undefined): string {
   return String(value ?? "")
@@ -1777,6 +1800,11 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
 }
 
 export async function getPlayerHistoricalProfile(userId: number) {
+  const cached = getHistoricalProfileFromCache(userId);
+  if (cached) {
+    return cached;
+  }
+
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -2402,6 +2430,8 @@ export async function getPlayerHistoricalProfile(userId: number) {
 
   console.log("[getPlayerHistoricalProfile] Returning result:", { totalTournaments: result.summary.totalTournaments, totalHands: result.summary.totalHands });
 
+  setHistoricalProfileCache(userId, result);
+
   return result;
 }
 
@@ -2665,6 +2695,8 @@ export async function importReplayToCentralMemory(userId: number, input: ImportR
 }
 
 export async function clearReplayHistoryForUser(userId: number) {
+  invalidateHistoricalProfileCache(userId);
+
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -2686,6 +2718,8 @@ export function enqueueReplayStatsRecalculation(
   userId: number,
   options?: { delayMs?: number; reason?: string },
 ) {
+  invalidateHistoricalProfileCache(userId);
+
   const delayMs = Math.max(0, Number(options?.delayMs ?? REPLAY_RECALC_IMPORT_DELAY_MS));
   const reason = options?.reason ?? "unspecified";
 
@@ -2732,6 +2766,8 @@ export function enqueueReplayStatsRecalculation(
 }
 
 export async function recalculateReplayStatsForUser(userId: number) {
+  invalidateHistoricalProfileCache(userId);
+
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -2958,12 +2994,15 @@ export async function recalculateReplayStatsForUser(userId: number) {
     await refreshFieldAbiAggregates(site, abiBucket);
   }
 
-  return {
+  const result = {
     totalTournaments: tournaments.length,
     updated,
     failed: failures.length,
     failures,
   };
+
+  invalidateHistoricalProfileCache(userId);
+  return result;
 }
 
 export async function compactReplayStorageForUser(userId: number, existingDb?: Awaited<ReturnType<typeof getDb>>) {
