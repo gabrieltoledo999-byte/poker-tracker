@@ -190,7 +190,7 @@ function normalizeStreetFromMarker(line: string): PokerStreet | null {
 function parseGeneralHeader(rawText: string): PokerTranscriptHeader {
   const firstLine = rawText.split(/\r?\n/).find(line => line.trim().length > 0) ?? "";
   const tournamentId = firstLine.match(/tournament\s+#(\d+)/i)?.[1] ?? "";
-  const heroName = firstLine.match(/requested by\s+([^\s(]+)/i)?.[1] ?? "Hero";
+  const heroName = firstLine.match(/requested by\s+(.+?)\s*\(/i)?.[1]?.trim() ?? "Hero";
   const importEmail = firstLine.match(/\(([^)]+@[^)]+)\)/)?.[1];
 
   return {
@@ -564,16 +564,18 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
   const maxPlayers = tableMatch ? parseNumber(tableMatch[2]) : 9;
   const buttonSeat = tableMatch ? parseNumber(tableMatch[3]) : 1;
 
+  const seatLineRegex = /^Seat\s+(\d+):\s+(.+?)\s+\((\d+) in chips([^)]*)\)(.*)$/i;
+
   const seatsBase = lines
-    .filter(line => /^Seat \d+: .+\(\d+ in chips\)/i.test(line))
+    .filter(line => seatLineRegex.test(line))
     .map(line => {
-      const seatMatch = line.match(/^Seat\s+(\d+):\s+(.+?)\s+\((\d+) in chips\)(.*)$/i);
+      const seatMatch = line.match(seatLineRegex);
       if (!seatMatch) return null;
       return {
         seatNumber: parseNumber(seatMatch[1]),
         playerName: seatMatch[2],
         startingStack: parseNumber(seatMatch[3]),
-        isSittingOut: /sitting out/i.test(seatMatch[4] ?? ""),
+        isSittingOut: /(sitting out|out of hand)/i.test(`${seatMatch[4] ?? ""} ${seatMatch[5] ?? ""}`),
       };
     })
     .filter((seat): seat is NonNullable<typeof seat> => Boolean(seat));
@@ -589,8 +591,9 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
   // Ignore hands where hero is seated but explicitly marked as out of hand
   // (common after table move while posting/transitioning blinds).
   const heroOutOfHand = lines.some(
-    line => /^Seat\s+\d+:\s+.+\(\d+ in chips\).*out of hand/i.test(line)
-      && normalizeName(line.match(/^Seat\s+\d+:\s+(.+?)\s+\(\d+ in chips\)/i)?.[1] ?? "") === normalizedHeroFromHeader,
+    line => seatLineRegex.test(line)
+      && /out of hand/i.test(line)
+      && normalizeName(line.match(seatLineRegex)?.[2] ?? "") === normalizedHeroFromHeader,
   );
   if (heroOutOfHand) return null;
 
@@ -652,11 +655,12 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
   // Rebuild seat positions from this hand only: button + posted blinds + seat map.
   const smallBlindPlayer = actions.find(action => action.action === "post_small_blind")?.player ?? null;
   const bigBlindPlayer = actions.find(action => action.action === "post_big_blind")?.player ?? null;
-  const positionMap = computePositionMapForHand(seatsBase, buttonSeat, maxPlayers, smallBlindPlayer, bigBlindPlayer);
+  const activeSeatsBase = seatsBase.filter(seat => !seat.isSittingOut);
+  const positionMap = computePositionMapForHand(activeSeatsBase, buttonSeat, maxPlayers, smallBlindPlayer, bigBlindPlayer);
 
   const seats: PokerSeat[] = seatsWithoutPosition.map(seat => ({
     ...seat,
-    position: positionMap.get(seat.seatNumber) ?? "",
+    position: seat.isSittingOut ? "" : (positionMap.get(seat.seatNumber) ?? ""),
   }));
 
   const heroSeat = seats.find(seat => seat.isHero)?.seatNumber ?? null;

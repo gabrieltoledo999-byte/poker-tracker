@@ -227,7 +227,7 @@ export function PokerTableReplay(props: {
         <div className="absolute left-1/2 top-[46.5%] z-10 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
           <BoardCards cards={props.step.board} />
         </div>
-        <div className="absolute left-1/2 top-[57%] z-10 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+        <div className="absolute left-1/2 top-[57.5%] z-[46] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
           <PotDisplay pot={props.step.pot} street={props.step.street} displayUnit={props.displayUnit} bigBlind={props.bigBlind} />
         </div>
 
