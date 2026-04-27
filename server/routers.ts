@@ -83,6 +83,11 @@ import {
   importReplayToCentralMemory,
   revokeConsent,
 } from "./centralMemory";
+import {
+  getSessionStatsWithCache,
+  getBankrollHistoryWithCache,
+  invalidateCacheForSession,
+} from "./dbCacheWrappers";
 
 // Game format enum for validation
 const gameFormatEnum = z.enum([
@@ -699,7 +704,6 @@ export const appRouter = router({
         }
 
         // Invalidate cache for this user
-        const { invalidateCacheForSession } = await import("./dbCacheWrappers.js");
         await invalidateCacheForSession(ctx.user.id).catch(err =>
           console.warn("[Cache] Error invalidating on session create:", err)
         );
@@ -789,8 +793,7 @@ export const appRouter = router({
         }
 
         // Invalidate cache for this user
-        const { invalidateCacheForSession: invalidateCacheForUpdate } = await import("./dbCacheWrappers.js");
-        await invalidateCacheForUpdate(ctx.user.id).catch(err =>
+        await invalidateCacheForSession(ctx.user.id).catch(err =>
           console.warn("[Cache] Error invalidating on session update:", err)
         );
 
@@ -815,8 +818,7 @@ export const appRouter = router({
         }
 
         // Invalidate cache for this user
-        const { invalidateCacheForSession: invalidateCacheForDelete } = await import("./dbCacheWrappers.js");
-        await invalidateCacheForDelete(ctx.user.id).catch(err =>
+        await invalidateCacheForSession(ctx.user.id).catch(err =>
           console.warn("[Cache] Error invalidating on session delete:", err)
         );
 
@@ -1752,7 +1754,6 @@ export const appRouter = router({
         type: z.enum(["online", "live"]).optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        const { getBankrollHistoryWithCache } = await import("../dbCacheWrappers.js");
         const settings = await getBankrollSettings(ctx.user.id);
         const sessions = await getBankrollHistoryWithCache(ctx.user.id, input?.type);
         

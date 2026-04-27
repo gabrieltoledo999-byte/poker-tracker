@@ -5,7 +5,7 @@ import {
   sessionTables,
   users,
 } from "../drizzle/schema.js";
-import { db } from "./db.js";
+import { getDb } from "./db.js";
 import {
   getNextCacheJob,
   markCacheJobCompleted,

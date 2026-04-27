@@ -12,7 +12,7 @@ import {
   type InsertCacheRecalcQueue,
   type CacheRecalcQueue,
 } from "../drizzle/schema.js";
-import { db } from "./db.js";
+import { getDb } from "./db.js";
 
 /**
  * Cache Manager
@@ -53,7 +53,7 @@ export async function getUserSessionStatsFromCache(
   userId: number,
   type: "online" | "live"
 ): Promise<UserSessionStatsCache | null> {
-  const cached = await db
+  const cached = await (await getDb())
     .select()
     .from(userSessionStatsCache)
     .where(and(eq(userSessionStatsCache.userId, userId), eq(userSessionStatsCache.type, type)))
@@ -80,7 +80,7 @@ export async function getPlayerAbiStatsFromCache(
   userId: number,
   abiBucket: string
 ): Promise<PlayerAbiStatsCache | null> {
-  const cached = await db
+  const cached = await (await getDb())
     .select()
     .from(playerAbiStatsCache)
     .where(and(eq(playerAbiStatsCache.userId, userId), eq(playerAbiStatsCache.abiBucket, abiBucket)))
@@ -110,7 +110,7 @@ export async function setUserSessionStatsCache(
   const now = new Date();
 
   // Try to update existing record, insert if not found
-  const existing = await db
+  const existing = await (await getDb())
     .select()
     .from(userSessionStatsCache)
     .where(and(eq(userSessionStatsCache.userId, userId), eq(userSessionStatsCache.type, type)))
@@ -118,7 +118,7 @@ export async function setUserSessionStatsCache(
     .then((rows) => rows[0]);
 
   if (existing) {
-    await db
+    await (await getDb())
       .update(userSessionStatsCache)
       .set({
         ...data,
@@ -129,7 +129,7 @@ export async function setUserSessionStatsCache(
       })
       .where(eq(userSessionStatsCache.id, existing.id));
   } else {
-    await db.insert(userSessionStatsCache).values({
+    await (await getDb()).insert(userSessionStatsCache).values({
       userId,
       type,
       ...data,
@@ -142,7 +142,7 @@ export async function setUserSessionStatsCache(
   }
 
   // Clear invalidation logs for this user
-  await db.delete(cacheInvalidationLog).where(eq(cacheInvalidationLog.userId, userId));
+  await (await getDb()).delete(cacheInvalidationLog).where(eq(cacheInvalidationLog.userId, userId));
 }
 
 /**
@@ -155,7 +155,7 @@ export async function setPlayerAbiStatsCache(
 ): Promise<void> {
   const now = new Date();
 
-  const existing = await db
+  const existing = await (await getDb())
     .select()
     .from(playerAbiStatsCache)
     .where(and(eq(playerAbiStatsCache.userId, userId), eq(playerAbiStatsCache.abiBucket, abiBucket)))
@@ -163,7 +163,7 @@ export async function setPlayerAbiStatsCache(
     .then((rows) => rows[0]);
 
   if (existing) {
-    await db
+    await (await getDb())
       .update(playerAbiStatsCache)
       .set({
         ...data,
@@ -173,7 +173,7 @@ export async function setPlayerAbiStatsCache(
       })
       .where(eq(playerAbiStatsCache.id, existing.id));
   } else {
-    await db.insert(playerAbiStatsCache).values({
+    await (await getDb()).insert(playerAbiStatsCache).values({
       userId,
       abiBucket,
       ...data,
@@ -210,7 +210,7 @@ export async function enqueueCacheRecalc(
   };
 
   // If a similar job is already pending, don't create duplicate
-  const existing = await db
+  const existing = await (await getDb())
     .select()
     .from(cacheRecalcQueue)
     .where(
@@ -227,7 +227,7 @@ export async function enqueueCacheRecalc(
     return existing;
   }
 
-  const [result] = await db.insert(cacheRecalcQueue).values(job);
+  const [result] = await (await getDb()).insert(cacheRecalcQueue).values(job);
   return {
     id: result.insertId as unknown as number,
     ...job,
@@ -241,7 +241,7 @@ export async function markCacheAsStale(userId: number, reason: string): Promise<
   const now = new Date();
 
   // Update user session stats cache
-  await db
+  await (await getDb())
     .update(userSessionStatsCache)
     .set({
       isStale: 1,
@@ -250,7 +250,7 @@ export async function markCacheAsStale(userId: number, reason: string): Promise<
     .where(eq(userSessionStatsCache.userId, userId));
 
   // Update player ABI stats cache
-  await db
+  await (await getDb())
     .update(playerAbiStatsCache)
     .set({
       isStale: 1,
@@ -258,7 +258,7 @@ export async function markCacheAsStale(userId: number, reason: string): Promise<
     .where(eq(playerAbiStatsCache.userId, userId));
 
   // Log invalidation
-  await db.insert(cacheInvalidationLog).values({
+  await (await getDb()).insert(cacheInvalidationLog).values({
     userId,
     invalidationType: reason,
     reason: `Cache marked as stale: ${reason}`,
@@ -275,7 +275,7 @@ export async function getNextCacheJob(
   const cutoff = new Date(Date.now() - maxAge);
 
   // Find oldest pending job
-  const job = await db
+  const job = await (await getDb())
     .select()
     .from(cacheRecalcQueue)
     .where(
@@ -291,7 +291,7 @@ export async function getNextCacheJob(
   if (!job) return null;
 
   // Mark as processing
-  await db
+  await (await getDb())
     .update(cacheRecalcQueue)
     .set({
       status: "processing",
@@ -338,7 +338,7 @@ export async function markCacheJobFailed(
   const retryCount = (job.retryCount || 0) + 1;
   const shouldRetry = retryCount < (job.maxRetries || 3);
 
-  await db
+  await (await getDb())
     .update(cacheRecalcQueue)
     .set({
       status: shouldRetry ? "pending" : "failed",
@@ -363,7 +363,7 @@ export async function updateLeaderboardCache(
 ): Promise<void> {
   const now = new Date();
 
-  const existing = await db
+  const existing = await (await getDb())
     .select()
     .from(leaderboardCache)
     .where(eq(leaderboardCache.userId, userId))
@@ -371,7 +371,7 @@ export async function updateLeaderboardCache(
     .then((rows) => rows[0]);
 
   if (existing) {
-    await db
+    await (await getDb())
       .update(leaderboardCache)
       .set({
         rank,
@@ -386,7 +386,7 @@ export async function updateLeaderboardCache(
       })
       .where(eq(leaderboardCache.id, existing.id));
   } else {
-    await db.insert(leaderboardCache).values({
+    await (await getDb()).insert(leaderboardCache).values({
       userId,
       rank,
       metric,
@@ -406,7 +406,7 @@ export async function updateLeaderboardCache(
  * Clear stale flags after recalculation
  */
 export async function clearStaleFlagsForUser(userId: number): Promise<void> {
-  await db
+  await (await getDb())
     .update(userSessionStatsCache)
     .set({
       isStale: 0,
@@ -414,7 +414,7 @@ export async function clearStaleFlagsForUser(userId: number): Promise<void> {
     })
     .where(eq(userSessionStatsCache.userId, userId));
 
-  await db
+  await (await getDb())
     .update(playerAbiStatsCache)
     .set({
       isStale: 0,
@@ -422,7 +422,7 @@ export async function clearStaleFlagsForUser(userId: number): Promise<void> {
     .where(eq(playerAbiStatsCache.userId, userId));
 
   // Clear bankroll history cache stale flag
-  await db
+  await (await getDb())
     .update(bankrollHistoryCache)
     .set({
       isStale: 0,
@@ -439,7 +439,7 @@ export async function getBankrollHistoryFromCache(
   type?: "online" | "live"
 ): Promise<BankrollHistoryCache | null> {
   const cacheType = type || "both";
-  const cached = await db
+  const cached = await (await getDb())
     .select()
     .from(bankrollHistoryCache)
     .where(and(eq(bankrollHistoryCache.userId, userId), eq(bankrollHistoryCache.type, cacheType)))
@@ -471,7 +471,7 @@ export async function setBankrollHistoryCache(
 ): Promise<void> {
   const now = new Date();
 
-  const existing = await db
+  const existing = await (await getDb())
     .select()
     .from(bankrollHistoryCache)
     .where(and(eq(bankrollHistoryCache.userId, userId), eq(bankrollHistoryCache.type, type)))
@@ -481,7 +481,7 @@ export async function setBankrollHistoryCache(
   const historyJson = JSON.stringify(historyData);
 
   if (existing) {
-    await db
+    await (await getDb())
       .update(bankrollHistoryCache)
       .set({
         historyJson,
@@ -495,7 +495,7 @@ export async function setBankrollHistoryCache(
       })
       .where(eq(bankrollHistoryCache.id, existing.id));
   } else {
-    await db.insert(bankrollHistoryCache).values({
+    await (await getDb()).insert(bankrollHistoryCache).values({
       userId,
       type,
       historyJson,
