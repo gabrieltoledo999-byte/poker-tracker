@@ -2189,7 +2189,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
   }
 
   const positionSortOrder = ["UTG", "UTG1", "UTG2", "LJ", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"];
-  const metricBreakdownByPosition = Object.fromEntries(
+  let metricBreakdownByPosition: Record<string, Array<{ position: string; made: number; of: number; pct: number }>> = Object.fromEntries(
     Array.from(positionMetricMap.entries()).map(([metricKey, byPositionMap]) => {
       const rows = Array.from(byPositionMap.entries())
         .map(([position, values]) => {
@@ -2312,6 +2312,45 @@ export async function getPlayerHistoricalProfile(userId: number) {
         createdAt: new Date(),
         updatedAt: new Date(),
       }));
+
+  // When detailed hand/action scan is skipped (large datasets), recover key preflop
+  // metric breakdown from persisted position aggregates so UI remains consistent.
+  const buildFallbackMetricRowsFromPositionStats = (metric: "vpip" | "pfr" | "threeBet") => {
+    return normalizedPositionStats
+      .map((row) => {
+        const of = Number(row.handsPlayed ?? 0);
+        const pct = Number((row as any)?.[metric] ?? 0);
+        const made = Math.round((pct / 100) * of);
+        return {
+          position: String(row.position ?? "UNKNOWN"),
+          made,
+          of,
+          pct,
+        };
+      })
+      .filter((row) => row.of > 0)
+      .sort((a, b) => {
+        const aIndex = positionSortOrder.indexOf(a.position);
+        const bIndex = positionSortOrder.indexOf(b.position);
+        if (aIndex === -1 && bIndex === -1) return a.position.localeCompare(b.position);
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+      });
+  };
+
+  for (const metric of ["vpip", "pfr", "threeBet"] as const) {
+    const existingRows = metricBreakdownByPosition[metric] ?? [];
+    if (existingRows.length > 0) continue;
+
+    const fallbackRows = buildFallbackMetricRowsFromPositionStats(metric);
+    if (fallbackRows.length === 0) continue;
+
+    metricBreakdownByPosition = {
+      ...metricBreakdownByPosition,
+      [metric]: fallbackRows,
+    };
+  }
 
   const posSortedByGain = [...normalizedPositionStats].sort((a, b) => Number(b.netBb ?? 0) - Number(a.netBb ?? 0));
   const posSortedByLoss = [...normalizedPositionStats].sort((a, b) => Number(a.netBb ?? 0) - Number(b.netBb ?? 0));
