@@ -6,6 +6,7 @@ try { dns.setDefaultResultOrder("ipv6first"); } catch {}
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import mysql2 from "mysql2/promise";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -13,6 +14,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../db";
+import { startCacheWorker } from "../cacheJobs.js";
 
 /**
  * Applies missing schema columns to the production database on startup.
@@ -573,18 +575,25 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const isDev = process.env.NODE_ENV === "development";
+  const host = process.env.HOST || "0.0.0.0";
+  const port = isDev ? await findAvailablePort(preferredPort) : preferredPort;
 
-  if (port !== preferredPort) {
+  if (isDev && port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, host, () => {
+    console.log(`Server running on http://${host}:${port}/`);
     // Run migrations and venue merge in background so healthcheck can pass
     // even if the DB is still booting. Errors are logged but don't crash the server.
     runSafeMigrations()
       .then(() => mergeDuplicateVenues())
+      .then(() => {
+        // Start cache worker (processes jobs every 5 seconds)
+        console.log("[Cache] Starting background cache worker...");
+        startCacheWorker(5000).catch(err => console.error("[Cache] Worker error:", err));
+      })
       .catch(err => console.error("[startup] Background DB setup failed:", err));
   });
 }

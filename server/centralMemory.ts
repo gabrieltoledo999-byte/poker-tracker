@@ -1929,6 +1929,39 @@ export async function getPlayerHistoricalProfile(userId: number) {
     actionsByHandForPosition.set(handId, bucket);
   }
 
+  const positionMetricMap = new Map<string, Map<string, { made: number; of: number }>>();
+  const positionMetricKeys = [
+    "vpip", "pfr", "threeBet", "cbetFlop", "cbetTurn", "foldToCbet", "bbDefense", "attemptToSteal",
+    "wtsd", "wsd", "rfi", "coldCall", "squeeze", "resteal", "foldToSteal", "foldTo3Bet",
+    "cbetIp", "cbetOop", "floatFlop", "checkRaiseFlop", "allInAdjBb100", "aggressionFactor",
+  ];
+
+  for (const key of positionMetricKeys) {
+    positionMetricMap.set(key, new Map());
+  }
+
+  const bumpPositionMetric = (metricKey: string, position: string, madeInc: number, ofInc: number) => {
+    const byPosition = positionMetricMap.get(metricKey);
+    if (!byPosition) return;
+    const current = byPosition.get(position) ?? { made: 0, of: 0 };
+    byPosition.set(position, {
+      made: current.made + madeInc,
+      of: current.of + ofInc,
+    });
+  };
+
+  const isAggressionAction = (actionType?: string | null) => {
+    const normalized = normalizeActionType(actionType ?? undefined);
+    return normalized === "raise" || normalized === "bet" || normalized === "all_in";
+  };
+  const isCallAction = (actionType?: string | null) => normalizeActionType(actionType ?? undefined) === "call";
+  const isFoldAction = (actionType?: string | null) => normalizeActionType(actionType ?? undefined) === "fold";
+  const isForcedAction = (actionType?: string | null) => {
+    const normalized = normalizeActionType(actionType ?? undefined);
+    return normalized === "post_ante" || normalized === "post_blind";
+  };
+  const isCheckAction = (actionType?: string | null) => normalizeActionType(actionType ?? undefined) === "check";
+
   const positionAccumulator = new Map<string, { handsPlayed: number; netChips: number; netBb: number }>();
 
   for (const hand of handsForPosition) {
@@ -1937,11 +1970,20 @@ export async function getPlayerHistoricalProfile(userId: number) {
 
     const heroSeat = Number(hand.heroSeat ?? 0);
     const hasHeroCards = String(hand.heroCards ?? "").trim().length > 0;
-    const actions = (actionsByHandForPosition.get(handId) ?? []).filter((action) => {
+    const allActions = actionsByHandForPosition.get(handId) ?? [];
+    const actions = allActions.filter((action) => {
       const isHeroFlagged = Number(action.heroInHand ?? 0) === 1;
       const bySeatFallback = heroSeat > 0 && Number(action.seat ?? 0) === heroSeat;
       return isHeroFlagged || bySeatFallback;
     });
+    const isHeroAction = (action: {
+      seat: number | null;
+      heroInHand: number | null;
+    }) => {
+      const isHeroFlagged = Number(action.heroInHand ?? 0) === 1;
+      const bySeatFallback = heroSeat > 0 && Number(action.seat ?? 0) === heroSeat;
+      return isHeroFlagged || bySeatFallback;
+    };
     const hasHeroNonForcedAction = actions.some((action) => {
       const actionType = normalizeActionType(action.actionType ?? undefined);
       const isForcedPost = actionType === "post_ante" || actionType === "post_blind";
@@ -2016,7 +2058,65 @@ export async function getPlayerHistoricalProfile(userId: number) {
     const handNet = hasStoredResult ? storedHandResult : (usedActionData ? handNetFromActions : 0);
     const handBigBlind = Number(hand.bigBlind ?? 0);
     const handNetBb = handBigBlind > 0 ? handNet / handBigBlind : 0;
-    const position = String(hand.heroPosition ?? "UNKNOWN").trim() || "UNKNOWN";
+    const storedPosition = normalizeStoredPosition(String(hand.heroPosition ?? "UNKNOWN"));
+    const position = storedPosition === "UNKNOWN" ? "UNKNOWN" : storedPosition;
+
+    const preflopActions = allActions.filter((a) => normalizeStreet(a.street ?? undefined) === "preflop");
+    const heroPreflop = preflopActions.filter((a) => isHeroAction(a));
+    const heroFirstPre = heroPreflop.find((a) => !isForcedAction(a.actionType)) ?? heroPreflop[0];
+    const heroFirstPreIndex = heroFirstPre ? preflopActions.indexOf(heroFirstPre) : -1;
+    const priorToHero = heroFirstPreIndex >= 0
+      ? preflopActions.filter((a, index) => index < heroFirstPreIndex && !isHeroAction(a) && !isForcedAction(a.actionType))
+      : [];
+    const heroVpip = heroPreflop.some((a) => !isForcedAction(a.actionType) && (isCallAction(a.actionType) || isAggressionAction(a.actionType)));
+    const heroPfr = heroPreflop.some((a) => !isForcedAction(a.actionType) && isAggressionAction(a.actionType));
+    const priorAggression = priorToHero.some((a) => isAggressionAction(a.actionType));
+    const priorCalls = priorToHero.some((a) => isCallAction(a.actionType));
+
+    bumpPositionMetric("vpip", position, heroVpip ? 1 : 0, 1);
+    bumpPositionMetric("pfr", position, heroPfr ? 1 : 0, 1);
+    bumpPositionMetric("threeBet", position, priorAggression ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, priorAggression ? 1 : 0);
+    bumpPositionMetric("coldCall", position, priorAggression ? (heroPreflop.some((a) => isCallAction(a.actionType)) ? 1 : 0) : 0, priorAggression ? 1 : 0);
+    bumpPositionMetric("squeeze", position, (priorAggression && priorCalls) ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, (priorAggression && priorCalls) ? 1 : 0);
+    bumpPositionMetric("rfi", position, priorToHero.length === 0 ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, priorToHero.length === 0 ? 1 : 0);
+
+    const isStealPosition = position === "CO" || position === "BTN" || position === "SB";
+    bumpPositionMetric("attemptToSteal", position, (isStealPosition && priorToHero.length === 0) ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, (isStealPosition && priorToHero.length === 0) ? 1 : 0);
+    bumpPositionMetric("bbDefense", position, position === "BB" && priorAggression ? (heroFirstPre && !isFoldAction(heroFirstPre.actionType) ? 1 : 0) : 0, position === "BB" && priorAggression ? 1 : 0);
+
+    const flopActions = allActions.filter((a) => normalizeStreet(a.street ?? undefined) === "flop");
+    const turnActions = allActions.filter((a) => normalizeStreet(a.street ?? undefined) === "turn");
+    const heroFlopActions = flopActions.filter((a) => isHeroAction(a));
+    const heroTurnActions = turnActions.filter((a) => isHeroAction(a));
+    const villainFlopAggression = flopActions.filter((a) => !isHeroAction(a)).find((a) => isAggressionAction(a.actionType));
+
+    bumpPositionMetric("cbetFlop", position, heroPfr ? (heroFlopActions.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, heroPfr ? 1 : 0);
+    const heroCbetFlop = heroPfr && heroFlopActions.some((a) => isAggressionAction(a.actionType));
+    bumpPositionMetric("cbetTurn", position, heroCbetFlop ? (heroTurnActions.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, heroCbetFlop ? 1 : 0);
+    bumpPositionMetric("foldToCbet", position, villainFlopAggression ? (heroFlopActions.some((a) => isFoldAction(a.actionType)) ? 1 : 0) : 0, villainFlopAggression ? 1 : 0);
+
+    const cbetIpOpportunity = heroPfr && (position === "CO" || position === "BTN" || position === "SB");
+    const cbetOopOpportunity = heroPfr && !cbetIpOpportunity;
+    bumpPositionMetric("cbetIp", position, cbetIpOpportunity ? (heroFlopActions.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, cbetIpOpportunity ? 1 : 0);
+    bumpPositionMetric("cbetOop", position, cbetOopOpportunity ? (heroFlopActions.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, cbetOopOpportunity ? 1 : 0);
+    bumpPositionMetric("floatFlop", position, villainFlopAggression ? (heroFlopActions.some((a) => isCallAction(a.actionType)) && heroTurnActions.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, villainFlopAggression ? 1 : 0);
+    bumpPositionMetric("checkRaiseFlop", position, heroFlopActions.some((a) => isAggressionAction(a.actionType)) && heroFlopActions.some((a) => isCheckAction(a.actionType)) ? 1 : 0, heroFlopActions.length > 0 ? 1 : 0);
+
+    const wentShowdown = allActions.some((a) => normalizeActionType(a.actionType ?? undefined) === "show");
+    const wonShowdown = wentShowdown && handNet > 0;
+    bumpPositionMetric("wtsd", position, wentShowdown ? 1 : 0, 1);
+    bumpPositionMetric("wsd", position, wonShowdown ? 1 : 0, wentShowdown ? 1 : 0);
+    bumpPositionMetric(
+      "aggressionFactor",
+      position,
+      heroFlopActions.concat(heroTurnActions).filter((a) => isAggressionAction(a.actionType)).length,
+      heroFlopActions.concat(heroTurnActions).filter((a) => isCallAction(a.actionType)).length,
+    );
+
+    bumpPositionMetric("allInAdjBb100", position, 0, 0);
+    bumpPositionMetric("resteal", position, 0, 0);
+    bumpPositionMetric("foldToSteal", position, 0, 0);
+    bumpPositionMetric("foldTo3Bet", position, 0, 0);
 
     const prev = positionAccumulator.get(position) ?? { handsPlayed: 0, netChips: 0, netBb: 0 };
     positionAccumulator.set(position, {
@@ -2025,6 +2125,36 @@ export async function getPlayerHistoricalProfile(userId: number) {
       netBb: prev.netBb + handNetBb,
     });
   }
+
+  const positionSortOrder = ["UTG", "UTG1", "UTG2", "LJ", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"];
+  const metricBreakdownByPosition = Object.fromEntries(
+    Array.from(positionMetricMap.entries()).map(([metricKey, byPositionMap]) => {
+      const rows = Array.from(byPositionMap.entries())
+        .map(([position, values]) => {
+          const of = Number(values.of ?? 0);
+          const made = Number(values.made ?? 0);
+          const pct = of > 0
+            ? (metricKey === "aggressionFactor" ? made : (made / of) * 100)
+            : 0;
+          return {
+            position,
+            made,
+            of,
+            pct,
+          };
+        })
+        .filter((row) => row.of > 0 || metricKey === "allInAdjBb100")
+        .sort((a, b) => {
+          const aIndex = positionSortOrder.indexOf(a.position);
+          const bIndex = positionSortOrder.indexOf(b.position);
+          if (aIndex === -1 && bIndex === -1) return a.position.localeCompare(b.position);
+          if (aIndex === -1) return 1;
+          if (bIndex === -1) return -1;
+          return aIndex - bIndex;
+        });
+      return [metricKey, rows];
+    }),
+  );
 
   const positionStatsFromHands = Array.from(positionAccumulator.entries()).map(([position, values]) => ({
     position,
@@ -2221,6 +2351,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
     },
     positions: {
       byPosition: normalizedPositionStats,
+      metricBreakdownByPosition,
       mostProfitable: posSortedByGain[0] ?? null,
       leastProfitable: posSortedByLoss[0] ?? null,
       biggestLoss: posSortedByLoss[0] ?? null,

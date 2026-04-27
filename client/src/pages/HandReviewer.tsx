@@ -668,7 +668,7 @@ export default function HandReviewer() {
   const [, setLocation] = useLocation();
   const [rawInput, setRawInput] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<ParserSelection>("AUTO");
-  const [activeTab, setActiveTab] = useState<"tournament" | "player" | "positions">("tournament");
+  const [activeTab, setActiveTab] = useState<"tournament" | "player">("tournament");
   const [lastReplayPayload, setLastReplayPayload] = useState<any | null>(null);
   const [consentModalOpen, setConsentModalOpen] = useState(false);
   const [selectedMetricForPositions, setSelectedMetricForPositions] = useState<MetricKey | null>(null);
@@ -779,7 +779,7 @@ export default function HandReviewer() {
     [rawInput, selectedPlatform],
   );
 
-  const metricBreakdownByPosition = useMemo(() => {
+  const tournamentMetricBreakdownByPosition = useMemo(() => {
     const metricMap = new Map<MetricKey, Map<string, { made: number; of: number }>>();
     const keys: MetricKey[] = [
       "vpip", "pfr", "threeBet", "cbetFlop", "cbetTurn", "foldToCbet", "bbDefense", "attemptToSteal",
@@ -881,6 +881,10 @@ export default function HandReviewer() {
     }
     return out;
   }, [parsedTournament.hands]);
+
+  const historicalMetricBreakdownByPosition = useMemo(() => {
+    return ((playerHistoryQuery.data?.positions as any)?.metricBreakdownByPosition ?? {}) as Record<MetricKey, PositionMetricRow[]>;
+  }, [playerHistoryQuery.data]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1131,16 +1135,6 @@ export default function HandReviewer() {
     steal: 0,
   });
 
-  const positionsHands = Number(playerHistoryQuery.data?.summary?.totalHands ?? 0);
-  const positionsConfidenceLevel = getConfidenceLevel("vpip", {
-    hands: positionsHands,
-    cbetFlop: 0,
-    cbetTurn: 0,
-    foldToCbet: 0,
-    bbDefense: 0,
-    steal: 0,
-  });
-
   const historicalOpp = (playerHistoryQuery.data?.summary as any)?.opportunities as Partial<OpportunityCounts> | undefined;
   const historicalOppSafe: OpportunityCounts = {
     hands: Number(historicalOpp?.hands ?? playerHands ?? 0),
@@ -1163,6 +1157,16 @@ export default function HandReviewer() {
     setSelectedMetricForPositions((prev) => (prev === key ? null : key));
   };
 
+  const metricRowsForPanel = selectedMetricForPositions
+    ? (
+      activeTab === "tournament"
+        ? (tournamentMetricBreakdownByPosition[selectedMetricForPositions] ?? [])
+        : ((historicalMetricBreakdownByPosition[selectedMetricForPositions] ?? []).length > 0
+            ? (historicalMetricBreakdownByPosition[selectedMetricForPositions] ?? [])
+            : (tournamentMetricBreakdownByPosition[selectedMetricForPositions] ?? []))
+    )
+    : [];
+
   const metricDrilldownPanel = selectedMetricForPositions ? (
     <div className="mt-4 rounded-2xl border border-cyan-500/25 bg-slate-950/85 p-4 text-slate-100">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1175,14 +1179,18 @@ export default function HandReviewer() {
         </Button>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {(metricBreakdownByPosition[selectedMetricForPositions] ?? []).length > 0 ? (
-          (metricBreakdownByPosition[selectedMetricForPositions] ?? []).map((row) => (
+        {metricRowsForPanel.length > 0 ? (
+          metricRowsForPanel.map((row) => (
             <HalfMoonGauge key={`${row.position}-${selectedMetricForPositions}`} row={row} />
           ))
         ) : (
           <div className="col-span-full rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-center text-xs text-amber-100">
             <p className="font-semibold mb-1">Sem dados suficientes de hand history</p>
-            <p>Cole um hand history e clique em "Analisar torneio" para visualizar o breakdown por posição.</p>
+            <p>
+              {activeTab === "tournament"
+                ? "Cole um hand history e clique em \"Analisar torneio\" para visualizar o breakdown por posição."
+                : "Adicione torneios ao histórico para visualizar o breakdown consolidado por posição."}
+            </p>
           </div>
         )}
       </div>
@@ -1343,12 +1351,11 @@ export default function HandReviewer() {
           <CardTitle>Painel de leitura</CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tournament" | "player" | "positions")}>
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tournament" | "player")}>
             <div className="overflow-x-auto pb-1">
-              <TabsList className="flex min-w-max gap-1 bg-slate-950/55 border border-cyan-400/20 rounded-xl p-1 md:grid md:w-full md:min-w-0 md:grid-cols-3 md:gap-0">
+              <TabsList className="flex min-w-max gap-1 bg-slate-950/55 border border-cyan-400/20 rounded-xl p-1 md:grid md:w-full md:min-w-0 md:grid-cols-2 md:gap-0">
                 <TabsTrigger value="tournament" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Análise do Torneio</TabsTrigger>
-                <TabsTrigger value="player" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Dados do Jogador</TabsTrigger>
-                <TabsTrigger value="positions" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Posições e Foco</TabsTrigger>
+                <TabsTrigger value="player" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Dados do Jogador + Posições/Foco</TabsTrigger>
               </TabsList>
             </div>
 
@@ -1540,6 +1547,8 @@ export default function HandReviewer() {
                     );
                   })()}
 
+                  {metricDrilldownPanel}
+
                   <div className="rounded-xl bg-blue-500/8 p-3 text-xs text-blue-100 shadow-[inset_0_1px_0_rgba(59,130,246,0.08)]">
                     Esses valores são referências práticas de jogadores sólidos, não regras fixas de GTO.
                   </div>
@@ -1574,7 +1583,6 @@ export default function HandReviewer() {
                     )}
                   </div>
 
-                  {metricDrilldownPanel}
                 </>
               )}
             </TabsContent>
@@ -1617,62 +1625,6 @@ export default function HandReviewer() {
                     </div>
                   </div>
 
-                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="VPIP médio" hint="Percentual médio de mãos em que você entra voluntariamente no pote." formula={BENCHMARKS.vpip.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.vpipAvg)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.vpipAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("vpip", Number(playerHistoryQuery.data.summary.vpipAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="PFR médio" hint="Percentual médio de mãos com aumento pré-flop." formula={BENCHMARKS.pfr.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.pfrAvg)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.pfrAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("pfr", Number(playerHistoryQuery.data.summary.pfrAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="3-bet médio" hint="Frequência média de reaumento pré-flop." formula={BENCHMARKS.threeBet.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.threeBetAvg)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0), historicalOppSafe.hands), historicalOppSafe.hands)}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("threeBet", Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Defesa média de BB" hint="Percentual médio de defesa do big blind em spots aplicáveis." formula={BENCHMARKS.bbDefense.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.bbDefenseAvg)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0), historicalOppSafe.bbDefense), historicalOppSafe.bbDefense)}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("bbDefense", Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="C-bet média" hint="Frequência média de c-bet no flop." formula={BENCHMARKS.cbetFlop.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.cbetFlopAvg)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0), historicalOppSafe.cbetFlop), historicalOppSafe.cbetFlop)}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("cbetFlop", Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Attempt to Steal médio" hint="Frequência média de tentativa de steal em posição final." formula={BENCHMARKS.attemptToSteal.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{formatPercent(playerHistoryQuery.data.summary.attemptToStealAvg)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(roundMade(Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0), historicalOppSafe.steal), historicalOppSafe.steal)}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("attemptToSteal", Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel label="Aggression Factor médio" hint="Razão média entre ações agressivas e calls no histórico." formula={BENCHMARKS.aggressionFactor.formula} />
-                      <p className="mt-1 font-semibold text-cyan-100">{Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0).toFixed(2)}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number((historicalOpp as any)?.aggressionActions ?? 0), Number((historicalOpp as any)?.aggressionCalls ?? 0))}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("aggressionFactor", Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0)))}</div>
-                    </div>
-                    <div className="tokyo-metric rounded-lg p-3 text-sm">
-                      <MetricLabel
-                        label="All-in Adj BB/100 médio"
-                        hint="Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown."
-                        formula={BENCHMARKS.allInAdjBb100.formula}
-                        onOpen={() => openMetricDrilldown("allInAdjBb100")}
-                      />
-                      <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
-                      <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
-                      <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
-                    </div>
-                  </div>
-
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="tokyo-panel rounded-lg p-3 text-sm">
                       <p className="mb-1 font-semibold text-cyan-100">Posição mais lucrativa historicamente</p>
@@ -1699,245 +1651,189 @@ export default function HandReviewer() {
                       <p>{playerHistoryQuery.data.trends.note ?? "Sem dados suficientes para tendência recente."}</p>
                     </div>
                   </div>
-                </>
-              )}
-            </TabsContent>
 
-            <TabsContent value="positions" className="mt-4 space-y-4">
-              <TabConfidenceHeader level={positionsConfidenceLevel} hands={positionsHands} />
-
-              {playerHistoryQuery.isLoading && <p className="text-sm text-muted-foreground">Carregando dados de posições...</p>}
-
-              {!playerHistoryQuery.isLoading && !playerHistoryQuery.data && (
-                <p className="text-sm text-muted-foreground">Adicione torneios para análise de posições e foco de estudos.</p>
-              )}
-
-              {playerHistoryQuery.data && (
-                <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Posições jogadas historicamente</p>
-                  {playerHistoryQuery.data.positions.byPosition?.length > 0 ? (
-                    <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
-                      {playerHistoryQuery.data.positions.byPosition.map((item) => (
-                        <div key={`pos-hist-${item.position}`}>
-                          <p>
-                            {item.position}: {item.handsPlayed} mãos · <span className="font-semibold text-cyan-100">{formatBb((item as any).netBb)}</span>
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-white/70">Sem dados históricos de posição. Adicione torneios para consolidar dados.</p>
-                  )}
-                </div>
-              )}
-
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Onde está mais lucrativo</p>
-                  <p>
-                    {playerHistoryQuery.data?.positions?.mostProfitable
-                      ? `${playerHistoryQuery.data.positions.mostProfitable.position} (${formatBb((playerHistoryQuery.data.positions.mostProfitable as any).netBb)})`
-                      : "-"}
-                  </p>
-                </div>
-
-                <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Onde está menos lucrativo</p>
-                  <p>
-                    {playerHistoryQuery.data?.positions?.leastProfitable
-                      ? `${playerHistoryQuery.data.positions.leastProfitable.position} (${formatBb((playerHistoryQuery.data.positions.leastProfitable as any).netBb)})`
-                      : "-"}
-                  </p>
-                </div>
-
-                <div
-                  className="tokyo-panel rounded-lg p-3 text-sm cursor-pointer transition-colors hover:border-cyan-400/45"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Abrir All-in Adj BB/100 por posição"
-                  onClick={() => openMetricDrilldown("allInAdjBb100")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openMetricDrilldown("allInAdjBb100");
-                    }
-                  }}
-                >
-                  <MetricLabel
-                    label="All-in Adj BB/100 (Geral)"
-                    hint="Win-rate ajustado por all-in no histórico consolidado. Clique para abrir a visão por posição."
-                    formula={BENCHMARKS.allInAdjBb100.formula}
-                    onOpen={() => openMetricDrilldown("allInAdjBb100")}
-                  />
-                  <p className="mt-1 font-semibold text-cyan-100">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
-                  <p className="mt-1 text-[11px] text-white/50">{formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}</p>
-                  <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
-                </div>
-
-                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
-                  <p className="mb-2 font-semibold text-amber-100">Posição de foco</p>
-                  {(() => {
-                    const focusPosition = playerHistoryQuery.data?.positions?.leastProfitable?.position;
-                    const focusSample = playerHistoryQuery.data?.positions?.byPosition?.find((item) => item.position === focusPosition);
-                    if (!focusPosition) {
-                      return <p className="text-white/70">Sem foco definido ainda.</p>;
-                    }
-
-                    return (
-                      <>
-                        <p className="text-lg font-semibold text-amber-50">{focusPosition}</p>
-                        <p className="mt-1 text-xs text-amber-100/80">{focusSample?.handsPlayed ?? 0} mãos</p>
-                        <div className="mt-2 text-xs text-amber-100/90">
-                          <MetricLabel
-                            label="ALL-IN ADJ BB/100 (GERAL)"
-                            hint="Win-rate ajustado para all-ins no histórico consolidado."
-                            formula={BENCHMARKS.allInAdjBb100.formula}
-                            details={[
-                              "Spot de foco: revisar ranges de open, defesa e linhas de c-bet.",
-                              `Amostra all-in: ${formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}`,
-                            ]}
-                            onOpen={() => openMetricDrilldown("allInAdjBb100")}
-                          />
-                        </div>
-                        <p className="mt-1 font-semibold text-amber-50">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
-                        <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              <div className="rounded-xl bg-emerald-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(16,185,129,0.08)]">
-                <p className="mb-2 font-semibold text-emerald-100">Foco de estudos sugerido</p>
-                {studyFocusSuggestions.map((item) => (
-                  <p key={item}>- {item}</p>
-                ))}
-                <p className="mt-3 text-xs text-emerald-200/90">
-                  Em versões futuras, este bloco vai integrar treino automático por posição e por leak recorrente.
-                </p>
-              </div>
-
-              {playerHistoryQuery.data && (
-                <div className="tokyo-panel rounded-lg p-3 text-sm">
-                  <p className="mb-2 font-semibold text-cyan-100">Leitura rápida por benchmark (histórico do jogador)</p>
-                  {(() => {
-                    const historicalValues: Partial<Record<MetricKey, number>> = {
-                      vpip: Number(playerHistoryQuery.data.summary.vpipAvg ?? 0),
-                      pfr: Number(playerHistoryQuery.data.summary.pfrAvg ?? 0),
-                      threeBet: Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0),
-                      bbDefense: Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0),
-                      attemptToSteal: Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0),
-                      cbetFlop: Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0),
-                      cbetTurn: Number(playerHistoryQuery.data.summary.cbetTurnAvg ?? 0),
-                      foldToCbet: Number((playerHistoryQuery.data.summary as any).foldToCbetAvg ?? 0),
-                      aggressionFactor: Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0),
-                      wtsd: Number((playerHistoryQuery.data.summary as any).wtsdAvg ?? 0),
-                      wsd: Number((playerHistoryQuery.data.summary as any).wsdAvg ?? 0),
-                      allInAdjBb100: historicalAllInAdjBb100,
-                    };
-
-                    const histOpp = ((playerHistoryQuery.data.summary as any)?.opportunities ?? {}) as Record<string, number>;
-                    const denominatorFor = (key: MetricKey): number => {
-                      if (key === "vpip" || key === "pfr" || key === "threeBet") return Number(histOpp.hands ?? 0);
-                      if (key === "cbetFlop") return Number(histOpp.cbetFlop ?? 0);
-                      if (key === "cbetTurn") return Number(histOpp.cbetTurn ?? 0);
-                      if (key === "foldToCbet") return Number(histOpp.foldToCbet ?? 0);
-                      if (key === "bbDefense") return Number(histOpp.bbDefense ?? 0);
-                      if (key === "attemptToSteal") return Number(histOpp.steal ?? 0);
-                      if (key === "wtsd" || key === "wsd") return Number(histOpp.showdownHands ?? 0);
-                      if (key === "allInAdjBb100") return Number(histOpp.allInAdjOpportunities ?? 0);
-                      return Number(histOpp.hands ?? 0);
-                    };
-                    const sections: Array<{ title: string; keys: MetricKey[] }> = [
-                      { title: "Pré-flop", keys: ["vpip", "pfr", "threeBet", "attemptToSteal"] },
-                      { title: "Defesa Pré-flop", keys: ["bbDefense"] },
-                      { title: "Pós-flop", keys: ["cbetFlop", "cbetTurn", "foldToCbet"] },
-                      { title: "Geral", keys: ["aggressionFactor", "wtsd", "wsd", "allInAdjBb100"] },
-                    ];
-                    return (
-                      <div className="space-y-4">
-                        {analyzeMutation.isPending && <SplashScreen />}
-                        {sections.map((section) => (
-                          <section key={section.title} className="space-y-2">
-                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">{section.title}</p>
-                            <div className="grid gap-2 md:grid-cols-2">
-                              {section.keys.map((key) => {
-                                const benchmark = BENCHMARKS[key];
-                                const value = Number(historicalValues[key] ?? 0);
-                                const of = denominatorFor(key);
-                                const made = key === "aggressionFactor"
-                                  ? Number(histOpp.aggressionActions ?? 0)
-                                  : key === "allInAdjBb100"
-                                  ? Number(histOpp.allInAdjSample ?? 0)
-                                  : roundMade(value, of);
-                                const ratioOf = key === "aggressionFactor"
-                                  ? Number(histOpp.aggressionCalls ?? 0)
-                                  : of;
-                                const percentLike = key !== "aggressionFactor" && key !== "allInAdjBb100";
-                                return (
-                                  <div
-                                    key={`benchmark-${key}`}
-                                    className="tokyo-metric rounded-md p-3 transition-colors hover:border-amber-300/40 hover:bg-slate-900/70"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-label={`Abrir ${benchmark.label} por posição`}
-                                    onClick={() => openMetricDrilldown(key)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter" || event.key === " ") {
-                                        event.preventDefault();
-                                        openMetricDrilldown(key);
-                                      }
-                                    }}
-                                  >
-                                    {(() => {
-                                      const status = getMetricStatus(key, value);
-                                      return (
-                                        <div className="mb-1 flex items-start justify-between gap-2">
-                                          <div className="font-semibold text-cyan-100">
-                                            <MetricLabel
-                                              label={benchmark.label}
-                                              hint={benchmark.interpretation}
-                                              formula={benchmark.formula}
-                                              details={[
-                                                `Faixa comum: ${benchmark.min}${percentLike ? "%" : ""} - ${benchmark.max}${percentLike ? "%" : ""}`,
-                                                metricStatusText(key, value),
-                                                `Amostra: ${formatMadeOf(made, ratioOf)}`,
-                                              ]}
-                                              onOpen={() => openMetricDrilldown(key)}
-                                            />
-                                          </div>
-                                          {metricStatusIndicator(status, key === "allInAdjBb100")}
-                                        </div>
-                                      );
-                                    })()}
-                                    <p className="mt-1 text-2xl font-semibold text-cyan-100">
-                                      {percentLike
-                                        ? `${value.toFixed(1)}%`
-                                        : key === "allInAdjBb100"
-                                        ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
-                                        : value.toFixed(2)}
-                                    </p>
-                                    <p className="mt-1 text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {selectedMetricForPositions && section.keys.includes(selectedMetricForPositions)
-                              ? <div className="pt-1">{metricDrilldownPanel}</div>
-                              : null}
-                                <Button
-                                  variant="outline"
-                                  onClick={handleRecalculateHistory}
-                                  disabled={recalculateHistoryMutation.isPending}
-                                >
-                                  {recalculateHistoryMutation.isPending ? "Recalculando no site..." : "Recalcular estatísticas salvas"}
-                                </Button>
-                          </section>
+                  <div className="tokyo-panel rounded-lg p-3 text-sm">
+                    <p className="mb-2 font-semibold text-cyan-100">Posições jogadas historicamente</p>
+                    {playerHistoryQuery.data.positions.byPosition?.length > 0 ? (
+                      <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3">
+                        {playerHistoryQuery.data.positions.byPosition.map((item) => (
+                          <div key={`pos-hist-${item.position}`}>
+                            <p>
+                              {item.position}: {item.handsPlayed} mãos · <span className="font-semibold text-cyan-100">{formatBb((item as any).netBb)}</span>
+                            </p>
+                          </div>
                         ))}
                       </div>
-                    );
-                  })()}
-                </div>
+                    ) : (
+                      <p className="text-white/70">Sem dados históricos de posição. Adicione torneios para consolidar dados.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm shadow-[inset_0_1px_0_rgba(245,158,11,0.08)]">
+                    <p className="mb-2 font-semibold text-amber-100">Posição de foco</p>
+                    {(() => {
+                      const focusPosition = playerHistoryQuery.data?.positions?.leastProfitable?.position;
+                      const focusSample = playerHistoryQuery.data?.positions?.byPosition?.find((item) => item.position === focusPosition);
+                      if (!focusPosition) {
+                        return <p className="text-white/70">Sem foco definido ainda.</p>;
+                      }
+
+                      return (
+                        <>
+                          <p className="text-lg font-semibold text-amber-50">{focusPosition}</p>
+                          <p className="mt-1 text-xs text-amber-100/80">{focusSample?.handsPlayed ?? 0} mãos</p>
+                          <div className="mt-2 text-xs text-amber-100/90">
+                            <MetricLabel
+                              label="ALL-IN ADJ BB/100 (GERAL)"
+                              hint="Win-rate ajustado para all-ins no histórico consolidado."
+                              formula={BENCHMARKS.allInAdjBb100.formula}
+                              details={[
+                                "Spot de foco: revisar ranges de open, defesa e linhas de c-bet.",
+                                `Amostra all-in: ${formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}`,
+                              ]}
+                              onOpen={() => openMetricDrilldown("allInAdjBb100")}
+                            />
+                          </div>
+                          <p className="mt-1 font-semibold text-amber-50">{`${historicalAllInAdjBb100 >= 0 ? "+" : ""}${historicalAllInAdjBb100.toFixed(2)}`}</p>
+                          <div className="mt-2">{metricStatusIndicator(getMetricStatus("allInAdjBb100", historicalAllInAdjBb100), true)}</div>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="rounded-xl bg-emerald-500/8 p-3 text-sm shadow-[inset_0_1px_0_rgba(16,185,129,0.08)]">
+                    <p className="mb-2 font-semibold text-emerald-100">Foco de estudos sugerido</p>
+                    {studyFocusSuggestions.map((item) => (
+                      <p key={item}>- {item}</p>
+                    ))}
+                    <p className="mt-3 text-xs text-emerald-200/90">
+                      Em versões futuras, este bloco vai integrar treino automático por posição e por leak recorrente.
+                    </p>
+                  </div>
+
+                  <div className="tokyo-panel rounded-lg p-3 text-sm">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="font-semibold text-cyan-100">Leitura rápida por benchmark (histórico do jogador)</p>
+                      <Button
+                        variant="outline"
+                        onClick={handleRecalculateHistory}
+                        disabled={recalculateHistoryMutation.isPending}
+                      >
+                        {recalculateHistoryMutation.isPending ? "Recalculando no site..." : "Recalcular estatísticas salvas"}
+                      </Button>
+                    </div>
+                    {(() => {
+                      const historicalValues: Partial<Record<MetricKey, number>> = {
+                        vpip: Number(playerHistoryQuery.data.summary.vpipAvg ?? 0),
+                        pfr: Number(playerHistoryQuery.data.summary.pfrAvg ?? 0),
+                        threeBet: Number(playerHistoryQuery.data.summary.threeBetAvg ?? 0),
+                        bbDefense: Number(playerHistoryQuery.data.summary.bbDefenseAvg ?? 0),
+                        attemptToSteal: Number(playerHistoryQuery.data.summary.attemptToStealAvg ?? 0),
+                        cbetFlop: Number(playerHistoryQuery.data.summary.cbetFlopAvg ?? 0),
+                        cbetTurn: Number(playerHistoryQuery.data.summary.cbetTurnAvg ?? 0),
+                        foldToCbet: Number((playerHistoryQuery.data.summary as any).foldToCbetAvg ?? 0),
+                        aggressionFactor: Number(playerHistoryQuery.data.summary.aggressionFactorAvg ?? 0),
+                        wtsd: Number((playerHistoryQuery.data.summary as any).wtsdAvg ?? 0),
+                        wsd: Number((playerHistoryQuery.data.summary as any).wsdAvg ?? 0),
+                        allInAdjBb100: historicalAllInAdjBb100,
+                      };
+
+                      const histOpp = ((playerHistoryQuery.data.summary as any)?.opportunities ?? {}) as Record<string, number>;
+                      const denominatorFor = (key: MetricKey): number => {
+                        if (key === "vpip" || key === "pfr" || key === "threeBet") return Number(histOpp.hands ?? 0);
+                        if (key === "cbetFlop") return Number(histOpp.cbetFlop ?? 0);
+                        if (key === "cbetTurn") return Number(histOpp.cbetTurn ?? 0);
+                        if (key === "foldToCbet") return Number(histOpp.foldToCbet ?? 0);
+                        if (key === "bbDefense") return Number(histOpp.bbDefense ?? 0);
+                        if (key === "attemptToSteal") return Number(histOpp.steal ?? 0);
+                        if (key === "wtsd" || key === "wsd") return Number(histOpp.showdownHands ?? 0);
+                        if (key === "allInAdjBb100") return Number(histOpp.allInAdjOpportunities ?? 0);
+                        return Number(histOpp.hands ?? 0);
+                      };
+                      const sections: Array<{ title: string; keys: MetricKey[] }> = [
+                        { title: "Pré-flop", keys: ["vpip", "pfr", "threeBet", "attemptToSteal"] },
+                        { title: "Defesa Pré-flop", keys: ["bbDefense"] },
+                        { title: "Pós-flop", keys: ["cbetFlop", "cbetTurn", "foldToCbet"] },
+                        { title: "Geral", keys: ["aggressionFactor", "wtsd", "wsd", "allInAdjBb100"] },
+                      ];
+                      return (
+                        <div className="space-y-4">
+                          {analyzeMutation.isPending && <SplashScreen />}
+                          {sections.map((section) => (
+                            <section key={section.title} className="space-y-2">
+                              <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">{section.title}</p>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                {section.keys.map((key) => {
+                                  const benchmark = BENCHMARKS[key];
+                                  const value = Number(historicalValues[key] ?? 0);
+                                  const of = denominatorFor(key);
+                                  const made = key === "aggressionFactor"
+                                    ? Number(histOpp.aggressionActions ?? 0)
+                                    : key === "allInAdjBb100"
+                                    ? Number(histOpp.allInAdjSample ?? 0)
+                                    : roundMade(value, of);
+                                  const ratioOf = key === "aggressionFactor"
+                                    ? Number(histOpp.aggressionCalls ?? 0)
+                                    : of;
+                                  const percentLike = key !== "aggressionFactor" && key !== "allInAdjBb100";
+                                  return (
+                                    <div
+                                      key={`benchmark-${key}`}
+                                      className="tokyo-metric rounded-md p-3 transition-colors hover:border-amber-300/40 hover:bg-slate-900/70"
+                                      role="button"
+                                      tabIndex={0}
+                                      aria-label={`Abrir ${benchmark.label} por posição`}
+                                      onClick={() => openMetricDrilldown(key)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                          event.preventDefault();
+                                          openMetricDrilldown(key);
+                                        }
+                                      }}
+                                    >
+                                      {(() => {
+                                        const status = getMetricStatus(key, value);
+                                        return (
+                                          <div className="mb-1 flex items-start justify-between gap-2">
+                                            <div className="font-semibold text-cyan-100">
+                                              <MetricLabel
+                                                label={benchmark.label}
+                                                hint={benchmark.interpretation}
+                                                formula={benchmark.formula}
+                                                details={[
+                                                  `Faixa comum: ${benchmark.min}${percentLike ? "%" : ""} - ${benchmark.max}${percentLike ? "%" : ""}`,
+                                                  metricStatusText(key, value),
+                                                  `Amostra: ${formatMadeOf(made, ratioOf)}`,
+                                                ]}
+                                                onOpen={() => openMetricDrilldown(key)}
+                                              />
+                                            </div>
+                                            {metricStatusIndicator(status, key === "allInAdjBb100")}
+                                          </div>
+                                        );
+                                      })()}
+                                      <p className="mt-1 text-2xl font-semibold text-cyan-100">
+                                        {percentLike
+                                          ? `${value.toFixed(1)}%`
+                                          : key === "allInAdjBb100"
+                                          ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
+                                          : value.toFixed(2)}
+                                      </p>
+                                      <p className="mt-1 text-xs text-white/50">{formatMadeOf(made, ratioOf)}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {selectedMetricForPositions && section.keys.includes(selectedMetricForPositions)
+                                ? <div className="pt-1">{metricDrilldownPanel}</div>
+                                : null}
+                            </section>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </>
               )}
             </TabsContent>
           </Tabs>

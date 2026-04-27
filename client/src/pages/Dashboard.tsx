@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { useBehaviorProfile } from "@/hooks/useBehaviorProfile";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,6 +105,81 @@ const GAME_FORMAT_LABELS: Record<string, string> = {
   home_game: "Home Game",
   heads_up: "Heads-up",
 };
+
+type TournamentAccessTab = "favoritos" | "historico";
+type UserLeague = "Recreativo" | "Grinder" | "Reg" | "Mid Stakes" | "High Stakes" | "The Edge" | "High Roller";
+
+function getAccessTierEmoji(league: UserLeague): string {
+  if (league === "Recreativo") return "🃏";
+  if (league === "Grinder") return "♣️";
+  if (league === "Reg") return "♠️";
+  if (league === "Mid Stakes") return "♦️";
+  if (league === "High Stakes") return "♥️";
+  if (league === "The Edge") return "🂡";
+  return "💰";
+}
+
+function getAccessTierLabel(league: UserLeague): string {
+  return league === "High Roller" ? "High Roller (interno)" : league;
+}
+
+function getLeagueFromLevel(levelInput: number): UserLeague {
+  const level = Math.max(0, Math.round(levelInput));
+  if (level <= 0) return "Recreativo";
+  if (level === 1) return "Grinder";
+  if (level === 2) return "Reg";
+  if (level === 3) return "Mid Stakes";
+  if (level <= 5) return "High Stakes";
+  if (level === 6) return "The Edge";
+  return "High Roller";
+}
+
+function getLeagueLevel(league: UserLeague): number {
+  if (league === "Recreativo") return 0;
+  if (league === "Grinder") return 1;
+  if (league === "Reg") return 2;
+  if (league === "Mid Stakes") return 3;
+  if (league === "High Stakes") return 4;
+  if (league === "The Edge") return 6;
+  return 7;
+}
+
+function normalizeLeagueToken(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function parseLeague(value: unknown): UserLeague | null {
+  const token = normalizeLeagueToken(String(value ?? ""));
+  if (!token) return null;
+
+  if (token === "recreativo" || token === "casual" || token === "entry") return "Recreativo";
+  if (token === "grinder") return "Grinder";
+  if (token === "reg" || token === "regular") return "Reg";
+  if (token === "midstakes" || token === "mid stakes") return "Mid Stakes";
+  if (token === "highstakes" || token === "high stakes") return "High Stakes";
+  if (token === "the edge" || token === "theedge" || token === "edge") return "The Edge";
+  if (token === "high roller" || token === "highroller" || token === "roller") return "High Roller";
+
+  // Legacy league labels mapped into new poker tiers.
+  if (token === "bronze" || token === "prata" || token === "silver") return "Recreativo";
+  if (token === "ouro" || token === "gold") return "Grinder";
+  if (token === "platina" || token === "platinum") return "Reg";
+  if (token === "esmeralda" || token === "emerald") return "Mid Stakes";
+  if (token === "diamante" || token === "diamond") return "High Stakes";
+  if (token === "mestre" || token === "master" || token === "grao-mestre" || token === "grao mestre" || token === "grandmaster") return "The Edge";
+
+  return null;
+}
+
+function getTournamentAccessLimitByLeague(league: UserLeague): number {
+  if (league === "Recreativo") return 1;
+  if (league === "Grinder" || league === "Reg" || league === "Mid Stakes") return 5;
+  return 10;
+}
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -228,6 +304,7 @@ function VenueRow({
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { preferences: prefs, primaryType, playTypeOrder, sortVenues } = useBehaviorProfile();
+  const { user } = useAuth();
   const { theme } = useTheme();
   const utils = trpc.useUtils();
   
@@ -248,6 +325,15 @@ export default function Dashboard() {
   const [showOnlineModal, setShowOnlineModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [expandedTournament, setExpandedTournament] = useState<string | null>(null);
+  const [activeTournamentTab, setActiveTournamentTab] = useState<TournamentAccessTab>("favoritos");
+  const [favoriteTournamentNames, setFavoriteTournamentNames] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("tournament-favorites-v1");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [showHandsEditModal, setShowHandsEditModal] = useState(false);
   const [showHandsConfigModal, setShowHandsConfigModal] = useState(false);
   const [newCustomHandName, setNewCustomHandName] = useState("");
@@ -339,6 +425,11 @@ export default function Dashboard() {
   const saveHandPrefs = (prefs: typeof handPrefs) => {
     setHandPrefs(prefs);
     localStorage.setItem("hand-counter-prefs", JSON.stringify(prefs));
+  };
+
+  const saveFavoriteTournamentNames = (items: string[]) => {
+    setFavoriteTournamentNames(items);
+    localStorage.setItem("tournament-favorites-v1", JSON.stringify(items));
   };
 
   const registerCustomHandResult = (handName: string, outcome: "win" | "loss") => {
@@ -537,8 +628,71 @@ export default function Dashboard() {
     });
   }, [consolidated, playTypeOrder, sortVenues, venueStats]);
 
-  // Tournament stats come from the new table-level endpoint (not session-level)
-  const tournamentStats = (tournamentStatsRaw ?? []).slice(0, 8);
+  const userLeague = useMemo<UserLeague>(() => {
+    const role = String((user as any)?.role ?? "").trim().toLowerCase();
+    if (role === "admin" || role === "developer" || role === "system_ai_service") {
+      return "High Roller";
+    }
+
+    const numericLevel = Number((user as any)?.leagueLevel ?? (user as any)?.ligaNivel ?? (user as any)?.rankLevel);
+    if (Number.isFinite(numericLevel) && numericLevel >= 0) {
+      return getLeagueFromLevel(numericLevel);
+    }
+
+    const explicitLeague = parseLeague((user as any)?.league)
+      ?? parseLeague((user as any)?.liga)
+      ?? parseLeague((user as any)?.leagueTier)
+      ?? parseLeague((user as any)?.rankLeague);
+    if (explicitLeague) return explicitLeague;
+
+    const starsFromUser = Number((user as any)?.starsLevel);
+    if (Number.isFinite(starsFromUser)) {
+      const normalizedStars = Math.max(0, Math.min(5, Math.round(starsFromUser)));
+      if (normalizedStars <= 0) return "Recreativo";
+      if (normalizedStars === 1) return "Grinder";
+      if (normalizedStars === 2) return "Reg";
+      if (normalizedStars === 3) return "Mid Stakes";
+      if (normalizedStars === 4) return "High Stakes";
+      return "The Edge";
+    }
+
+    // Default while legacy users are migrated to numeric league levels.
+    return "Reg";
+  }, [user]);
+
+  const userLeagueLevel = useMemo(() => getLeagueLevel(userLeague), [userLeague]);
+  const userLeagueLabel = useMemo(() => getAccessTierLabel(userLeague), [userLeague]);
+  const userLeagueEmoji = useMemo(() => getAccessTierEmoji(userLeague), [userLeague]);
+  const userLeagueCompact = useMemo(() => userLeagueLabel.replace(" (interno)", ""), [userLeagueLabel]);
+
+  const tournamentAccessLimit = useMemo(() => {
+    return getTournamentAccessLimitByLeague(userLeague);
+  }, [userLeague]);
+
+  const tournamentsByProfit = useMemo(() => {
+    return [...(tournamentStatsRaw ?? [])]
+      .filter((item: any) => (item?.tables ?? 0) > 0)
+      .sort((a: any, b: any) => {
+        const profitDiff = (b?.profit ?? 0) - (a?.profit ?? 0);
+        if (profitDiff !== 0) return profitDiff;
+        return (b?.tables ?? 0) - (a?.tables ?? 0);
+      });
+  }, [tournamentStatsRaw]);
+
+  const availableTournamentHistory = useMemo(() => {
+    return tournamentsByProfit.slice(0, tournamentAccessLimit);
+  }, [tournamentsByProfit, tournamentAccessLimit]);
+
+  const favoriteTournaments = useMemo(() => {
+    if (favoriteTournamentNames.length === 0) return [];
+    return availableTournamentHistory.filter((item: any) =>
+      favoriteTournamentNames.includes(String(item?.name ?? "")),
+    );
+  }, [availableTournamentHistory, favoriteTournamentNames]);
+
+  const visibleTournaments = activeTournamentTab === "favoritos"
+    ? favoriteTournaments
+    : availableTournamentHistory;
 
   const monthlyComparison = useMemo(() => {
     const monthlyProfit = new Map<string, number>();
@@ -1654,16 +1808,41 @@ export default function Dashboard() {
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <Trophy className="h-4 w-4 text-amber-500" /> Análise por Torneio
                   </CardTitle>
-                  <p className="text-xs text-muted-foreground">Mesas agrupadas pelo nome do torneio.</p>
+                  <p className="text-xs text-muted-foreground">Aba de favoritos e histórico por maiores resultados.</p>
                 </div>
-                <Badge variant="outline" className="text-[10px]">Top {tournamentStats.length}</Badge>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-[10px]">N{userLeagueLevel} · {userLeagueCompact} {userLeagueEmoji}</Badge>
+                  <Badge variant="outline" className="text-[10px]">Limite {tournamentAccessLimit} torneios</Badge>
+                </div>
               </div>
+              <div className="flex items-center gap-1.5 pt-1">
+                <Button
+                  size="sm"
+                  variant={activeTournamentTab === "favoritos" ? "default" : "ghost"}
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => setActiveTournamentTab("favoritos")}
+                >
+                  Favoritos
+                </Button>
+                <Button
+                  size="sm"
+                  variant={activeTournamentTab === "historico" ? "default" : "ghost"}
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => setActiveTournamentTab("historico")}
+                >
+                  Histórico
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Níveis: N0 Recreativo 🃏 · N1 Grinder ♣️ · N2 Reg ♠️ · N3 Mid Stakes ♦️ · N4-5 High Stakes ♥️ · N6 The Edge 🂡 · N7 High Roller 💰.
+              </p>
             </CardHeader>
             <CardContent className="pt-0 space-y-2">
-              {tournamentStats.length > 0 ? (
-                tournamentStats.map((tournament) => {
+              {visibleTournaments.length > 0 ? (
+                visibleTournaments.map((tournament: any, index: number) => {
                   const expanded = expandedTournament === tournament.name;
                   const hasSimilar = (tournament as any).similarNames?.length > 0;
+                  const isFavoriteTournament = favoriteTournamentNames.includes(String(tournament.name));
                   return (
                     <div key={tournament.name} className="rounded-lg border border-border/40 overflow-hidden">
                       <button
@@ -1673,6 +1852,9 @@ export default function Dashboard() {
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
+                            {activeTournamentTab === "historico" && (
+                              <span className="shrink-0 text-[10px] text-muted-foreground">#{index + 1}</span>
+                            )}
                             <p className="text-sm font-semibold truncate">{tournament.name}</p>
                             {hasSimilar && (
                               <span title={`Nome parecido com: ${(tournament as any).similarNames.join(", ")}`} className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -1685,6 +1867,20 @@ export default function Dashboard() {
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
+                          <button
+                            type="button"
+                            title={isFavoriteTournament ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              const next = isFavoriteTournament
+                                ? favoriteTournamentNames.filter((name) => name !== tournament.name)
+                                : [...favoriteTournamentNames, tournament.name];
+                              saveFavoriteTournamentNames(next);
+                            }}
+                            className="rounded p-1 hover:bg-muted/40"
+                          >
+                            <Star className={`h-4 w-4 ${isFavoriteTournament ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-yellow-400"}`} />
+                          </button>
                           <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                             {tournament.profit >= 0 ? "+" : ""}{formatCurrencyCompact(tournament.profit)}
                           </p>
@@ -1720,6 +1916,12 @@ export default function Dashboard() {
                               </p>
                             </div>
                           </div>
+                          <div className="border-t border-border/40 px-3 py-2 flex items-center justify-between bg-background/30">
+                            <p className="text-[11px] text-muted-foreground">Pronto para revisar e analisar este torneio no app.</p>
+                            <Link href="/hand-reviewer">
+                              <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]">Analisar</Button>
+                            </Link>
+                          </div>
                         </>
                       )}
                     </div>
@@ -1727,7 +1929,9 @@ export default function Dashboard() {
                 })
               ) : (
                 <div className="text-center py-6 text-sm text-muted-foreground">
-                  Nenhum torneio nomeado ainda.
+                  {activeTournamentTab === "favoritos"
+                    ? "Nenhum favorito salvo no limite do seu nível de acesso. Marque torneios com a estrela."
+                    : "Nenhum torneio nomeado ainda."}
                 </div>
               )}
             </CardContent>

@@ -882,3 +882,208 @@ export const playerStatsByPositionAndAbi = mysqlTable("player_stats_by_position_
 export type PlayerStatsByPositionAndAbi = typeof playerStatsByPositionAndAbi.$inferSelect;
 export type InsertPlayerStatsByPositionAndAbi = typeof playerStatsByPositionAndAbi.$inferInsert;
 
+/**
+ * ============================================================
+ * CACHE TABLES - For fast user data loading
+ * ============================================================
+ * These tables store pre-calculated statistics to avoid
+ * expensive recalculations on every dashboard load.
+ * Updated via background jobs when sessions change.
+ */
+
+/**
+ * User session statistics cache (consolidated online + live stats)
+ * Recalculated via background jobs, read directly on dashboard
+ */
+export const userSessionStatsCache = mysqlTable("user_session_stats_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  type: mysqlEnum("type", ["online", "live"]).notNull(),
+  
+  // Aggregated counts
+  totalSessions: int("totalSessions").notNull().default(0),
+  totalCashSessions: int("totalCashSessions").notNull().default(0),
+  totalTournaments: int("totalTournaments").notNull().default(0),
+  totalTournamentsPlayed: int("totalTournamentsPlayed").notNull().default(0),
+  
+  // Financial aggregates (in BRL centavos)
+  totalBuyIns: int("totalBuyIns").notNull().default(0),
+  totalCashOuts: int("totalCashOuts").notNull().default(0),
+  netProfit: int("netProfit").notNull().default(0),
+  roi: int("roi").notNull().default(0), // percentage * 100
+  
+  // Tournament specific
+  tournamentsItm: int("tournamentsItm").notNull().default(0),
+  tournamentsCashed: int("tournamentsCashed").notNull().default(0),
+  tournamentsTrophies: int("tournamentsTrophies").notNull().default(0),
+  avgTournamentPosition: int("avgTournamentPosition").notNull().default(0),
+  bestFinish: int("bestFinish"),
+  
+  // Time aggregates
+  totalPlayedMinutes: int("totalPlayedMinutes").notNull().default(0),
+  averageSessionMinutes: int("averageSessionMinutes").notNull().default(0),
+  hourlyRate: int("hourlyRate").notNull().default(0), // in centavos per hour
+  bb100Rate: int("bb100Rate").notNull().default(0),
+  
+  // Venue breakdown (JSON for flexibility)
+  venueStatsJson: mediumtext("venueStatsJson"),
+  
+  // Cache validity
+  lastRecalculated: timestamp("lastRecalculated").defaultNow().notNull(),
+  isStale: int("isStale").notNull().default(0),
+  staleSince: timestamp("staleSince"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserSessionStatsCache = typeof userSessionStatsCache.$inferSelect;
+export type InsertUserSessionStatsCache = typeof userSessionStatsCache.$inferInsert;
+
+/**
+ * Cached player metrics breakdown by ABI bucket
+ */
+export const playerAbiStatsCache = mysqlTable("player_abi_stats_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  abiBucket: varchar("abiBucket", { length: 32 }).notNull(),
+  
+  // Hand/tournament counts
+  handsPlayed: int("handsPlayed").notNull().default(0),
+  tournamentsPlayed: int("tournamentsPlayed").notNull().default(0),
+  tournamentsItm: int("tournamentsItm").notNull().default(0),
+  
+  // Poker stats
+  vpip: int("vpip").notNull().default(0),
+  pfr: int("pfr").notNull().default(0),
+  threeBet: int("threeBet").notNull().default(0),
+  cbetFlop: int("cbetFlop").notNull().default(0),
+  foldToCbet: int("foldToCbet").notNull().default(0),
+  bbDefense: int("bbDefense").notNull().default(0),
+  stealAttempt: int("stealAttempt").notNull().default(0),
+  aggressionFactor: int("aggressionFactor").notNull().default(0),
+  wtsd: int("wtsd").notNull().default(0),
+  wsd: int("wsd").notNull().default(0),
+  
+  // Financial
+  netChips: int("netChips").notNull().default(0),
+  roi: int("roi").notNull().default(0),
+  
+  // Cache validity
+  lastRecalculated: timestamp("lastRecalculated").defaultNow().notNull(),
+  isStale: int("isStale").notNull().default(0),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlayerAbiStatsCache = typeof playerAbiStatsCache.$inferSelect;
+export type InsertPlayerAbiStatsCache = typeof playerAbiStatsCache.$inferInsert;
+
+/**
+ * Queue for cache recalculation jobs
+ * Async processing: API adds jobs, background worker processes them
+ */
+export const cacheRecalcQueue = mysqlTable("cache_recalc_queue", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  jobType: mysqlEnum("jobType", ["full_recalc", "incremental", "venue_stats", "tournament_stats"]).notNull(),
+  priority: int("priority").notNull().default(5),
+  
+  // Trigger info
+  triggeredBy: mysqlEnum("triggeredBy", ["manual", "new_session", "session_edit", "scheduled"]).notNull().default("manual"),
+  triggeredByUserId: int("triggeredByUserId"),
+  
+  // Processing state
+  status: mysqlEnum("status", ["pending", "processing", "completed", "failed", "skipped"]).notNull().default("pending"),
+  processedAt: timestamp("processedAt"),
+  completedAt: timestamp("completedAt"),
+  errorMessage: text("errorMessage"),
+  retryCount: int("retryCount").notNull().default(0),
+  maxRetries: int("maxRetries").notNull().default(3),
+  
+  // Metadata
+  estimatedDurationMs: int("estimatedDurationMs"),
+  actualDurationMs: int("actualDurationMs"),
+  processorInstanceId: varchar("processorInstanceId", { length: 64 }),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CacheRecalcQueue = typeof cacheRecalcQueue.$inferSelect;
+export type InsertCacheRecalcQueue = typeof cacheRecalcQueue.$inferInsert;
+
+/**
+ * Cache invalidation tracking
+ * When a session is created/edited, mark related caches as stale
+ */
+export const cacheInvalidationLog = mysqlTable("cache_invalidation_log", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  invalidationType: varchar("invalidationType", { length: 64 }).notNull(),
+  relatedSessionId: int("relatedSessionId"),
+  relatedTournamentId: int("relatedTournamentId"),
+  reason: text("reason"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CacheInvalidationLog = typeof cacheInvalidationLog.$inferSelect;
+export type InsertCacheInvalidationLog = typeof cacheInvalidationLog.$inferInsert;
+
+/**
+ * Leaderboard cache (for global rankings that update periodically)
+ */
+export const leaderboardCache = mysqlTable("leaderboard_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  rank: int("rank").notNull(),
+  metric: mysqlEnum("metric", ["profit", "roi", "bb100", "tournaments_itm", "tournaments_trophies"]).notNull().default("profit"),
+  
+  // Cached snapshot
+  metricValue: int("metricValue").notNull(),
+  displayValue: varchar("displayValue", { length: 64 }),
+  
+  // User snapshot
+  userName: varchar("userName", { length: 255 }),
+  userAvatarUrl: varchar("userAvatarUrl", { length: 512 }),
+  
+  lastRecalculated: timestamp("lastRecalculated").defaultNow().notNull(),
+  isStale: int("isStale").notNull().default(0),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LeaderboardCache = typeof leaderboardCache.$inferSelect;
+export type InsertLeaderboardCache = typeof leaderboardCache.$inferInsert;
+
+/**
+ * Bankroll history cache (for chart data)
+ */
+export const bankrollHistoryCache = mysqlTable("bankroll_history_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  type: mysqlEnum("type", ["online", "live", "both"]).notNull().default("both"),
+  
+  // Dados comprimidos do histórico (JSON array)
+  historyJson: mediumtext("historyJson").notNull(),
+  
+  // Estatísticas de cache
+  totalPoints: int("totalPoints").notNull().default(0),
+  dateRangeStart: timestamp("dateRangeStart"),
+  dateRangeEnd: timestamp("dateRangeEnd"),
+  
+  // Cache validity
+  lastRecalculated: timestamp("lastRecalculated").defaultNow().notNull(),
+  isStale: int("isStale").notNull().default(0),
+  staleSince: timestamp("staleSince"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BankrollHistoryCache = typeof bankrollHistoryCache.$inferSelect;
+export type InsertBankrollHistoryCache = typeof bankrollHistoryCache.$inferInsert;
+

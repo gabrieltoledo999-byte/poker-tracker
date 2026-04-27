@@ -135,6 +135,38 @@ const replayHandInput = z.object({
   handContextJson: z.string().optional(),
 });
 
+const BOARD_ACCESS_IDENTIFIERS = ["toleto", "hugo"];
+const BOARD_ACCESS_EMAILS = ["gabriel.toledo999@gmail.com"];
+
+function normalizeIdentityToken(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function isBoardAdmin(user: {
+  role?: string | null;
+  name?: string | null;
+  email?: string | null;
+  openId?: string | null;
+} | null | undefined): boolean {
+  if (!user) return false;
+  if (String(user.role ?? "").toLowerCase() !== "admin") return false;
+
+  const tokens = [user.name, user.email, user.openId]
+    .map(normalizeIdentityToken)
+    .filter(Boolean);
+
+  const normalizedEmail = normalizeIdentityToken(user.email);
+  if (normalizedEmail && BOARD_ACCESS_EMAILS.includes(normalizedEmail)) {
+    return true;
+  }
+
+  return tokens.some((token) => BOARD_ACCESS_IDENTIFIERS.some((id) => token.includes(id)));
+}
+
 const replayActionInput = z.object({
   handRef: z.string().min(1).max(120),
   street: z.enum(["preflop", "flop", "turn", "river", "showdown", "summary"]),
@@ -666,6 +698,12 @@ export const appRouter = router({
           }
         }
 
+        // Invalidate cache for this user
+        const { invalidateCacheForSession } = await import("./dbCacheWrappers.js");
+        await invalidateCacheForSession(ctx.user.id).catch(err =>
+          console.warn("[Cache] Error invalidating on session create:", err)
+        );
+
         return session;
       }),
 
@@ -750,6 +788,12 @@ export const appRouter = router({
           }
         }
 
+        // Invalidate cache for this user
+        const { invalidateCacheForSession: invalidateCacheForUpdate } = await import("./dbCacheWrappers.js");
+        await invalidateCacheForUpdate(ctx.user.id).catch(err =>
+          console.warn("[Cache] Error invalidating on session update:", err)
+        );
+
         return updatedSession;
       }),
 
@@ -769,6 +813,13 @@ export const appRouter = router({
             await updateVenueBalance(venue.id, ctx.user.id, venue.balance - profit, venue.currency as any, "session", {});
           }
         }
+
+        // Invalidate cache for this user
+        const { invalidateCacheForSession: invalidateCacheForDelete } = await import("./dbCacheWrappers.js");
+        await invalidateCacheForDelete(ctx.user.id).catch(err =>
+          console.warn("[Cache] Error invalidating on session delete:", err)
+        );
+
         return result;
       }),
 
@@ -1701,8 +1752,9 @@ export const appRouter = router({
         type: z.enum(["online", "live"]).optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
+        const { getBankrollHistoryWithCache } = await import("../dbCacheWrappers.js");
         const settings = await getBankrollSettings(ctx.user.id);
-        const sessions = await getBankrollHistory(ctx.user.id, input?.type);
+        const sessions = await getBankrollHistoryWithCache(ctx.user.id, input?.type);
         
         let initialOnline = settings?.initialOnline ?? 0;
         let initialLive = settings?.initialLive ?? 0;
@@ -2086,6 +2138,7 @@ export const appRouter = router({
           },
           positions: {
             byPosition: [],
+            metricBreakdownByPosition: {},
             mostProfitable: null,
             leastProfitable: null,
             biggestLoss: null,
@@ -2234,11 +2287,144 @@ export const appRouter = router({
 
   // Admin diagnostic router (admin-only)
   admin: router({
+    companyOverview: protectedProcedure
+      .query(async ({ ctx }) => {
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
+        }
+
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable." });
+
+        const onlineWindowMinutes = 15;
+
+        const [totalRows] = await db.execute(
+          sql`SELECT
+                COUNT(*) AS totalUsers,
+                SUM(CASE WHEN email IS NOT NULL AND TRIM(email) <> '' THEN 1 ELSE 0 END) AS withEmail,
+                SUM(CASE WHEN avatarUrl IS NOT NULL AND TRIM(avatarUrl) <> '' THEN 1 ELSE 0 END) AS withAvatar,
+                SUM(CASE WHEN lastSignedIn >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${onlineWindowMinutes} MINUTE) THEN 1 ELSE 0 END) AS onlineNow
+              FROM users`
+        ) as any;
+
+        const [userRows] = await db.execute(
+          sql`SELECT
+                id,
+                name,
+                email,
+                openId,
+                avatarUrl,
+                role,
+                loginMethod,
+                inviteCode,
+                invitedBy,
+                inviteCount,
+                preferredPlayType,
+                preferredPlatforms,
+                preferredFormats,
+                preferredBuyIns,
+                preferredBuyInsOnline,
+                preferredBuyInsLive,
+                playsMultiPlatform,
+                showInGlobalRanking,
+                showInFriendsRanking,
+                rankingConsentAnsweredAt,
+                playStyleAnsweredAt,
+                onboardingCompletedAt,
+                createdAt,
+                updatedAt,
+                lastSignedIn
+              FROM users
+              ORDER BY createdAt DESC`
+        ) as any;
+
+        const totalsRow = (totalRows as any[])?.[0] ?? {};
+        const totalUsers = Number(totalsRow.totalUsers ?? 0);
+        const withEmail = Number(totalsRow.withEmail ?? 0);
+        const withAvatar = Number(totalsRow.withAvatar ?? 0);
+        const onlineNow = Number(totalsRow.onlineNow ?? 0);
+
+        const users = (userRows as any[]).map((row) => {
+          const lastSignedIn = row.lastSignedIn ? new Date(row.lastSignedIn) : null;
+          const isOnline = lastSignedIn
+            ? (Date.now() - lastSignedIn.getTime()) <= onlineWindowMinutes * 60 * 1000
+            : false;
+
+          return {
+            id: Number(row.id),
+            name: row.name ? String(row.name) : "Sem nome",
+            email: row.email ? String(row.email) : "",
+            openId: row.openId ? String(row.openId) : "",
+            avatarUrl: row.avatarUrl ? String(row.avatarUrl) : "",
+            role: row.role ? String(row.role) : "user",
+            loginMethod: row.loginMethod ? String(row.loginMethod) : "",
+            inviteCode: row.inviteCode ? String(row.inviteCode) : "",
+            invitedBy: row.invitedBy != null ? Number(row.invitedBy) : null,
+            inviteCount: Number(row.inviteCount ?? 0),
+            preferredPlayType: row.preferredPlayType ? String(row.preferredPlayType) : null,
+            preferredPlatforms: row.preferredPlatforms ? String(row.preferredPlatforms) : "",
+            preferredFormats: row.preferredFormats ? String(row.preferredFormats) : "",
+            preferredBuyIns: row.preferredBuyIns ? String(row.preferredBuyIns) : "",
+            preferredBuyInsOnline: row.preferredBuyInsOnline ? String(row.preferredBuyInsOnline) : "",
+            preferredBuyInsLive: row.preferredBuyInsLive ? String(row.preferredBuyInsLive) : "",
+            playsMultiPlatform: Number(row.playsMultiPlatform ?? 0) === 1,
+            showInGlobalRanking: Number(row.showInGlobalRanking ?? 0) === 1,
+            showInFriendsRanking: Number(row.showInFriendsRanking ?? 0) === 1,
+            rankingConsentAnsweredAt: row.rankingConsentAnsweredAt ? new Date(row.rankingConsentAnsweredAt) : null,
+            playStyleAnsweredAt: row.playStyleAnsweredAt ? new Date(row.playStyleAnsweredAt) : null,
+            onboardingCompletedAt: row.onboardingCompletedAt ? new Date(row.onboardingCompletedAt) : null,
+            createdAt: row.createdAt ? new Date(row.createdAt) : null,
+            updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
+            lastSignedIn,
+            isOnline,
+            paymentStatus: "Pago" as const,
+            tier: "High Roller" as const,
+          };
+        });
+
+        return {
+          generatedAt: new Date(),
+          onlineWindowMinutes,
+          totals: {
+            totalUsers,
+            paidUsers: totalUsers,
+            highRollers: totalUsers,
+            withEmail,
+            withAvatar,
+            onlineNow,
+          },
+          users,
+        };
+      }),
+    onlineUsers: protectedProcedure
+      .query(async ({ ctx }) => {
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
+        }
+
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable." });
+
+        const [rows] = await db.execute(
+          sql`SELECT
+                COUNT(*) AS totalUsers,
+                SUM(CASE WHEN lastSignedIn >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS onlineNow
+              FROM users`
+        ) as any;
+
+        const row = (rows as any[])?.[0] ?? {};
+        return {
+          onlineNow: Number(row.onlineNow ?? 0),
+          totalUsers: Number(row.totalUsers ?? 0),
+          highRollers: Number(row.totalUsers ?? 0),
+          windowMinutes: 15,
+        };
+      }),
     diagnoseUser: protectedProcedure
       .input(z.object({ search: z.string().min(1).max(100) }))
       .query(async ({ ctx, input }) => {
-        if (ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Somente admin." });
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
         }
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable." });
@@ -2281,8 +2467,8 @@ export const appRouter = router({
     cleanOrphanTables: protectedProcedure
       .input(z.object({ userId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Somente admin." });
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
         }
         const deleted = await deleteOrphanTablesForUser(input.userId);
         return { deleted };

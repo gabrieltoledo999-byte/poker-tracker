@@ -2691,82 +2691,288 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
 }
 
 // ─── Main Sessions Page ────────────────────────────────────────────────────────
-const FALLING_CHIP_IMAGES = [
-  { src: "/branding/session-chips/1.png", zoom: 150, posY: 50 },
-  { src: "/branding/session-chips/5.png", zoom: 148, posY: 50 },
-  { src: "/branding/session-chips/10.png", zoom: 152, posY: 49 },
-  { src: "/branding/session-chips/25.png", zoom: 150, posY: 50 },
-  { src: "/branding/session-chips/100.png", zoom: 150, posY: 50 },
-  { src: "/branding/session-chips/500.png", zoom: 151, posY: 50 },
-  { src: "/branding/session-chips/1000.png", zoom: 153, posY: 49 },
-  { src: "/branding/session-chips/5000.png", zoom: 154, posY: 49 },
+type SessionChipValue = "5" | "10" | "25" | "100" | "500" | "1000" | "10000" | "25000";
+type SessionChipDepth = "far" | "mid" | "near";
+
+type SessionChipAsset = {
+  value: SessionChipValue;
+  src: string;
+  weight: number;
+  glow: string;
+  imageScale: number;
+  imageOffsetY: number;
+};
+
+type SessionChipSpec = {
+  id: string;
+  asset: SessionChipAsset;
+  depth: SessionChipDepth;
+  left: number;
+  size: number;
+  opacity: number;
+  blur: number;
+  saturate: number;
+  brightness: number;
+  fallDuration: number;
+  swayDuration: number;
+  spinDuration: number;
+  delay: number;
+  drift: number;
+  rotateFrom: number;
+  rotateTo: number;
+  glowOpacity: number;
+};
+
+const FALLING_CHIP_ASSETS: readonly SessionChipAsset[] = [
+  { value: "5", src: "/branding/session-chips/5.png", weight: 28, glow: "rgba(244, 114, 182, 0.14)", imageScale: 1.32, imageOffsetY: 44 },
+  { value: "10", src: "/branding/session-chips/10.png", weight: 26, glow: "rgba(59, 130, 246, 0.14)", imageScale: 1.32, imageOffsetY: 44 },
+  { value: "25", src: "/branding/session-chips/25.png", weight: 24, glow: "rgba(34, 211, 238, 0.14)", imageScale: 1.31, imageOffsetY: 44 },
+  { value: "100", src: "/branding/session-chips/100.png", weight: 18, glow: "rgba(34, 197, 94, 0.14)", imageScale: 1.31, imageOffsetY: 44 },
+  { value: "500", src: "/branding/session-chips/500.png", weight: 12, glow: "rgba(249, 115, 22, 0.13)", imageScale: 1.31, imageOffsetY: 44 },
+  { value: "1000", src: "/branding/session-chips/1000.png", weight: 7, glow: "rgba(239, 68, 68, 0.13)", imageScale: 1.31, imageOffsetY: 44 },
+  { value: "10000", src: "/branding/session-chips/10000.png", weight: 3, glow: "rgba(250, 204, 21, 0.13)", imageScale: 1.3, imageOffsetY: 44 },
+  { value: "25000", src: "/branding/session-chips/25000.png", weight: 1, glow: "rgba(168, 85, 247, 0.16)", imageScale: 1.29, imageOffsetY: 44 },
 ] as const;
 
-function FallingChip({ left, size, delay, duration, imageSrc, imageZoom, imagePosY, sway, rotateFrom, rotateTo }: {
-  left: number; size: number; delay: number; duration: number; imageSrc: string; imageZoom: number; imagePosY: number; sway: number; rotateFrom: number; rotateTo: number;
-}) {
+const SESSION_CHIP_ASSET_BY_VALUE = FALLING_CHIP_ASSETS.reduce<Record<SessionChipValue, SessionChipAsset>>((acc, asset) => {
+  acc[asset.value] = asset;
+  return acc;
+}, {} as Record<SessionChipValue, SessionChipAsset>);
+
+const SESSION_CHIP_DEPTH_STYLES: Record<SessionChipDepth, {
+  size: readonly [number, number];
+  opacity: readonly [number, number];
+  blur: readonly [number, number];
+  saturate: readonly [number, number];
+  brightness: readonly [number, number];
+  fall: readonly [number, number];
+  sway: readonly [number, number];
+  spin: readonly [number, number];
+  drift: readonly [number, number];
+  glowOpacity: readonly [number, number];
+}> = {
+  far: {
+    size: [68, 96],
+    opacity: [0.13, 0.16],
+    blur: [1.2, 2.2],
+    saturate: [0.88, 0.94],
+    brightness: [0.88, 0.96],
+    fall: [34, 44],
+    sway: [10, 14],
+    spin: [20, 28],
+    drift: [10, 18],
+    glowOpacity: [0.08, 0.12],
+  },
+  mid: {
+    size: [88, 124],
+    opacity: [0.16, 0.2],
+    blur: [0.6, 1.4],
+    saturate: [0.9, 0.97],
+    brightness: [0.92, 1],
+    fall: [28, 36],
+    sway: [12, 18],
+    spin: [18, 24],
+    drift: [16, 24],
+    glowOpacity: [0.1, 0.14],
+  },
+  near: {
+    size: [110, 150],
+    opacity: [0.19, 0.25],
+    blur: [0.2, 1],
+    saturate: [0.94, 1.02],
+    brightness: [0.96, 1.06],
+    fall: [24, 30],
+    sway: [14, 20],
+    spin: [16, 22],
+    drift: [18, 28],
+    glowOpacity: [0.12, 0.18],
+  },
+};
+
+const SESSION_CHIP_CORE_SLOTS: readonly Array<{ value: SessionChipValue; depth: SessionChipDepth; left: number }> = [
+  { value: "5", depth: "far", left: 6 },
+  { value: "10", depth: "mid", left: 17 },
+  { value: "25", depth: "far", left: 28 },
+  { value: "100", depth: "mid", left: 82 },
+  { value: "500", depth: "near", left: 73 },
+  { value: "1000", depth: "far", left: 91 },
+  { value: "10000", depth: "mid", left: 11 },
+  { value: "25000", depth: "far", left: 95 },
+] as const;
+
+const SESSION_CHIP_EXTRA_SLOTS: readonly Array<{ depth: SessionChipDepth; left: number }> = [
+  { depth: "far", left: 22 },
+  { depth: "mid", left: 36 },
+  { depth: "far", left: 41 },
+  { depth: "mid", left: 61 },
+  { depth: "far", left: 68 },
+  { depth: "near", left: 86 },
+] as const;
+
+function randomBetween(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+function pickWeightedBackdropChipAsset() {
+  const totalWeight = FALLING_CHIP_ASSETS.reduce((sum, asset) => sum + asset.weight, 0);
+  let cursor = Math.random() * totalWeight;
+  for (const asset of FALLING_CHIP_ASSETS) {
+    cursor -= asset.weight;
+    if (cursor <= 0) return asset;
+  }
+  return FALLING_CHIP_ASSETS[0];
+}
+
+function buildBackdropChipSpec(
+  id: string,
+  asset: SessionChipAsset,
+  depth: SessionChipDepth,
+  left: number,
+): SessionChipSpec {
+  const style = SESSION_CHIP_DEPTH_STYLES[depth];
+  const rareBoost = asset.value === "25000" ? 1.1 : asset.value === "10000" ? 1.04 : 1;
+
+  return {
+    id,
+    asset,
+    depth,
+    left: left + randomBetween(-2.6, 2.6),
+    size: randomBetween(style.size[0], style.size[1]) * rareBoost,
+    opacity: randomBetween(style.opacity[0], style.opacity[1]),
+    blur: randomBetween(style.blur[0], style.blur[1]),
+    saturate: randomBetween(style.saturate[0], style.saturate[1]),
+    brightness: randomBetween(style.brightness[0], style.brightness[1]),
+    fallDuration: randomBetween(style.fall[0], style.fall[1]),
+    swayDuration: randomBetween(style.sway[0], style.sway[1]),
+    spinDuration: randomBetween(style.spin[0], style.spin[1]),
+    delay: -randomBetween(0, 26),
+    drift: randomBetween(style.drift[0], style.drift[1]) * (left < 50 ? 1 : -1),
+    rotateFrom: randomBetween(-16, 16),
+    rotateTo: randomBetween(-40, 40),
+    glowOpacity: randomBetween(style.glowOpacity[0], style.glowOpacity[1]),
+  };
+}
+
+function FallingChip({ chip }: { chip: SessionChipSpec }) {
   return (
     <div
-      className="absolute top-0 overflow-hidden rounded-full opacity-[0.28] shadow-[0_18px_32px_rgba(0,0,0,0.35)]"
+      className="absolute top-0 left-0 will-change-transform"
       style={{
-        left: `${left}%`,
-        width: `${size}px`,
-        height: `${size}px`,
-        backgroundImage: `url(${imageSrc})`,
-        backgroundSize: `${imageZoom}%`,
-        backgroundPosition: `50% ${imagePosY}%`,
-        backgroundRepeat: "no-repeat",
-        border: "1px solid rgba(255,255,255,0.25)",
-        animation: `chipFall ${duration}s linear ${delay}s infinite, chipSway ${(duration / 2).toFixed(2)}s ease-in-out ${delay}s infinite alternate`,
-        // custom props consumed by keyframes
-        ["--chip-sway" as any]: `${sway}px`,
-        ["--chip-rot-from" as any]: `${rotateFrom}deg`,
-        ["--chip-rot-to" as any]: `${rotateTo}deg`,
+        left: `${chip.left}%`,
+        animation: `session-chip-fall ${chip.fallDuration}s linear ${chip.delay}s infinite`,
       }}
     >
-      <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_28%_20%,rgba(255,255,255,0.22),transparent_38%)]" />
-      <div className="absolute inset-[7%] rounded-full border border-white/30" />
+      <div
+        className="will-change-transform"
+        style={{
+          animation: `session-chip-drift ${chip.swayDuration}s ease-in-out ${chip.delay}s infinite alternate`,
+          ["--chip-drift" as const]: `${chip.drift}px`,
+        }}
+      >
+        <div
+          className="relative"
+          style={{
+            width: `${chip.size}px`,
+            height: `${chip.size}px`,
+            opacity: chip.opacity,
+            filter: `saturate(${chip.saturate}) brightness(${chip.brightness})`,
+          }}
+        >
+          <div
+            className="relative h-full w-full overflow-hidden rounded-full will-change-transform"
+            style={{
+              animation: `session-chip-spin ${chip.spinDuration}s ease-in-out ${chip.delay}s infinite alternate`,
+              ["--chip-rotate-from" as const]: `${chip.rotateFrom}deg`,
+              ["--chip-rotate-to" as const]: `${chip.rotateTo}deg`,
+            }}
+          >
+            <span
+              className="absolute inset-[14%] rounded-full blur-sm"
+              style={{
+                background: chip.asset.glow,
+                opacity: chip.glowOpacity,
+                transform: chip.asset.value === "25000" ? "scale(1.12)" : undefined,
+                mixBlendMode: "screen",
+              }}
+            />
+            <img
+              src={chip.asset.src}
+              alt=""
+              aria-hidden
+              draggable={false}
+              className="absolute left-1/2 top-1/2 h-full w-full max-w-none select-none object-cover"
+              style={{
+                width: `${chip.asset.imageScale * 100}%`,
+                height: `${chip.asset.imageScale * 100}%`,
+                objectPosition: `center ${chip.asset.imageOffsetY}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 function SessionsPageBackdropChips() {
   const chips = useMemo(() => {
-    const count = 18;
-    return Array.from({ length: count }).map((_, i) => {
-      const image = FALLING_CHIP_IMAGES[i % FALLING_CHIP_IMAGES.length];
-      return {
-        id: i,
-        left: Math.random() * 96,
-        size: 48 + Math.random() * 80,
-        delay: -Math.random() * 14,
-        duration: 10 + Math.random() * 10,
-        imageSrc: image.src,
-        imageZoom: image.zoom,
-        imagePosY: image.posY,
-        sway: 20 + Math.random() * 60,
-        rotateFrom: -180 + Math.random() * 180,
-        rotateTo: 180 + Math.random() * 360,
-      };
-    });
+    const baseChips = SESSION_CHIP_CORE_SLOTS.map((slot, index) =>
+      buildBackdropChipSpec(`core-${index}`, SESSION_CHIP_ASSET_BY_VALUE[slot.value], slot.depth, slot.left),
+    );
+
+    const extraChips = SESSION_CHIP_EXTRA_SLOTS.map((slot, index) =>
+      buildBackdropChipSpec(`extra-${index}`, pickWeightedBackdropChipAsset(), slot.depth, slot.left),
+    );
+
+    return [...baseChips, ...extraChips];
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden>
+    <div
+      className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      aria-hidden
+      style={{
+        maskImage: "linear-gradient(180deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 84%, rgba(0,0,0,0) 100%)",
+        WebkitMaskImage: "linear-gradient(180deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 84%, rgba(0,0,0,0) 100%)",
+      }}
+    >
       <style>{`
-        @keyframes chipFall {
-          0% { transform: translate3d(0, -20vh, 0) rotate(var(--chip-rot-from)); }
-          100% { transform: translate3d(0, 120vh, 0) rotate(var(--chip-rot-to)); }
+        @keyframes session-chip-fall {
+          0% { transform: translate3d(0, -24vh, 0); }
+          100% { transform: translate3d(0, 118vh, 0); }
         }
-        @keyframes chipSway {
-          0% { margin-left: calc(var(--chip-sway) * -1); }
-          100% { margin-left: var(--chip-sway); }
+        @keyframes session-chip-drift {
+          0% { transform: translate3d(calc(var(--chip-drift) * -0.35), 0, 0); }
+          50% { transform: translate3d(var(--chip-drift), 0, 0); }
+          100% { transform: translate3d(calc(var(--chip-drift) * -0.2), 0, 0); }
+        }
+        @keyframes session-chip-spin {
+          0% { transform: rotate(var(--chip-rotate-from)); }
+          100% { transform: rotate(var(--chip-rotate-to)); }
         }
       `}</style>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.05),_transparent_46%),radial-gradient(circle_at_bottom,_rgba(34,197,94,0.04),_transparent_44%)]" />
-      {chips.map((c) => (
-        <FallingChip key={c.id} {...c} />
+
+      {chips.map((chip) => (
+        <FallingChip key={chip.id} chip={chip} />
       ))}
+
+      <div
+        className="absolute top-0 bottom-0 hidden md:block"
+        style={{
+          left: "clamp(248px, 21vw, 308px)",
+          width: "42px",
+          background: "linear-gradient(90deg, rgba(2,6,23,0.32) 0%, rgba(2,6,23,0.18) 38%, rgba(2,6,23,0) 100%)",
+        }}
+      />
+
+      <div
+        className="absolute inset-x-0 bottom-0"
+        style={{
+          height: "74px",
+          background: "linear-gradient(180deg, rgba(2,6,23,0) 0%, rgba(2,6,23,0.22) 100%)",
+        }}
+      />
     </div>
   );
 }

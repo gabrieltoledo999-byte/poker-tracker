@@ -30,7 +30,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { SplashScreen } from "./SplashScreen";
 import { trpc } from "@/lib/trpc";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const FEED_LAST_SEEN_KEY_PREFIX = "feed-last-seen-ms";
@@ -52,8 +52,28 @@ const menuItems = [
   { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
-const getAdminMenuItems = (userRole?: string | null) => {
-  if (userRole === "admin") {
+const BOARD_ACCESS_IDENTIFIERS = ["toleto", "hugo"];
+const BOARD_ACCESS_EMAILS = ["gabriel.toledo999@gmail.com"];
+
+function normalizeIdentityToken(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function isBoardAdminUser(user: { role?: string | null; name?: string | null; email?: string | null; openId?: string | null } | null | undefined): boolean {
+  if (!user) return false;
+  if (String(user.role ?? "").toLowerCase() !== "admin") return false;
+  const normalizedEmail = normalizeIdentityToken(user.email);
+  if (normalizedEmail && BOARD_ACCESS_EMAILS.includes(normalizedEmail)) return true;
+  const tokens = [user.name, user.email, user.openId].map(normalizeIdentityToken).filter(Boolean);
+  return tokens.some((token) => BOARD_ACCESS_IDENTIFIERS.some((id) => token.includes(id)));
+}
+
+const getAdminMenuItems = (user?: { role?: string | null; name?: string | null; email?: string | null; openId?: string | null } | null) => {
+  if (isBoardAdminUser(user)) {
     return [{ icon: ShieldCheck, label: "Administracao", path: "/admin" }];
   }
   return [];
@@ -66,6 +86,73 @@ function getAvatarSrc(params: { id?: number | null; name?: string | null; email?
   const seedRaw = params.name?.trim() || params.email?.trim() || String(params.id ?? "user");
   const seed = encodeURIComponent(seedRaw);
   return `https://api.dicebear.com/9.x/thumbs/svg?seed=${seed}`;
+}
+
+type UserLeague = "Recreativo" | "Grinder" | "Reg" | "Mid Stakes" | "High Stakes" | "The Edge" | "High Roller";
+
+function getAccessTierEmoji(league: UserLeague): string {
+  if (league === "Recreativo") return "🃏";
+  if (league === "Grinder") return "♣️";
+  if (league === "Reg") return "♠️";
+  if (league === "Mid Stakes") return "♦️";
+  if (league === "High Stakes") return "♥️";
+  if (league === "The Edge") return "🂡";
+  return "💰";
+}
+
+function getAccessTierLabel(league: UserLeague): string {
+  return league === "High Roller" ? "High Roller (interno)" : league;
+}
+
+function normalizeLeagueToken(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function parseLeague(value: unknown): UserLeague | null {
+  const token = normalizeLeagueToken(String(value ?? ""));
+  if (!token) return null;
+
+  if (token === "recreativo" || token === "casual" || token === "entry") return "Recreativo";
+  if (token === "grinder") return "Grinder";
+  if (token === "reg" || token === "regular") return "Reg";
+  if (token === "midstakes" || token === "mid stakes") return "Mid Stakes";
+  if (token === "highstakes" || token === "high stakes") return "High Stakes";
+  if (token === "the edge" || token === "theedge" || token === "edge") return "The Edge";
+  if (token === "high roller" || token === "highroller" || token === "roller") return "High Roller";
+
+  // Legacy league labels mapped into new poker tiers.
+  if (token === "bronze" || token === "prata" || token === "silver") return "Recreativo";
+  if (token === "ouro" || token === "gold") return "Grinder";
+  if (token === "platina" || token === "platinum") return "Reg";
+  if (token === "esmeralda" || token === "emerald") return "Mid Stakes";
+  if (token === "diamante" || token === "diamond") return "High Stakes";
+  if (token === "mestre" || token === "master" || token === "grao-mestre" || token === "grao mestre" || token === "grandmaster") return "The Edge";
+  return null;
+}
+
+function getLeagueFromLevel(levelInput: number): UserLeague {
+  const level = Math.max(0, Math.round(levelInput));
+  if (level <= 0) return "Recreativo";
+  if (level === 1) return "Grinder";
+  if (level === 2) return "Reg";
+  if (level === 3) return "Mid Stakes";
+  if (level <= 5) return "High Stakes";
+  if (level === 6) return "The Edge";
+  return "High Roller";
+}
+
+function getLeagueLevel(league: UserLeague): number {
+  if (league === "Recreativo") return 0;
+  if (league === "Grinder") return 1;
+  if (league === "Reg") return 2;
+  if (league === "Mid Stakes") return 3;
+  if (league === "High Stakes") return 4;
+  if (league === "The Edge") return 6;
+  return 7;
 }
 
 export default function TopNavLayout({ children }: { children: React.ReactNode }) {
@@ -129,7 +216,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Combine regular menu items with admin items (only if user is admin)
-  const visibleMenuItems = [...menuItems, ...getAdminMenuItems(user?.role)];
+  const visibleMenuItems = [...menuItems, ...getAdminMenuItems(user as any)];
 
   useEffect(() => {
     if (!user?.id) return;
@@ -240,6 +327,43 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
     window.location.replace("/login");
     return <SplashScreen />;
   }
+
+  const userLeague: UserLeague = (() => {
+    const role = String(user.role ?? "").trim().toLowerCase();
+    if (role === "admin" || role === "developer" || role === "system_ai_service") {
+      return "High Roller";
+    }
+
+    const numericLevel = Number((user as any)?.leagueLevel ?? (user as any)?.ligaNivel ?? (user as any)?.rankLevel);
+    if (Number.isFinite(numericLevel) && numericLevel >= 0) {
+      return getLeagueFromLevel(numericLevel);
+    }
+
+    const explicitLeague = parseLeague((user as any)?.league)
+      ?? parseLeague((user as any)?.liga)
+      ?? parseLeague((user as any)?.leagueTier)
+      ?? parseLeague((user as any)?.rankLeague);
+    if (explicitLeague) return explicitLeague;
+
+    const starsFromUser = Number((user as any)?.starsLevel);
+    if (Number.isFinite(starsFromUser)) {
+      const normalizedStars = Math.max(0, Math.min(5, Math.round(starsFromUser)));
+      if (normalizedStars <= 0) return "Recreativo";
+      if (normalizedStars === 1) return "Grinder";
+      if (normalizedStars === 2) return "Reg";
+      if (normalizedStars === 3) return "Mid Stakes";
+      if (normalizedStars === 4) return "High Stakes";
+      return "The Edge";
+    }
+
+    return "Reg";
+  })();
+
+  const userLeagueLabel = getAccessTierLabel(userLeague);
+  const userLeagueEmoji = getAccessTierEmoji(userLeague);
+  const userLeagueCompact = userLeagueLabel.replace(" (interno)", "");
+
+  const userAccessLevel = getLeagueLevel(userLeague);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -364,6 +488,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                 <div className="flex flex-col items-start min-w-0 flex-1">
                   <span className="text-sm font-medium truncate w-full">{user.name}</span>
                   <span className="text-xs text-muted-foreground truncate w-full">{user.email}</span>
+                  <span className="text-[11px] text-primary font-semibold truncate w-full">N{userAccessLevel} · {userLeagueCompact} {userLeagueEmoji}</span>
                 </div>
               </button>
             </DropdownMenuTrigger>
@@ -595,6 +720,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
                 <div className="flex flex-col min-w-0">
                   <span className="text-sm font-medium truncate">{user.name}</span>
                   <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+                  <span className="text-[11px] text-primary font-semibold">N{userAccessLevel} · {userLeagueCompact} {userLeagueEmoji}</span>
                 </div>
               </div>
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-destructive" onClick={() => logoutMutation.mutate()}>
