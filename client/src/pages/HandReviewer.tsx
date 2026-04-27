@@ -1157,7 +1157,78 @@ export default function HandReviewer() {
     setSelectedMetricForPositions((prev) => (prev === key ? null : key));
   };
 
-  const metricRowsForPanel = selectedMetricForPositions
+  const getOpportunityCountForMetric = (key: MetricKey, opp: OpportunityCounts): number => {
+    switch (key) {
+      case "vpip":
+      case "pfr":
+      case "threeBet":
+      case "wtsd":
+        return Number(opp.hands ?? 0);
+      case "wsd":
+        return roundMade(activeTab === "tournament" ? Number(analyzeMutation.data?.stats?.wtsd ?? 0) : Number((playerHistoryQuery.data?.summary as any)?.wtsdAvg ?? 0), Number(opp.hands ?? 0));
+      case "cbetFlop":
+        return Number(opp.cbetFlop ?? 0);
+      case "cbetTurn":
+        return Number(opp.cbetTurn ?? 0);
+      case "foldToCbet":
+        return Number(opp.foldToCbet ?? 0);
+      case "bbDefense":
+        return Number(opp.bbDefense ?? 0);
+      case "attemptToSteal":
+        return Number(opp.steal ?? 0);
+      case "rfi":
+        return Number(opp.rfi ?? 0);
+      case "coldCall":
+        return Number(opp.coldCall ?? 0);
+      case "squeeze":
+        return Number(opp.squeeze ?? 0);
+      case "resteal":
+        return Number(opp.resteal ?? 0);
+      case "foldToSteal":
+        return Number(opp.foldToSteal ?? 0);
+      case "foldTo3Bet":
+        return Number(opp.foldTo3Bet ?? 0);
+      case "cbetIp":
+        return Number(opp.cbetIp ?? 0);
+      case "cbetOop":
+        return Number(opp.cbetOop ?? 0);
+      case "floatFlop":
+        return Number(opp.floatFlop ?? 0);
+      case "checkRaiseFlop":
+        return Number(opp.checkRaiseFlop ?? 0);
+      case "aggressionFactor":
+        return Number(opp.aggressionCalls ?? 0);
+      case "allInAdjBb100":
+        return Number(opp.allInAdjOpportunities ?? 0);
+      default:
+        return 0;
+    }
+  };
+
+  const getMetricValueForPanel = (key: MetricKey): number => {
+    if (activeTab === "tournament") {
+      return Number((analyzeMutation.data?.stats as any)?.[key] ?? 0);
+    }
+
+    const summary = (playerHistoryQuery.data?.summary as any) ?? {};
+    switch (key) {
+      case "vpip": return Number(summary.vpipAvg ?? 0);
+      case "pfr": return Number(summary.pfrAvg ?? 0);
+      case "threeBet": return Number(summary.threeBetAvg ?? 0);
+      case "bbDefense": return Number(summary.bbDefenseAvg ?? 0);
+      case "attemptToSteal": return Number(summary.attemptToStealAvg ?? 0);
+      case "cbetFlop": return Number(summary.cbetFlopAvg ?? 0);
+      case "cbetTurn": return Number(summary.cbetTurnAvg ?? 0);
+      case "foldToCbet": return Number(summary.foldToCbetAvg ?? 0);
+      case "aggressionFactor": return Number(summary.aggressionFactorAvg ?? 0);
+      case "wtsd": return Number(summary.wtsdAvg ?? 0);
+      case "wsd": return Number(summary.wsdAvg ?? 0);
+      case "allInAdjBb100": return historicalAllInAdjBb100;
+      default: return Number(summary[`${key}Avg`] ?? 0);
+    }
+  };
+
+  const baseMetricRowsForPanel = selectedMetricForPositions
     ? (
       activeTab === "tournament"
         ? (tournamentMetricBreakdownByPosition[selectedMetricForPositions] ?? [])
@@ -1165,6 +1236,31 @@ export default function HandReviewer() {
             ? (historicalMetricBreakdownByPosition[selectedMetricForPositions] ?? [])
             : (tournamentMetricBreakdownByPosition[selectedMetricForPositions] ?? []))
     )
+    : [];
+
+  const metricRowsForPanel = selectedMetricForPositions
+    ? (() => {
+        const opp = activeTab === "tournament" ? tournamentOpportunities : historicalOppSafe;
+        const value = getMetricValueForPanel(selectedMetricForPositions);
+        const of = getOpportunityCountForMetric(selectedMetricForPositions, opp);
+
+        if (of <= 0 && selectedMetricForPositions !== "aggressionFactor" && selectedMetricForPositions !== "allInAdjBb100") {
+          return baseMetricRowsForPanel;
+        }
+
+        const totalRow: PositionMetricRow = {
+          position: "TOTAL",
+          made: selectedMetricForPositions === "aggressionFactor"
+            ? Number(opp.aggressionActions ?? 0)
+            : selectedMetricForPositions === "allInAdjBb100"
+              ? Number(opp.allInAdjSample ?? 0)
+              : roundMade(value, of),
+          of,
+          pct: Number(value ?? 0),
+        };
+
+        return [totalRow, ...baseMetricRowsForPanel.filter((row) => row.position !== "TOTAL")];
+      })()
     : [];
 
   const metricDrilldownPanel = selectedMetricForPositions ? (
