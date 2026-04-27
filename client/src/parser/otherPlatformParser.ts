@@ -409,6 +409,9 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
     .filter(action => action.action === "collect" && action.player === heroName)
     .reduce((sum, action) => sum + (action.amount ?? 0), 0);
   const heroFolded = normalizedActions.some(action => action.player === heroName && action.action === "fold");
+  const heroInvestedVoluntarily = normalizedActions.some(
+    action => action.player === heroName && (action.action === "call" || action.action === "bet" || action.action === "raise" || action.action === "all_in"),
+  );
 
   const summaryBoard = parseCards(summaryLines.find(line => /^Board\s+\[/i.test(line))?.match(/\[([^\]]+)\]/)?.[1]);
   const boardResolved = summaryBoard.length > 0 ? summaryBoard : boardFull;
@@ -420,7 +423,7 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
     .map(entry => ({ player: entry.player, cards: entry.cards }));
   const heroSummaryLine = summaryLines.find(line => /^Seat\s+\d+:\s+Hero\b/i.test(line));
   const heroWonBySummary = /\bwon\b/i.test(heroSummaryLine ?? "") || heroCollected > 0;
-  const heroFoldedBySummary = /folded before/i.test(heroSummaryLine ?? "") || heroFolded;
+  const heroFoldedBySummary = (/folded before/i.test(heroSummaryLine ?? "") || heroFolded) && !heroInvestedVoluntarily;
   const showdown = normalizedActions.some(action => action.action === "show") || summaryShowdownEntries.length > 0;
   const handEndType = showdown ? "showdown" : "fold";
   const heroResult: "won" | "lost" | "folded" = heroWonBySummary ? "won" : (heroFoldedBySummary ? "folded" : "lost");

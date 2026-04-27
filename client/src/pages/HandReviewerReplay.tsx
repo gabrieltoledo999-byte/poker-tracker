@@ -66,6 +66,13 @@ export default function HandReviewerReplay() {
   );
 
   const replaySteps = useMemo(() => (selectedHand ? buildReplaySteps(selectedHand) : []), [selectedHand]);
+  const actionStepIndexes = useMemo(
+    () => replaySteps
+      .map((step, index) => ({ step, index }))
+      .filter(({ step }) => step.action != null)
+      .map(({ index }) => index),
+    [replaySteps],
+  );
 
   const streetFirstStep = useMemo(() => {
     const result: Partial<Record<PokerStreet, number>> = {};
@@ -83,15 +90,18 @@ export default function HandReviewerReplay() {
 
   const currentBigBlind = selectedHand?.bigBlind ?? 0;
   const maxStepIndex = Math.max(replaySteps.length - 1, 0);
-  const safeActionIndex = Math.min(Math.max(currentActionIndex, 0), handActions.length);
-  const safeStepIndex = Math.min(safeActionIndex, maxStepIndex);
+  const safeStepIndex = Math.min(Math.max(currentActionIndex, 0), maxStepIndex);
   const currentStep: ReplayStep | null = replaySteps[safeStepIndex] ?? null;
   const previousStep: ReplayStep | null = safeStepIndex > 0 ? replaySteps[safeStepIndex - 1] ?? null : null;
-  const highlightedActionIndex = safeActionIndex > 0 ? safeActionIndex - 1 : null;
-  const visibleActions = handActions.slice(0, safeActionIndex);
+  const completedActionCount = replaySteps
+    .slice(0, safeStepIndex + 1)
+    .filter(step => step.action != null)
+    .length;
+  const highlightedActionIndex = completedActionCount > 0 ? completedActionCount - 1 : null;
+  const visibleActions = handActions.slice(0, completedActionCount);
 
-  const canPrevAction = safeActionIndex > 0;
-  const canNextAction = safeActionIndex < handActions.length;
+  const canPrevAction = safeStepIndex > 0;
+  const canNextAction = safeStepIndex < maxStepIndex;
   const canPrevHand = selectedHandIndex > 0;
   const canNextHand = selectedHandIndex < ((parsedTournament?.hands.length ?? 0) - 1);
   const currentStreet = currentStep?.street ?? "preflop";
@@ -195,14 +205,13 @@ export default function HandReviewerReplay() {
 
     if (!parsedTournament || !canPrevHand) return;
     const previousHandIndex = selectedHandIndex - 1;
-    const previousHandActionCount = (parsedTournament.hands[previousHandIndex]?.actions ?? [])
-      .filter(action => !isForcedPostingAction(action)).length;
-    moveToHand(previousHandIndex, previousHandActionCount);
+    const previousHandStepCount = Math.max(buildReplaySteps(parsedTournament.hands[previousHandIndex]).length - 1, 0);
+    moveToHand(previousHandIndex, previousHandStepCount);
   };
 
   const goNextActionContinuous = () => {
-    if (safeActionIndex < handActions.length) {
-      setCurrentActionIndex(prev => Math.min(prev + 1, handActions.length));
+    if (safeStepIndex < maxStepIndex) {
+      setCurrentActionIndex(prev => Math.min(prev + 1, maxStepIndex));
       return;
     }
 
@@ -312,7 +321,7 @@ export default function HandReviewerReplay() {
               <ActionTimeline
                 actions={handActions}
                 selectedActionIndex={highlightedActionIndex}
-                onSelectAction={index => setCurrentActionIndex(index + 1)}
+                onSelectAction={index => setCurrentActionIndex(actionStepIndexes[index] ?? 0)}
               />
             </div>
           </div>
@@ -321,7 +330,7 @@ export default function HandReviewerReplay() {
         <div className="relative flex min-h-0 h-full flex-1 flex-col">
           <div className="absolute top-2 right-2 z-[70] flex items-center gap-1.5 md:hidden">
             <div className="text-[11px] text-white/65 mr-1">
-              Mao {selectedHandIndex + 1} ┬À {safeActionIndex}/{handActions.length}
+              Mao {selectedHandIndex + 1} ┬À {completedActionCount}/{handActions.length}
             </div>
             <Button
               size="sm"
@@ -458,7 +467,7 @@ export default function HandReviewerReplay() {
                   <span className="sm:hidden">M+</span>
                 </Button>
                 <span className="rounded-md border border-border/60 px-2 py-1.5 text-xs sm:px-2.5 sm:py-1.5 sm:text-xs text-muted-foreground">
-                  {safeActionIndex}/{handActions.length}
+                  {completedActionCount}/{handActions.length}
                 </span>
                 <Button
                   variant="outline"
@@ -534,7 +543,7 @@ export default function HandReviewerReplay() {
               <ActionTimeline
                 actions={handActions}
                 selectedActionIndex={highlightedActionIndex}
-                onSelectAction={index => setCurrentActionIndex(index + 1)}
+                onSelectAction={index => setCurrentActionIndex(actionStepIndexes[index] ?? 0)}
               />
             </div>
           )}

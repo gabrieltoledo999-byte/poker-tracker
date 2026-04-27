@@ -39,7 +39,7 @@ export function PotDisplay(props: { pot: number; street: string; displayUnit: Di
   const columns = Math.max(1, Math.min(4, Math.ceil(chips.length / 5)));
 
   return (
-    <div className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-slate-950/72 px-2 py-1.5 shadow-[0_10px_24px_rgba(2,6,23,0.45)] backdrop-blur-[2px]">
+    <div className="flex flex-col items-center gap-1 px-1 py-0">
       <div className="relative h-11 w-24">
         <div className="absolute left-1/2 top-[68%] h-3.5 w-16 -translate-x-1/2 rounded-full bg-black/35 blur-[1px]" />
         {Array.from({ length: columns }).map((_, col) => {
@@ -64,8 +64,8 @@ export function PotDisplay(props: { pot: number; street: string; displayUnit: Di
           );
         })}
       </div>
-      <p className="text-[9px] font-semibold uppercase tracking-[0.24em] text-cyan-100/80">POT</p>
-      <p className="text-sm font-black leading-none text-amber-300 sm:text-base">{formatValue(props.pot, props.displayUnit, props.bigBlind)}</p>
+      <p className="text-[9px] font-semibold uppercase tracking-[0.24em] text-white/70 drop-shadow-[0_2px_6px_rgba(0,0,0,0.55)]">POT</p>
+      <p className="text-sm font-black leading-none text-amber-300 drop-shadow-[0_3px_8px_rgba(0,0,0,0.6)] sm:text-base">{formatValue(props.pot, props.displayUnit, props.bigBlind)}</p>
     </div>
   );
 }

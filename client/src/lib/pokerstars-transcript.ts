@@ -187,6 +187,10 @@ function normalizeStreetFromMarker(line: string): PokerStreet | null {
   return null;
 }
 
+function isVoluntaryHeroInvestment(action: PokerAction): boolean {
+  return action.action === "call" || action.action === "bet" || action.action === "raise" || action.action === "all_in";
+}
+
 function parseGeneralHeader(rawText: string): PokerTranscriptHeader {
   const firstLine = rawText.split(/\r?\n/).find(line => line.trim().length > 0) ?? "";
   const tournamentId = firstLine.match(/tournament\s+#(\d+)/i)?.[1] ?? "";
@@ -700,7 +704,14 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
 
   const showdown = lines.some(line => line.includes("*** SHOW DOWN ***")) || villainCards.length > 0 || heroShowed.length > 0;
   const heroFolded = actions.some(action => action.player === header.heroName && action.action === "fold");
-  const heroResult: "won" | "lost" | "folded" = heroCollected > 0 ? "won" : heroFolded ? "folded" : "lost";
+  const heroInvestedVoluntarily = actions.some(
+    action => normalizeName(action.player) === normalizedHeroFromHeader && isVoluntaryHeroInvestment(action),
+  );
+  const heroResult: "won" | "lost" | "folded" = heroCollected > 0
+    ? "won"
+    : heroFolded && !heroInvestedVoluntarily
+      ? "folded"
+      : "lost";
 
   let handEndType: "fold" | "showdown" | "split" = showdown ? "showdown" : "fold";
   if (lines.some(line => /split/i.test(line))) handEndType = "split";

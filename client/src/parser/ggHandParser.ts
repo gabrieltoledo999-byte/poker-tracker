@@ -524,11 +524,14 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
   const uncalledReturned = actions
     .filter(a => a.action === "returned_uncalled_bet")
     .reduce((sum, a) => sum + (a.amount ?? 0), 0);
+  const heroInvestedVoluntarily = actions.some(
+    (a) => a.player === heroName && (a.action === "call" || a.action === "bet" || a.action === "raise" || a.action === "all_in"),
+  );
 
   const heroResult: "won" | "lost" | "folded" =
     heroCollected > 0
       ? "won"
-      : actions.some(a => a.player === heroName && a.action === "fold")
+      : actions.some(a => a.player === heroName && a.action === "fold") && !heroInvestedVoluntarily
         ? "folded"
         : "lost";
 

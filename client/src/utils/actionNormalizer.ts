@@ -274,6 +274,22 @@ export function buildReplaySteps(hand: ParsedPokerStarsHand): ReplayStep[] {
     if (action.street !== currentStreet) {
       currentStreet = action.street;
       seats = seats.map(seat => ({ ...seat, contributedCurrentRound: 0 }));
+
+      if (action.street !== "summary") {
+        steps.push({
+          stepIndex: visibleStepIndex,
+          street: action.street,
+          actingPlayer: null,
+          action: null,
+          actionLabel: action.street === "showdown" ? "Showdown" : action.street.charAt(0).toUpperCase() + action.street.slice(1),
+          actionAmount: 0,
+          pot: calculatePotFromActions(appliedActions),
+          board: boardForStreet(hand, action.street),
+          seats,
+        });
+
+        visibleStepIndex += 1;
+      }
     }
 
     seats = seats.map(seat => (seat.name === action.player ? applyActionToSeat(seat, action) : seat));
