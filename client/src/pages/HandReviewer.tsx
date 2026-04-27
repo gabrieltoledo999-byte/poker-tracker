@@ -68,6 +68,36 @@ type PositionMetricRow = {
 const POSITION_ORDER = ["UTG", "UTG+1", "MP", "MP+1", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"];
 
 const HAND_REVIEW_CONSENT_VERSION = "v1.0";
+const HAND_REVIEW_HISTORY_SNAPSHOT_KEY = "hand-review-history-snapshot-v1";
+
+function loadHistorySnapshot(): any | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(HAND_REVIEW_HISTORY_SNAPSHOT_KEY);
+    if (!raw) return undefined;
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function saveHistorySnapshot(data: any) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HAND_REVIEW_HISTORY_SNAPSHOT_KEY, JSON.stringify(data));
+  } catch {
+    // Ignore storage quota errors and keep runtime cache only.
+  }
+}
+
+function clearHistorySnapshot() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(HAND_REVIEW_HISTORY_SNAPSHOT_KEY);
+  } catch {
+    // No-op
+  }
+}
 
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; emoji: string; color: string }> = {
   low:       { label: "Baixa",      emoji: "Vermelho", color: "text-red-400" },
@@ -718,12 +748,14 @@ export default function HandReviewer() {
   const saveToHistoryMutation = trpc.memory.importReplay.useMutation({
     onSuccess: async (result) => {
       if ((result as any)?.reusedExisting) {
-        toast.warning("Torneio identificado como duplicado e não foi somado novamente.");
+        toast.warning("Torneio identificado como duplicado e não foi somado novamente.", {
+          description: "Os dados consolidados serao atualizados em background em ate 1 hora.",
+        });
       } else {
-        toast.success("Torneio adicionado ao histórico do jogador.");
+        toast.success("Torneio adicionado ao historico do jogador.", {
+          description: "Atualizacao completa em background: em ate 1 hora os dados refletem este torneio.",
+        });
       }
-      await utils.memory.playerHistoricalProfile.invalidate();
-      await playerHistoryQuery.refetch();
       setActiveTab("player");
     },
     onError: (error) => {
@@ -734,6 +766,7 @@ export default function HandReviewer() {
   const clearReplayHistoryMutation = trpc.memory.clearReplayHistory.useMutation({
     onSuccess: () => {
       toast.success("Histórico do revisor limpo. Você já pode salvar novos torneios.");
+      clearHistorySnapshot();
       utils.memory.playerHistoricalProfile.invalidate();
       setLastReplayPayload(null);
       setActiveTab("player");
@@ -745,10 +778,15 @@ export default function HandReviewer() {
 
   const recalculateHistoryMutation = trpc.memory.recalculateHistory.useMutation({
     onSuccess: (result) => {
-      toast.success("Recalculo concluido pelo site.", {
-        description: `${Number(result?.updated ?? 0)} de ${Number(result?.totalTournaments ?? 0)} torneios atualizados.`,
+      const eta = (result as any)?.scheduledFor
+        ? new Date((result as any).scheduledFor).toLocaleString("pt-BR")
+        : null;
+
+      toast.success("Recalculo agendado em background.", {
+        description: eta
+          ? `Execucao prevista para ${eta}. Seus dados serao atualizados sem travar a tela.`
+          : "Seus dados serao atualizados em background sem travar a tela.",
       });
-      utils.memory.playerHistoricalProfile.invalidate();
       setActiveTab("player");
     },
     onError: (error) => {
@@ -757,8 +795,19 @@ export default function HandReviewer() {
   });
 
   const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery({}, {
+    initialData: loadHistorySnapshot,
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 60 * 24,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
   });
+
+  useEffect(() => {
+    if (playerHistoryQuery.data) {
+      saveHistorySnapshot(playerHistoryQuery.data);
+    }
+  }, [playerHistoryQuery.data]);
 
   // Debug logging for player history query
   useEffect(() => {
@@ -858,8 +907,23 @@ export default function HandReviewer() {
     }
 
     const out = {} as Record<MetricKey, PositionMetricRow[]>;
+    const ensureVisiblePositions = (key: MetricKey, rows: PositionMetricRow[]): PositionMetricRow[] => {
+      if (key !== "attemptToSteal") return rows;
+
+      const visible = new Map(rows.map((row) => [row.position, row]));
+      for (const position of ["CO", "BTN", "SB"]) {
+        if (!visible.has(position)) {
+          visible.set(position, { position, made: 0, of: 0, pct: 0 });
+        }
+      }
+
+      return Array.from(visible.values());
+    };
+
     for (const [key, posMap] of metricMap.entries()) {
-      const rows: PositionMetricRow[] = Array.from(posMap.entries())
+      const rows: PositionMetricRow[] = ensureVisiblePositions(
+        key,
+        Array.from(posMap.entries())
         .map(([position, value]) => ({
           position,
           made: Number(value.made ?? 0),
@@ -868,7 +932,8 @@ export default function HandReviewer() {
             ? (key === "aggressionFactor" ? Number(value.made ?? 0) : (Number(value.made ?? 0) / Number(value.of ?? 0)) * 100)
             : 0,
         }))
-        .filter((r) => r.of > 0 || key === "allInAdjBb100");
+        .filter((r) => r.of > 0 || key === "allInAdjBb100")
+      );
       rows.sort((a, b) => {
         const ia = POSITION_ORDER.indexOf(a.position);
         const ib = POSITION_ORDER.indexOf(b.position);
@@ -959,7 +1024,7 @@ export default function HandReviewer() {
     }
 
     const shouldRecalculate = window.confirm(
-      "Deseja recalcular todas as estatisticas salvas com as regras mais recentes?",
+      "Deseja agendar o recalculo completo em background? O app continuara responsivo durante a atualizacao.",
     );
     if (!shouldRecalculate) return;
 
@@ -1308,7 +1373,7 @@ export default function HandReviewer() {
             <DialogTitle className="text-cyan-100">Autorização para Análise e Armazenamento de Dados de Jogo</DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1 text-sm">
+          <div className="space-y-3 text-sm">
             <p>
               Para utilizar a funcionalidade de Revisor de Mãos, é necessário autorizar o processamento dos seus dados de jogo.
             </p>
@@ -1815,7 +1880,7 @@ export default function HandReviewer() {
                         onClick={handleRecalculateHistory}
                         disabled={recalculateHistoryMutation.isPending}
                       >
-                        {recalculateHistoryMutation.isPending ? "Recalculando no site..." : "Recalcular estatísticas salvas"}
+                        {recalculateHistoryMutation.isPending ? "Agendando recálculo..." : "Agendar recálculo em background"}
                       </Button>
                     </div>
                     {(() => {

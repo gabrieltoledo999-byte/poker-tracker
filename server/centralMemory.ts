@@ -202,6 +202,11 @@ function inferHeroFromFlags(actions: ReplayActionInput[]): string {
 
 const DUPLICATE_HAND_WINDOW = 10;
 const DUPLICATE_SCAN_HAND_LIMIT = 20;
+const HISTORICAL_PROFILE_SYNC_MAX_HANDS = Number(process.env.HAND_REVIEW_SYNC_MAX_HANDS ?? 4000);
+const REPLAY_RECALC_IMPORT_DELAY_MS = 60 * 60 * 1000;
+
+const replayRecalcTimers = new Map<number, ReturnType<typeof setTimeout>>();
+const replayRecalcRunning = new Set<number>();
 
 function normalizeCards(value: string | undefined): string {
   return String(value ?? "")
@@ -570,7 +575,10 @@ async function finalizeImportedReplay(
   allowFieldAggregation: boolean,
 ) {
   await persistTournamentStats(db, userId, tournamentId, input, abiBucket, totalCost);
-  await refreshUserAbiAggregates(userId);
+  enqueueReplayStatsRecalculation(userId, {
+    delayMs: REPLAY_RECALC_IMPORT_DELAY_MS,
+    reason: "import_replay",
+  });
   if (allowFieldAggregation) {
     await refreshFieldAbiAggregates(site, abiBucket);
   }
@@ -1782,14 +1790,8 @@ export async function getPlayerHistoricalProfile(userId: number) {
     .limit(1);
 
   if (!aggregate) {
-    console.log("[getPlayerHistoricalProfile] Aggregate missing. Triggering refreshUserAbiAggregates...");
-    await refreshUserAbiAggregates(userId);
-    [aggregate] = await db
-      .select()
-      .from(playerAggregateStats)
-      .where(eq(playerAggregateStats.userId, userId))
-      .orderBy(desc(playerAggregateStats.updatedAt))
-      .limit(1);
+    console.log("[getPlayerHistoricalProfile] Aggregate missing. Scheduling background refresh.");
+    enqueueReplayStatsRecalculation(userId, { delayMs: 0, reason: "aggregate_missing" });
   }
 
   console.log("[getPlayerHistoricalProfile] Aggregate stats:", aggregate ? `found (hands=${aggregate.sampleHands})` : "NOT FOUND");
@@ -1827,7 +1829,24 @@ export async function getPlayerHistoricalProfile(userId: number) {
     .from(playerTournamentStats)
     .where(eq(playerTournamentStats.userId, userId));
 
-  const liveStats = await computeLiveHistoricalStatsFromHands(db, userId);
+  const estimatedHandsForSyncStats = Math.max(
+    Number(aggregate?.sampleHands ?? 0),
+    Number(tournamentMetricAverages?.totalHands ?? 0),
+  );
+  const shouldComputeLiveStats = estimatedHandsForSyncStats > 0 && estimatedHandsForSyncStats <= HISTORICAL_PROFILE_SYNC_MAX_HANDS;
+
+  const liveStats = shouldComputeLiveStats
+    ? await computeLiveHistoricalStatsFromHands(db, userId)
+    : null;
+
+  if (!shouldComputeLiveStats && estimatedHandsForSyncStats > HISTORICAL_PROFILE_SYNC_MAX_HANDS) {
+    console.log("[getPlayerHistoricalProfile] Skipping synchronous live stats for large dataset.", {
+      userId,
+      estimatedHandsForSyncStats,
+      threshold: HISTORICAL_PROFILE_SYNC_MAX_HANDS,
+    });
+    enqueueReplayStatsRecalculation(userId, { delayMs: 0, reason: "large_dataset_fast_path" });
+  }
 
   const leakFlags = await db
     .select()
@@ -1861,49 +1880,64 @@ export async function getPlayerHistoricalProfile(userId: number) {
     );
 
   if (aggregateOutOfSync) {
-    console.log("[getPlayerHistoricalProfile] Aggregate mismatch detected. Refreshing...", {
+    console.log("[getPlayerHistoricalProfile] Aggregate mismatch detected. Scheduling background refresh...", {
       aggregateTournamentCount,
       aggregateHandsCount,
       centralTournamentCount,
       centralHandsCount,
     });
 
-    await refreshUserAbiAggregates(userId);
-
-    [aggregate] = await db
-      .select()
-      .from(playerAggregateStats)
-      .where(eq(playerAggregateStats.userId, userId))
-      .orderBy(desc(playerAggregateStats.updatedAt))
-      .limit(1);
+    enqueueReplayStatsRecalculation(userId, { delayMs: 0, reason: "aggregate_mismatch" });
   }
 
-  const handsForPosition = await db
-    .select({
-      id: centralHands.id,
-      heroSeat: centralHands.heroSeat,
-      heroCards: centralHands.heroCards,
-      heroPosition: centralHands.heroPosition,
-      bigBlind: centralHands.bigBlind,
-      result: centralHands.result,
-    })
-    .from(centralHands)
-    .where(eq(centralHands.userId, userId));
+  const estimatedHandsForDetailedPosition = Math.max(
+    Number(centralHandsCount ?? 0),
+    Number(aggregate?.sampleHands ?? 0),
+    Number(tournamentMetricAverages?.totalHands ?? 0),
+  );
+  const shouldComputeDetailedPosition =
+    estimatedHandsForDetailedPosition > 0
+    && estimatedHandsForDetailedPosition <= HISTORICAL_PROFILE_SYNC_MAX_HANDS;
 
-  const actionsForPosition = await db
-    .select({
-      handId: centralHandActions.handId,
-      street: centralHandActions.street,
-      actionOrder: centralHandActions.actionOrder,
-      seat: centralHandActions.seat,
-      actionType: centralHandActions.actionType,
-      amount: centralHandActions.amount,
-      toAmount: centralHandActions.toAmount,
-      heroInHand: centralHandActions.heroInHand,
-    })
-    .from(centralHandActions)
-    .where(eq(centralHandActions.userId, userId))
-    .orderBy(asc(centralHandActions.handId), asc(centralHandActions.actionOrder));
+  if (!shouldComputeDetailedPosition && estimatedHandsForDetailedPosition > HISTORICAL_PROFILE_SYNC_MAX_HANDS) {
+    console.log("[getPlayerHistoricalProfile] Skipping detailed position scan for large dataset.", {
+      userId,
+      estimatedHandsForDetailedPosition,
+      threshold: HISTORICAL_PROFILE_SYNC_MAX_HANDS,
+    });
+    enqueueReplayStatsRecalculation(userId, { delayMs: 0, reason: "large_dataset_position_fast_path" });
+  }
+
+  const handsForPosition = shouldComputeDetailedPosition
+    ? await db
+      .select({
+        id: centralHands.id,
+        heroSeat: centralHands.heroSeat,
+        heroCards: centralHands.heroCards,
+        heroPosition: centralHands.heroPosition,
+        bigBlind: centralHands.bigBlind,
+        result: centralHands.result,
+      })
+      .from(centralHands)
+      .where(eq(centralHands.userId, userId))
+    : [];
+
+  const actionsForPosition = shouldComputeDetailedPosition
+    ? await db
+      .select({
+        handId: centralHandActions.handId,
+        street: centralHandActions.street,
+        actionOrder: centralHandActions.actionOrder,
+        seat: centralHandActions.seat,
+        actionType: centralHandActions.actionType,
+        amount: centralHandActions.amount,
+        toAmount: centralHandActions.toAmount,
+        heroInHand: centralHandActions.heroInHand,
+      })
+      .from(centralHandActions)
+      .where(eq(centralHandActions.userId, userId))
+      .orderBy(asc(centralHandActions.handId), asc(centralHandActions.actionOrder))
+    : [];
 
   const actionsByHandForPosition = new Map<number, Array<{
     street: string | null;
@@ -2646,6 +2680,55 @@ export async function clearReplayHistoryForUser(userId: number) {
   await db.delete(centralTournaments).where(eq(centralTournaments.userId, userId));
 
   return { success: true };
+}
+
+export function enqueueReplayStatsRecalculation(
+  userId: number,
+  options?: { delayMs?: number; reason?: string },
+) {
+  const delayMs = Math.max(0, Number(options?.delayMs ?? REPLAY_RECALC_IMPORT_DELAY_MS));
+  const reason = options?.reason ?? "unspecified";
+
+  const existingTimer = replayRecalcTimers.get(userId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const scheduledFor = new Date(Date.now() + delayMs);
+  const timer = setTimeout(() => {
+    replayRecalcTimers.delete(userId);
+
+    if (replayRecalcRunning.has(userId)) {
+      console.log("[ReplayRecalcQueue] Recalc already running. Skipping duplicate run.", { userId, reason });
+      return;
+    }
+
+    replayRecalcRunning.add(userId);
+    void recalculateReplayStatsForUser(userId)
+      .then((result) => {
+        console.log("[ReplayRecalcQueue] Recalc completed.", {
+          userId,
+          reason,
+          updated: Number(result?.updated ?? 0),
+          totalTournaments: Number(result?.totalTournaments ?? 0),
+        });
+      })
+      .catch((error) => {
+        console.error("[ReplayRecalcQueue] Recalc failed.", { userId, reason, error });
+      })
+      .finally(() => {
+        replayRecalcRunning.delete(userId);
+      });
+  }, delayMs);
+
+  replayRecalcTimers.set(userId, timer);
+
+  return {
+    queued: true,
+    reason,
+    delayMs,
+    scheduledFor: scheduledFor.toISOString(),
+  };
 }
 
 export async function recalculateReplayStatsForUser(userId: number) {

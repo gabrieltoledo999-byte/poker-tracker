@@ -74,11 +74,11 @@ import {
   analyzeReplayTournament,
   clearReplayHistoryForUser,
   compactReplayStorageForUser,
+  enqueueReplayStatsRecalculation,
   getAbiDashboard,
   getActiveConsent,
   getPlayerHistoricalProfile,
   getTournamentOverview,
-  recalculateReplayStatsForUser,
   grantConsent,
   importReplayToCentralMemory,
   revokeConsent,
@@ -2034,7 +2034,16 @@ export const appRouter = router({
       .input(replayImportInput)
       .mutation(async ({ ctx, input }) => {
         try {
-          return await importReplayToCentralMemory(ctx.user.id, input);
+          const importResult = await importReplayToCentralMemory(ctx.user.id, input);
+          const refresh = enqueueReplayStatsRecalculation(ctx.user.id, {
+            delayMs: 60 * 60 * 1000,
+            reason: "import_replay",
+          });
+
+          return {
+            ...importResult,
+            refresh,
+          };
         } catch (error: any) {
           if (String(error?.message) === "CONSENT_REQUIRED") {
             throw new TRPCError({
@@ -2057,7 +2066,10 @@ export const appRouter = router({
       }),
     recalculateHistory: protectedProcedure
       .mutation(async ({ ctx }) => {
-        return await recalculateReplayStatsForUser(ctx.user.id);
+        return enqueueReplayStatsRecalculation(ctx.user.id, {
+          delayMs: 0,
+          reason: "manual_recalculate",
+        });
       }),
     compactReplayStorage: protectedProcedure
       .mutation(async ({ ctx }) => {
@@ -2096,7 +2108,10 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
       try {
         if (input?.recalculate) {
-          await recalculateReplayStatsForUser(ctx.user.id);
+          enqueueReplayStatsRecalculation(ctx.user.id, {
+            delayMs: 0,
+            reason: "query_recalculate",
+          });
         }
         return await getPlayerHistoricalProfile(ctx.user.id);
       } catch (error) {
