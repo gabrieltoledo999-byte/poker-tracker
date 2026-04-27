@@ -171,6 +171,15 @@ export default function Admin() {
     },
   );
 
+  const selectedUserHistoryQuery = trpc.memory.playerHistoricalProfileByUserId.useQuery(
+    { userId: Number(selectedUserId ?? 0) },
+    {
+      enabled: !loading && isBoardAdmin && Number(selectedUserId ?? 0) > 0,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
+    },
+  );
+
   // Redirect if not admin
   useEffect(() => {
     if (loading) return;
@@ -315,6 +324,8 @@ export default function Admin() {
       minute: "2-digit",
     }).format(date);
   };
+
+  const formatPercent = (value: number | null | undefined) => `${Number(value ?? 0).toFixed(1)}%`;
 
   const activityRows = useMemo(() => {
     return users
@@ -670,6 +681,40 @@ export default function Admin() {
                       </>
                     ) : (
                       <p className="text-slate-100">Sem diagnostico para este usuario.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border border-white/10 bg-white/5 p-2 text-xs">
+                    <p className="text-slate-400">Historico por posicao (VPIP/PFR/3-bet)</p>
+                    {selectedUserHistoryQuery.isLoading ? (
+                      <p className="text-slate-100">Carregando historico...</p>
+                    ) : (selectedUserHistoryQuery.data?.positions?.byPosition?.length ?? 0) > 0 ? (
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="w-full min-w-[460px] text-left text-xs">
+                          <thead>
+                            <tr className="border-b border-white/10 text-slate-400">
+                              <th className="py-1 pr-3 font-medium">Posicao</th>
+                              <th className="py-1 pr-3 font-medium">Maos</th>
+                              <th className="py-1 pr-3 font-medium">VPIP</th>
+                              <th className="py-1 pr-3 font-medium">PFR</th>
+                              <th className="py-1 pr-3 font-medium">3-bet</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedUserHistoryQuery.data.positions.byPosition.map((row: any) => (
+                              <tr key={`hist-pos-${row.position}`} className="border-b border-white/5 text-slate-100">
+                                <td className="py-1 pr-3 font-medium">{row.position}</td>
+                                <td className="py-1 pr-3">{Number(row.handsPlayed ?? 0)}</td>
+                                <td className="py-1 pr-3">{formatPercent(Number(row.vpip ?? 0))}</td>
+                                <td className="py-1 pr-3">{formatPercent(Number(row.pfr ?? 0))}</td>
+                                <td className="py-1 pr-3">{formatPercent(Number(row.threeBet ?? 0))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-slate-100">Sem estatisticas historicas por posicao para este usuario.</p>
                     )}
                   </div>
                 </>

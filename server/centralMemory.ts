@@ -2313,13 +2313,36 @@ export async function getPlayerHistoricalProfile(userId: number) {
         updatedAt: new Date(),
       }));
 
-  // When detailed hand/action scan is skipped (large datasets), recover key preflop
+  // When detailed hand/action scan is unavailable or incomplete, recover key preflop
   // metric breakdown from persisted position aggregates so UI remains consistent.
   const buildFallbackMetricRowsFromPositionStats = (metric: "vpip" | "pfr" | "threeBet") => {
-    return normalizedPositionStats
+    const persistedRows = positionStats.length > 0
+      ? positionStats.map((row) => ({
+          position: String(row.position ?? "UNKNOWN"),
+          handsPlayed: Number(row.handsPlayed ?? 0),
+          pct: Number((row as any)?.[metric] ?? 0),
+        }))
+      : Array.from(
+          byPositionAndAbi.reduce((acc, row) => {
+            const position = String(row.position ?? "UNKNOWN");
+            const current = acc.get(position) ?? { handsPlayed: 0, weightedPct: 0 };
+            const handsPlayed = Number(row.handsPlayed ?? 0);
+            const pct = Number((row as any)?.[metric] ?? 0);
+            current.handsPlayed += handsPlayed;
+            current.weightedPct += pct * handsPlayed;
+            acc.set(position, current);
+            return acc;
+          }, new Map<string, { handsPlayed: number; weightedPct: number }>()).entries(),
+        ).map(([position, values]) => ({
+          position,
+          handsPlayed: Number(values.handsPlayed ?? 0),
+          pct: Number(values.handsPlayed ?? 0) > 0 ? Number(values.weightedPct ?? 0) / Number(values.handsPlayed ?? 1) : 0,
+        }));
+
+    return persistedRows
       .map((row) => {
         const of = Number(row.handsPlayed ?? 0);
-        const pct = Number((row as any)?.[metric] ?? 0);
+        const pct = Number(row.pct ?? 0);
         const made = Math.round((pct / 100) * of);
         return {
           position: String(row.position ?? "UNKNOWN"),
@@ -2341,7 +2364,8 @@ export async function getPlayerHistoricalProfile(userId: number) {
 
   for (const metric of ["vpip", "pfr", "threeBet"] as const) {
     const existingRows = metricBreakdownByPosition[metric] ?? [];
-    if (existingRows.length > 0) continue;
+    const hasMeaningfulExistingRows = existingRows.some((row) => Number(row.of ?? 0) > 0 && Number(row.pct ?? 0) > 0);
+    if (hasMeaningfulExistingRows) continue;
 
     const fallbackRows = buildFallbackMetricRowsFromPositionStats(metric);
     if (fallbackRows.length === 0) continue;

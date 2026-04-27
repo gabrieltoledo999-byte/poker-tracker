@@ -2170,6 +2170,78 @@ export const appRouter = router({
         };
       }
     }),
+    playerHistoricalProfileByUserId: protectedProcedure
+      .input(z.object({ userId: z.number().int().positive(), recalculate: z.boolean().optional() }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin" && ctx.user.id !== input.userId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para consultar este perfil." });
+        }
+
+        try {
+          if (input?.recalculate) {
+            enqueueReplayStatsRecalculation(input.userId, {
+              delayMs: 0,
+              reason: "query_recalculate_target_user",
+            });
+          }
+
+          return await getPlayerHistoricalProfile(input.userId);
+        } catch (error) {
+          console.error("[memory.playerHistoricalProfileByUserId] failed, returning safe fallback", error);
+          return {
+            summary: {
+              totalTournaments: 0,
+              totalHands: 0,
+              abiAverage: 0,
+              abiAverageCurrency: "USD",
+              abiAverageInMajorUnits: 0,
+              avgPlacement: 0,
+              bestPlacement: null,
+              vpipAvg: 0,
+              pfrAvg: 0,
+              threeBetAvg: 0,
+              bbDefenseAvg: 0,
+              cbetFlopAvg: 0,
+              cbetTurnAvg: 0,
+              foldToCbetAvg: 0,
+              attemptToStealAvg: 0,
+              aggressionFactorAvg: 0,
+              wtsdAvg: 0,
+              wsdAvg: 0,
+              allInAdjBb100Avg: 0,
+              opportunities: {
+                hands: 0,
+                cbetFlop: 0,
+                cbetTurn: 0,
+                foldToCbet: 0,
+                bbDefense: 0,
+                steal: 0,
+                aggressionActions: 0,
+                aggressionCalls: 0,
+                showdownHands: 0,
+                allInAdjOpportunities: 0,
+                allInAdjSample: 0,
+                allInAdjSkipped: 0,
+              },
+            },
+            positions: {
+              byPosition: [],
+              metricBreakdownByPosition: {},
+              mostProfitable: null,
+              leastProfitable: null,
+              biggestLoss: null,
+              biggestGain: null,
+            },
+            byAbi: [],
+            leakFlags: [],
+            trends: {
+              recentAbi: null,
+              previousAbi: null,
+              note: null,
+            },
+          };
+        }
+      }),
     abiDashboard: protectedProcedure
       .input(z.object({ lastN: z.number().int().min(1).max(200).optional() }).optional())
       .query(async ({ ctx, input }) => {
