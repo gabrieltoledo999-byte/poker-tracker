@@ -366,7 +366,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
   const userAccessLevel = getLeagueLevel(userLeague);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* ── Sidebar Desktop ── */}
       <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border/50 bg-card/30 sticky top-0 h-screen overflow-y-auto">
         {/* Logo */}
@@ -732,7 +732,7 @@ export default function TopNavLayout({ children }: { children: React.ReactNode }
       )}
 
       {/* ── Main Content ── */}
-      <main className="app-scrollbar flex-1 min-w-0 md:overflow-y-auto">
+      <main className="app-scrollbar flex-1 min-w-0 overflow-y-auto">
         <div className="md:hidden h-14" /> {/* spacer for mobile header */}
         <div className="p-4 md:p-6">
           {children}
