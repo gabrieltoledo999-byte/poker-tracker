@@ -10,11 +10,11 @@ import { loadHandReviewSession, type HandReviewSession } from "@/lib/hand-review
 import { parseHandHistoryTranscript } from "@/parser/handHistoryDispatcher";
 import type { ParsedPokerStarsTournament } from "@/parser/pokerstarsParser";
 import type { PokerStreet } from "@/lib/pokerstars-transcript";
-import {
-  buildReplaySteps,
+import { buildReplaySteps,
   type ReplayStep,
 } from "@/utils/actionNormalizer";
 import { formatTournamentLevel, type DisplayUnit } from "@/utils/displayUnit";
+import { PotOddsPanel } from "@/components/hand-reviewer/PotOddsPanel";
 
 type HandFilter = "all" | "won" | "lost" | "folded";
 
@@ -389,13 +389,16 @@ export default function HandReviewerReplay() {
               ];
               const visibleRows = rows.filter(([, v]) => v != null);
               return (
-                <div className="grid min-w-[180px] grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
-                  {visibleRows.map(([label, value]) => (
-                    <Fragment key={label}>
-                      <span className="text-white/55">{label}</span>
-                      <span className="text-right font-semibold text-cyan-100">{value}</span>
-                    </Fragment>
-                  ))}
+                <div className="flex flex-col gap-2">
+                  <div className="grid min-w-[180px] grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                    {visibleRows.map(([label, value]) => (
+                      <Fragment key={label}>
+                        <span className="text-white/55">{label}</span>
+                        <span className="text-right font-semibold text-cyan-100">{value}</span>
+                      </Fragment>
+                    ))}
+                  </div>
+                  <PotOddsPanel currentStep={currentStep} bigBlind={currentBigBlind} />
                 </div>
               );
             })()}
