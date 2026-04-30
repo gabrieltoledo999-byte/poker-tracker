@@ -370,6 +370,11 @@ export default function HandReviewerReplay() {
                 BB
               </Button>
             )}
+            topLeftPanel={(
+              <div className="min-w-[220px]">
+                <PotOddsPanel currentStep={currentStep} previousStep={previousStep} bigBlind={currentBigBlind} />
+              </div>
+            )}
             infoPanel={(() => {
               const sprByStreet = selectedHand.calculations.sprByStreet;
               const sprValue = currentStreet === "preflop" ? sprByStreet?.preflop
@@ -389,20 +394,15 @@ export default function HandReviewerReplay() {
               ];
               const visibleRows = rows.filter(([, v]) => v != null);
               return (
-                <div className="flex min-w-[220px] flex-col gap-2">
-                  <div className="rounded-xl border border-cyan-400/30 bg-cyan-950/20 p-2.5">
-                    <PotOddsPanel currentStep={currentStep} previousStep={previousStep} bigBlind={currentBigBlind} />
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-slate-950/60 p-2.5">
-                    <div className="mb-1 text-[9px] uppercase tracking-wider text-white/45">Info torneio</div>
-                    <div className="grid min-w-[180px] grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
-                    {visibleRows.map(([label, value]) => (
-                      <Fragment key={label}>
-                        <span className="text-white/55">{label}</span>
-                        <span className="text-right font-semibold text-cyan-100">{value}</span>
-                      </Fragment>
-                    ))}
-                    </div>
+                <div className="min-w-[220px] rounded-xl border border-white/10 bg-slate-950/60 p-2.5">
+                  <div className="mb-1 text-[9px] uppercase tracking-wider text-white/45">Info torneio</div>
+                  <div className="grid min-w-[180px] grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                  {visibleRows.map(([label, value]) => (
+                    <Fragment key={label}>
+                      <span className="text-white/55">{label}</span>
+                      <span className="text-right font-semibold text-cyan-100">{value}</span>
+                    </Fragment>
+                  ))}
                   </div>
                 </div>
               );
