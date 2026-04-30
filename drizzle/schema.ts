@@ -1,4 +1,4 @@
-import { int, mediumtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mediumtext, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -897,8 +897,9 @@ export type InsertPlayerStatsByPositionAndAbi = typeof playerStatsByPositionAndA
  */
 export const userSessionStatsCache = mysqlTable("user_session_stats_cache", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().unique(),
+  userId: int("userId").notNull(),
   type: mysqlEnum("type", ["online", "live"]).notNull(),
+  // UNIQUE(userId, type) enforced via uk_user_type index in DB
   
   // Aggregated counts
   totalSessions: int("totalSessions").notNull().default(0),

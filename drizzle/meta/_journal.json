@@ -211,6 +211,27 @@
       "when": 1777180201118,
       "tag": "0029_sweet_morbius",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1777200000000,
+      "tag": "0030_central_memory_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1777200001000,
+      "tag": "0031_user_stats_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1777200002000,
+      "tag": "0032_bankroll_history_cache",
+      "breakpoints": true
     }
   ]
 }
