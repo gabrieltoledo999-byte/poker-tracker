@@ -38,6 +38,7 @@ function getHeroCallAmount(step: ReplayStep): number {
 
 export function PotOddsPanel({ currentStep }: PotOddsPanelProps) {
   const hero = currentStep.seats.find(s => s.isHero);
+  const heroIsActiveInHand = hero?.status === "active";
   const heroHole = hero?.holeCards ?? [];
   const board = currentStep.board ?? [];
   const pot = currentStep.pot;
@@ -50,10 +51,12 @@ export function PotOddsPanel({ currentStep }: PotOddsPanelProps) {
 
   const onPostFlop = board.length >= 3;
   const hasHeroCards = heroHole.length === 2;
-  const canAnalyzeBoard = onPostFlop && hasHeroCards;
+  const canAnalyzeBoard = onPostFlop && hasHeroCards && heroIsActiveInHand;
   const hasCallSpot = canAnalyzeBoard && callAmount > 0;
   const edgePct = result.handEquityPct - result.requiredEquityPct;
   const topDraws = result.draws.slice(0, 2);
+
+  if (!heroIsActiveInHand) return null;
 
   return (
     <div className="rounded-xl border border-white/10 bg-slate-950/80 backdrop-blur-sm p-3 text-[11px] space-y-2 min-w-[200px]">
