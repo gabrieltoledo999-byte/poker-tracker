@@ -219,7 +219,11 @@ export function calculatePotOdds(
   heroHole: string[],
   board: string[],
 ): PotOddsResult {
+  // canCalculate: whether pot odds ratio can be computed (requires a call)
   const canCalculate = board.length >= 3 && heroHole.length === 2 && callAmount > 0;
+  // hasBoard: whether draws can be detected (only needs flop+)
+  const hasBoard = board.length >= 3 && heroHole.length === 2;
+
   const streetsLeft: 0 | 1 | 2 =
     board.length === 3 ? 2 :
     board.length === 4 ? 1 : 0;
@@ -231,9 +235,9 @@ export function calculatePotOdds(
       ? `${(pot / callAmount).toFixed(1)}:1`
       : "—";
 
-  // Detect draws
+  // Detect draws whenever board is available (flop/turn/river), regardless of call
   const draws: DrawInfo[] = [];
-  if (canCalculate) {
+  if (hasBoard) {
     const flush = detectFlushDraw(heroHole, board);
     if (flush) draws.push(flush);
 
@@ -254,7 +258,7 @@ export function calculatePotOdds(
 
   // Rule of 2/4: each out is worth ~2% per street
   const multiplier = streetsLeft === 2 ? 4 : 2;
-  const handEquityPct = canCalculate ? Math.min(totalOuts * multiplier, 100) : 0;
+  const handEquityPct = hasBoard ? Math.min(totalOuts * multiplier, 100) : 0;
 
   const isValueCall = handEquityPct >= requiredEquityPct;
 
