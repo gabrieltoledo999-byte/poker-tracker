@@ -454,7 +454,7 @@ export function PokerTableReplay(props: {
       )}
 
       {props.infoPanel && (
-        <div className="hidden sm:block absolute bottom-6 right-3 z-50 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/88 p-3 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
+        <div className="hidden sm:block absolute top-4 left-4 z-50 pointer-events-auto rounded-2xl border border-white/15 bg-slate-950/88 p-3 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md">
           {props.infoPanel}
         </div>
       )}

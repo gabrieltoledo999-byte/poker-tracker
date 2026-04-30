@@ -73,13 +73,15 @@ export function PotOddsPanel({ currentStep, bigBlind }: PotOddsPanelProps) {
         <>
           {/* Call / Pot */}
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+            <span className="text-white/55">Pot odds (%)</span>
+            <span className="font-semibold text-cyan-200 text-right">{result.requiredEquityPct.toFixed(1)}%</span>
             <span className="text-white/55">Call</span>
             <span className="font-semibold text-white text-right">{bbLabel(result.callAmount)}</span>
             <span className="text-white/55">Pot total</span>
             <span className="font-semibold text-white text-right">{bbLabel(result.totalPot)}</span>
             <span className="text-white/55">Ratio</span>
             <span className="font-semibold text-cyan-200 text-right">{result.oddsRatio}</span>
-            <span className="text-white/55">Equity mín.</span>
+            <span className="text-white/55">Equity mín. (%)</span>
             <span className="font-semibold text-yellow-300 text-right">{result.requiredEquityPct.toFixed(1)}%</span>
           </div>
 
