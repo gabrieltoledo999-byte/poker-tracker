@@ -1615,8 +1615,8 @@ export const appRouter = router({
     getCurrent: protectedProcedure
       .query(async ({ ctx }) => {
         const settings = await getBankrollSettings(ctx.user.id);
-        const initialOnline = settings?.initialOnline ?? 100000;
-        const initialLive = settings?.initialLive ?? 400000;
+        const initialOnline = settings?.initialOnline ?? 0;
+        const initialLive = settings?.initialLive ?? 0;
 
         const onlineStats = await getSessionStats(ctx.user.id, "online");
         const liveStats = await getSessionStats(ctx.user.id, "live");

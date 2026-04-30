@@ -467,6 +467,15 @@ export default function Dashboard() {
   const chartData = useMemo(() => {
     if (!history) return [];
 
+    const rawPoints: Array<{
+      date: string;
+      fullDate: string;
+      timestamp: number;
+      online: number;
+      live: number;
+      total: number;
+    }> = [];
+
     const groupedByDay = new Map<string, {
       date: string;
       fullDate: string;
@@ -478,23 +487,41 @@ export default function Dashboard() {
 
     for (const point of history) {
       const pointDate = new Date(point.date);
-      const dayKey = `${pointDate.getFullYear()}-${String(pointDate.getMonth() + 1).padStart(2, "0")}-${String(pointDate.getDate()).padStart(2, "0")}`;
-      const nextPoint = {
+      const ts = pointDate.getTime();
+      if (!Number.isFinite(ts)) continue;
+
+      const basePoint = {
         date: pointDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
         fullDate: pointDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }),
-        timestamp: pointDate.getTime(),
+        timestamp: ts,
         online: point.online / 100,
         live: point.live / 100,
         total: point.total / 100,
       };
 
+      rawPoints.push(basePoint);
+
+      const dayKey = `${pointDate.getFullYear()}-${String(pointDate.getMonth() + 1).padStart(2, "0")}-${String(pointDate.getDate()).padStart(2, "0")}`;
+
       const currentPoint = groupedByDay.get(dayKey);
-      if (!currentPoint || nextPoint.timestamp >= currentPoint.timestamp) {
-        groupedByDay.set(dayKey, nextPoint);
+      if (!currentPoint || basePoint.timestamp >= currentPoint.timestamp) {
+        groupedByDay.set(dayKey, basePoint);
       }
     }
 
-    return Array.from(groupedByDay.values()).sort((a, b) => a.timestamp - b.timestamp);
+    const grouped = Array.from(groupedByDay.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+    // If all history points fall on a single day, keep intraday points instead of collapsing to 1.
+    if (grouped.length <= 1 && rawPoints.length > 1) {
+      return rawPoints
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .map((item) => ({
+          ...item,
+          date: new Date(item.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        }));
+    }
+
+    return grouped;
   }, [history]);
 
   // Domínio dinâmico do eixo Y
@@ -598,6 +625,7 @@ export default function Dashboard() {
     borderClass: type === "online" ? "border-cyan-500/30" : "border-violet-500/30",
     gradientClass: type === "online" ? "from-cyan-500 to-blue-600" : "from-violet-500 to-purple-700",
     editClass: type === "online" ? "text-cyan-700 hover:text-cyan-600 dark:text-cyan-400 dark:hover:text-cyan-300" : "text-violet-700 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-300",
+    initial: consolidated?.[type].initial || 0,
     current: consolidated?.[type].current || 0,
     profit: consolidated?.[type].profit || 0,
     tables: consolidated?.[type].tables || 0,
@@ -779,7 +807,11 @@ export default function Dashboard() {
 
   const topVenueName = prioritizedVenues.find((venue: any) => venue.id === topVenueId)?.name ?? null;
 
-  const isLoading = loadingStats || loadingHistory || loadingConsolidated;
+  const isInitialLoading =
+    (loadingStats || loadingHistory || loadingConsolidated) &&
+    !stats &&
+    !history &&
+    !consolidated;
 
   const rateItems = useMemo(() => {
     if (!fxRates) return [];
@@ -792,7 +824,7 @@ export default function Dashboard() {
     ].filter((r) => r.rate > 0);
   }, [fxRates]);
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1743,14 +1775,20 @@ export default function Dashboard() {
                         onClick={card.onEdit}
                         className={`text-[10px] ${card.editClass} flex items-center gap-0.5 transition-colors`}
                       >
-                        {card.current > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
+                        {card.initial > 0 ? <><Pencil className="h-2.5 w-2.5" />Editar</> : <><Plus className="h-2.5 w-2.5" />Definir</>}
                       </button>
                     </div>
-                    <p className="text-xl font-bold mb-1">{formatCurrencyCompact(card.current)}</p>
-                    <div className={`flex items-center gap-1 text-xs ${card.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                      {card.profit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      <span>{card.profit >= 0 ? "+" : ""}{formatCurrencyCompact(card.profit)}</span>
-                    </div>
+                    <p className={`text-xl font-bold mb-1 ${card.initial === 0 ? (card.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400") : ""}`}>
+                      {card.initial === 0
+                        ? (card.tables === 0 ? "—" : `${card.profit >= 0 ? "+" : ""}${formatCurrencyCompact(card.profit)}`)
+                        : formatCurrencyCompact(card.current)}
+                    </p>
+                    {card.initial > 0 && (
+                      <div className={`flex items-center gap-1 text-xs ${card.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                        {card.profit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        <span>{card.profit >= 0 ? "+" : ""}{formatCurrencyCompact(card.profit)}</span>
+                      </div>
+                    )}
                     <UiTooltip>
                       <TooltipTrigger asChild>
                         <p className="text-xs text-muted-foreground mt-1 inline-block cursor-default">

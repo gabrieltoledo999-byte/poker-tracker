@@ -44,8 +44,13 @@ export async function getSessionStatsWithCache(
     };
   }
 
-  // Try to get from cache first
-  const cachedStats = await getUserSessionStatsFromCache(userId, type);
+  // Try to get from cache first. If cache infra is unavailable, fallback to DB.
+  let cachedStats: Awaited<ReturnType<typeof getUserSessionStatsFromCache>> = null;
+  try {
+    cachedStats = await getUserSessionStatsFromCache(userId, type);
+  } catch (error) {
+    console.warn(`[Cache] Session stats cache unavailable for user ${userId} (${type}), falling back to DB.`, error);
+  }
 
   if (cachedStats) {
     // Cache is valid and fast to load
@@ -157,8 +162,13 @@ export async function getBankrollHistoryWithCache(
   buyIn: number;
   cashOut: number;
 }>> {
-  // Try to get from cache first
-  const cachedHistory = await getBankrollHistoryFromCache(userId, type);
+  // Try to get from cache first. If cache infra is unavailable, fallback to DB.
+  let cachedHistory: Awaited<ReturnType<typeof getBankrollHistoryFromCache>> = null;
+  try {
+    cachedHistory = await getBankrollHistoryFromCache(userId, type);
+  } catch (error) {
+    console.warn(`[Cache] Bankroll history cache unavailable for user ${userId}, falling back to DB.`, error);
+  }
 
   if (cachedHistory && cachedHistory.historyJson) {
     console.log(`[Cache] HIT: Bankroll history for user ${userId}`);
