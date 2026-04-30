@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HandHistoryInput } from "@/components/hand-reviewer/HandHistoryInput";
@@ -14,6 +14,7 @@ import {
 } from "@/parser/handHistoryDispatcher";
 import { loadHandReviewSession, saveHandReviewSession } from "@/lib/hand-review-session";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { SplashScreen } from "@/components/SplashScreen";
 import { jsPDF } from "jspdf";
 import {
@@ -68,12 +69,16 @@ type PositionMetricRow = {
 const POSITION_ORDER = ["UTG", "UTG+1", "MP", "MP+1", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"];
 
 const HAND_REVIEW_CONSENT_VERSION = "v1.0";
-const HAND_REVIEW_HISTORY_SNAPSHOT_KEY = "hand-review-history-snapshot-v1";
+const HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX = "hand-review-history-snapshot-v2";
 
-function loadHistorySnapshot(): any | undefined {
+function getSnapshotKey(userId: string | number | undefined): string {
+  return userId ? `${HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX}-${userId}` : HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX;
+}
+
+function loadHistorySnapshot(userId: string | number | undefined): any | undefined {
   if (typeof window === "undefined") return undefined;
   try {
-    const raw = window.localStorage.getItem(HAND_REVIEW_HISTORY_SNAPSHOT_KEY);
+    const raw = window.localStorage.getItem(getSnapshotKey(userId));
     if (!raw) return undefined;
     return JSON.parse(raw);
   } catch {
@@ -81,19 +86,21 @@ function loadHistorySnapshot(): any | undefined {
   }
 }
 
-function saveHistorySnapshot(data: any) {
+function saveHistorySnapshot(data: any, userId: string | number | undefined) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(HAND_REVIEW_HISTORY_SNAPSHOT_KEY, JSON.stringify(data));
+    window.localStorage.setItem(getSnapshotKey(userId), JSON.stringify(data));
   } catch {
     // Ignore storage quota errors and keep runtime cache only.
   }
 }
 
-function clearHistorySnapshot() {
+function clearHistorySnapshot(userId: string | number | undefined) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(HAND_REVIEW_HISTORY_SNAPSHOT_KEY);
+    window.localStorage.removeItem(getSnapshotKey(userId));
+    // Also clear legacy key if present
+    window.localStorage.removeItem("hand-review-history-snapshot-v1");
   } catch {
     // No-op
   }
@@ -696,6 +703,7 @@ function buildReplayPayload(rawInput: string, selectedPlatform: ParserSelection)
 
 export default function HandReviewer() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<ParserSelection>("AUTO");
   const [activeTab, setActiveTab] = useState<"tournament" | "player">("tournament");
@@ -766,7 +774,7 @@ export default function HandReviewer() {
   const clearReplayHistoryMutation = trpc.memory.clearReplayHistory.useMutation({
     onSuccess: () => {
       toast.success("Histórico do revisor limpo. Você já pode salvar novos torneios.");
-      clearHistorySnapshot();
+      clearHistorySnapshot((user as any)?.id);
       utils.memory.playerHistoricalProfile.invalidate();
       setLastReplayPayload(null);
       setActiveTab("player");
@@ -796,7 +804,7 @@ export default function HandReviewer() {
 
   const playerHistoryQuery = trpc.memory.playerHistoricalProfile.useQuery({}, {
     enabled: hasAcceptedCurrentConsent && activeTab === "player",
-    initialData: loadHistorySnapshot,
+    initialData: () => loadHistorySnapshot((user as any)?.id),
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60 * 24,
     refetchOnWindowFocus: false,
@@ -806,7 +814,7 @@ export default function HandReviewer() {
 
   useEffect(() => {
     if (playerHistoryQuery.data) {
-      saveHistorySnapshot(playerHistoryQuery.data);
+      saveHistorySnapshot(playerHistoryQuery.data, (user as any)?.id);
     }
   }, [playerHistoryQuery.data]);
 
