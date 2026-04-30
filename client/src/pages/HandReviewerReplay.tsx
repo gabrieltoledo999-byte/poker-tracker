@@ -59,6 +59,16 @@ export default function HandReviewerReplay() {
       });
   }, [parsedTournament, handFilter]);
 
+  const filteredHandIndexes = useMemo(
+    () => filteredHands.map(({ idx }) => idx),
+    [filteredHands],
+  );
+
+  const selectedFilteredIndex = useMemo(
+    () => filteredHandIndexes.indexOf(selectedHandIndex),
+    [filteredHandIndexes, selectedHandIndex],
+  );
+
   const selectedHand = parsedTournament?.hands[selectedHandIndex] ?? null;
   const handActions = useMemo(
     () => (selectedHand?.actions ?? []).filter(action => !isForcedPostingAction(action)),
@@ -102,8 +112,8 @@ export default function HandReviewerReplay() {
 
   const canPrevAction = safeStepIndex > 0;
   const canNextAction = safeStepIndex < maxStepIndex;
-  const canPrevHand = selectedHandIndex > 0;
-  const canNextHand = selectedHandIndex < ((parsedTournament?.hands.length ?? 0) - 1);
+  const canPrevHand = selectedFilteredIndex > 0;
+  const canNextHand = selectedFilteredIndex >= 0 && selectedFilteredIndex < (filteredHandIndexes.length - 1);
   const currentStreet = currentStep?.street ?? "preflop";
   const selectedHandSeats = selectedHand?.seats ?? [];
   const heroSeatBase = selectedHandSeats.find(seat => seat.isHero);
@@ -129,6 +139,12 @@ export default function HandReviewerReplay() {
     setCurrentActionIndex(actionIndex);
     setSelectedSeat(null);
   };
+
+  useEffect(() => {
+    if (filteredHandIndexes.length === 0) return;
+    if (selectedFilteredIndex >= 0) return;
+    moveToHand(filteredHandIndexes[0], 0);
+  }, [filteredHandIndexes, selectedFilteredIndex]);
 
   const goToTournamentAnalyzer = () => {
     setLocation(`/hand-review/import?replaySession=${sessionId}`);
@@ -178,13 +194,13 @@ export default function HandReviewerReplay() {
   };
 
   const goPrevHand = () => {
-    if (!canPrevHand) return;
-    moveToHand(selectedHandIndex - 1, 0);
+    if (!canPrevHand || selectedFilteredIndex <= 0) return;
+    moveToHand(filteredHandIndexes[selectedFilteredIndex - 1], 0);
   };
 
   const goNextHand = () => {
-    if (!canNextHand) return;
-    moveToHand(selectedHandIndex + 1, 0);
+    if (!canNextHand || selectedFilteredIndex < 0) return;
+    moveToHand(filteredHandIndexes[selectedFilteredIndex + 1], 0);
   };
 
   const changeFilter = (filter: HandFilter) => {
@@ -203,8 +219,8 @@ export default function HandReviewerReplay() {
       return;
     }
 
-    if (!parsedTournament || !canPrevHand) return;
-    const previousHandIndex = selectedHandIndex - 1;
+    if (!parsedTournament || !canPrevHand || selectedFilteredIndex <= 0) return;
+    const previousHandIndex = filteredHandIndexes[selectedFilteredIndex - 1];
     const previousHandStepCount = Math.max(buildReplaySteps(parsedTournament.hands[previousHandIndex]).length - 1, 0);
     moveToHand(previousHandIndex, previousHandStepCount);
   };
@@ -215,8 +231,8 @@ export default function HandReviewerReplay() {
       return;
     }
 
-    if (!canNextHand) return;
-    moveToHand(selectedHandIndex + 1, 0);
+    if (!canNextHand || selectedFilteredIndex < 0) return;
+    moveToHand(filteredHandIndexes[selectedFilteredIndex + 1], 0);
   };
 
   if (!parsedTournament || !selectedHand || !currentStep) {
