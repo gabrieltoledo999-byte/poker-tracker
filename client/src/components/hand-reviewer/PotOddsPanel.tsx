@@ -4,30 +4,34 @@ import type { ReplayStep } from "@/utils/actionNormalizer";
 
 interface PotOddsPanelProps {
   currentStep: ReplayStep;
-  /** Índice do step atual para detectar quando há call pendente */
+  previousStep: ReplayStep | null;
   bigBlind: number;
 }
 
-/** Retorna o valor de call que o herói enfrenta no step atual (0 se não há call) */
+/**
+ * Detecta se há um bet/raise pendente que o herói precisa responder.
+ * Analisa o step atual: se a ação registrada é de um não-herói e é bet/raise.
+ */
 function getHeroCallAmount(step: ReplayStep): number {
   const hero = step.seats.find(s => s.isHero);
   if (!hero) return 0;
+  if (!step.action) return 0;
 
-  // Se a última ação do step NÃO é do herói e é bet/raise → herói tem call pendente
-  const lastAction = step.action;
-  if (!lastAction) return 0;
-  if (step.actingPlayer === hero.player) return 0; // herói acabou de agir
+  // A ação registrada neste step é do oponente (não do herói)?
+  const isOpponentAction = step.actingPlayer !== hero.player && step.actingPlayer !== null;
+  if (!isOpponentAction) return 0;
 
-  // O amount do bet/raise é o custo máximo da call
-  if (
-    lastAction.action === "bet" ||
-    lastAction.action === "raise" ||
-    lastAction.action === "all_in"
-  ) {
-    return lastAction.toAmount ?? lastAction.amount ?? 0;
+  const a = step.action;
+  if (a.action === "bet" || a.action === "raise") {
+    // toAmount é o valor total que o herói precisaria colocar
+    return a.toAmount ?? a.amount ?? 0;
   }
-  if (lastAction.action === "post_big_blind") {
-    return lastAction.amount ?? 0;
+  if (a.action === "all_in") {
+    return a.toAmount ?? a.amount ?? 0;
+  }
+  // Big blind preflop — herói pode fazer raise ou call
+  if (a.action === "post_big_blind") {
+    return a.amount ?? 0;
   }
   return 0;
 }
@@ -44,9 +48,13 @@ export function PotOddsPanel({ currentStep, bigBlind }: PotOddsPanelProps) {
     [pot, callAmount, heroHole, board],
   );
 
-  // Só mostra no flop/turn/river com cartas disponíveis e call ativa
-  const showFull = result.canCalculate && callAmount > 0;
-  const showPassive = result.canCalculate && callAmount === 0 && board.length >= 3;
+  const onPostFlop = board.length >= 3;
+  const hasHeroCards = heroHole.length === 2;
+
+  // Mostra painel completo quando há call ativa no flop/turn/river
+  const showFull = onPostFlop && hasHeroCards && callAmount > 0;
+  // Mostra passivo (só draws) sempre que estiver no flop/turn/river com cartas
+  const showPassive = onPostFlop && hasHeroCards && callAmount === 0;
 
   if (!showFull && !showPassive) return null;
 

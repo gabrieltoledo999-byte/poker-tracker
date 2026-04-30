@@ -198,7 +198,7 @@ export default function HandReviewerReplay() {
   };
 
   const goPrevActionContinuous = () => {
-    if (safeActionIndex > 0) {
+    if (safeStepIndex > 0) {
       setCurrentActionIndex(prev => Math.max(prev - 1, 0));
       return;
     }
@@ -398,7 +398,7 @@ export default function HandReviewerReplay() {
                       </Fragment>
                     ))}
                   </div>
-                  <PotOddsPanel currentStep={currentStep} bigBlind={currentBigBlind} />
+                  <PotOddsPanel currentStep={currentStep} previousStep={previousStep} bigBlind={currentBigBlind} />
                 </div>
               );
             })()}
