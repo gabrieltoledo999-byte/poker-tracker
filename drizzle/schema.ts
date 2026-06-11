@@ -1,4 +1,4 @@
-import { int, mediumtext, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { date, index, int, mediumtext, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,9 +25,19 @@ export const users = mysqlTable("users", {
   playsMultiPlatform: int("playsMultiPlatform").default(0),
   showInGlobalRanking: int("showInGlobalRanking").default(0).notNull(),
   showInFriendsRanking: int("showInFriendsRanking").default(0).notNull(),
+  country: varchar("country", { length: 120 }),
+  stateRegion: varchar("stateRegion", { length: 120 }),
+  city: varchar("city", { length: 120 }),
+  addressLine: text("addressLine"),
+  postalCode: varchar("postalCode", { length: 20 }),
+  taxDocument: varchar("taxDocument", { length: 24 }),
+  locationLatE6: int("locationLatE6"),
+  locationLngE6: int("locationLngE6"),
+  locationConsentAt: timestamp("locationConsentAt"),
   rankingConsentAnsweredAt: timestamp("rankingConsentAnsweredAt"),
   playStyleAnsweredAt: timestamp("playStyleAnsweredAt"),
   onboardingCompletedAt: timestamp("onboardingCompletedAt"),
+  onboardingReviewedAt: timestamp("onboardingReviewedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -114,6 +124,28 @@ export const bankrollSettings = mysqlTable("bankroll_settings", {
 
 export type BankrollSettings = typeof bankrollSettings.$inferSelect;
 export type InsertBankrollSettings = typeof bankrollSettings.$inferInsert;
+
+/**
+ * GTO matrix visual preferences persisted per user.
+ */
+export const gtoMatrixPreferences = mysqlTable("gto_matrix_preferences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+
+  barOrientation: mysqlEnum("barOrientation", ["diagonal", "horizontal", "vertical"]).notNull().default("diagonal"),
+  barPosition: mysqlEnum("barPosition", ["normal", "reverse"]).notNull().default("normal"),
+
+  raiseColor: varchar("raiseColor", { length: 16 }).notNull().default("#22c55e"),
+  callColor: varchar("callColor", { length: 16 }).notNull().default("#a855f7"),
+  foldColor: varchar("foldColor", { length: 16 }).notNull().default("#2563eb"),
+  allinColor: varchar("allinColor", { length: 16 }).notNull().default("#ef4444"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type GtoMatrixPreferences = typeof gtoMatrixPreferences.$inferSelect;
+export type InsertGtoMatrixPreferences = typeof gtoMatrixPreferences.$inferInsert;
 
 /**
  * Hand pattern counters (manual + quick actions on dashboard).
@@ -355,6 +387,26 @@ export type UserBlock = typeof userBlocks.$inferSelect;
 export type InsertUserBlock = typeof userBlocks.$inferInsert;
 
 /**
+ * Hand reviewer favorites persisted per authenticated user.
+ * This avoids losing favorites across browsers/devices.
+ */
+export const handReviewFavorites = mysqlTable("hand_review_favorites", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  label: varchar("label", { length: 191 }).notNull(),
+  handCount: int("handCount").notNull().default(0),
+  rawInput: mediumtext("rawInput").notNull(),
+  parserSelection: mysqlEnum("parserSelection", ["AUTO", "POKERSTARS", "GG"]).notNull().default("AUTO"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  userCreatedIdx: index("hrf_user_created_idx").on(table.userId, table.createdAt, table.id),
+}));
+
+export type HandReviewFavorite = typeof handReviewFavorites.$inferSelect;
+export type InsertHandReviewFavorite = typeof handReviewFavorites.$inferInsert;
+
+/**
  * Private messages between friends
  */
 export const messages = mysqlTable("messages", {
@@ -466,6 +518,37 @@ export const activeSessions = mysqlTable("active_sessions", {
 
 export type ActiveSession = typeof activeSessions.$inferSelect;
 export type InsertActiveSession = typeof activeSessions.$inferInsert;
+
+export const appPresenceSessions = mysqlTable("app_presence_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  sessionKey: varchar("sessionKey", { length: 64 }).notNull(),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  endedAt: timestamp("endedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  sessionKeyIdx: uniqueIndex("uk_app_presence_session_key").on(table.sessionKey),
+}));
+
+export type AppPresenceSession = typeof appPresenceSessions.$inferSelect;
+export type InsertAppPresenceSession = typeof appPresenceSessions.$inferInsert;
+
+export const appPresenceDaily = mysqlTable("app_presence_daily", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  accessDate: date("accessDate").notNull(),
+  firstSeenAt: timestamp("firstSeenAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  userDateIdx: uniqueIndex("uk_app_presence_daily_user_date").on(table.userId, table.accessDate),
+}));
+
+export type AppPresenceDaily = typeof appPresenceDaily.$inferSelect;
+export type InsertAppPresenceDaily = typeof appPresenceDaily.$inferInsert;
 
 /**
  * Session tables - individual tables/games within a session
@@ -1087,4 +1170,61 @@ export const bankrollHistoryCache = mysqlTable("bankroll_history_cache", {
 
 export type BankrollHistoryCache = typeof bankrollHistoryCache.$inferSelect;
 export type InsertBankrollHistoryCache = typeof bankrollHistoryCache.$inferInsert;
+
+/**
+ * GTO scenarios catalog.
+ * Stores metadata and summary aggregates for a solved preflop spot.
+ */
+export const gtoBaseadoScenarios = mysqlTable("gto_baseado_scenarios", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 120 }).notNull(),
+  title: varchar("title", { length: 191 }).notNull(),
+  source: varchar("source", { length: 80 }).notNull().default("gto_wizard_ai"),
+  gameType: varchar("gameType", { length: 40 }).notNull().default("heads_up"),
+  heroPosition: varchar("heroPosition", { length: 8 }).notNull().default("SB"),
+  villainPosition: varchar("villainPosition", { length: 8 }).notNull().default("BB"),
+  effectiveStackBb: int("effectiveStackBb").notNull().default(200),
+  smallBlind: int("smallBlind").notNull().default(50),
+  bigBlind: int("bigBlind").notNull().default(100),
+  weightedRaisePctX10: int("weightedRaisePctX10").notNull().default(0),
+  weightedLimpCheckPctX10: int("weightedLimpCheckPctX10").notNull().default(0),
+  weightedFoldPctX10: int("weightedFoldPctX10").notNull().default(0),
+  cellAvgRaisePctX10: int("cellAvgRaisePctX10").notNull().default(0),
+  cellAvgLimpCheckPctX10: int("cellAvgLimpCheckPctX10").notNull().default(0),
+  cellAvgFoldPctX10: int("cellAvgFoldPctX10").notNull().default(0),
+  totalCombos: int("totalCombos").notNull().default(1326),
+  // Bet sizing metadata (bb × 10) — e.g. 23 = 2.3bb open, 80 = 8bb 3-bet.
+  openSizeBbX10: int("openSizeBbX10").notNull().default(0),
+  threeBetSizeBbX10: int("threeBetSizeBbX10").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  slugUnique: uniqueIndex("gto_baseado_scenarios_slug_unique").on(table.slug),
+}));
+
+export type GtoBaseadoScenario = typeof gtoBaseadoScenarios.$inferSelect;
+export type InsertGtoBaseadoScenario = typeof gtoBaseadoScenarios.$inferInsert;
+
+/**
+ * Per-hand action frequencies for a GTO scenario.
+ * Percent fields are stored as percentage * 10 (e.g. 78.4% => 784).
+ */
+export const gtoBaseadoHands = mysqlTable("gto_baseado_hands", {
+  id: int("id").autoincrement().primaryKey(),
+  scenarioId: int("scenarioId").notNull(),
+  handCode: varchar("handCode", { length: 8 }).notNull(),
+  handType: mysqlEnum("handType", ["pares", "suited", "offsuit"]).notNull(),
+  combos: int("combos").notNull(),
+  raisePctX10: int("raisePctX10").notNull().default(0),
+  limpCheckPctX10: int("limpCheckPctX10").notNull().default(0),
+  foldPctX10: int("foldPctX10").notNull().default(0),
+  raiseBucket: varchar("raiseBucket", { length: 40 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  scenarioHandUnique: uniqueIndex("gto_baseado_hands_scenario_hand_unique").on(table.scenarioId, table.handCode),
+}));
+
+export type GtoBaseadoHand = typeof gtoBaseadoHands.$inferSelect;
+export type InsertGtoBaseadoHand = typeof gtoBaseadoHands.$inferInsert;
 

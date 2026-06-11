@@ -4,15 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HandHistoryInput } from "@/components/hand-reviewer/HandHistoryInput";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
   type ParserSelection,
   parseHandHistoryTranscript,
 } from "@/parser/handHistoryDispatcher";
-import { loadHandReviewSession, saveHandReviewSession } from "@/lib/hand-review-session";
+import { loadHandReviewSession, saveHandReviewSession, listFavoriteTournaments, recoverGuestFavoritesForUser, type FavoriteTournament } from "@/lib/hand-review-session";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { SplashScreen } from "@/components/SplashScreen";
@@ -37,6 +37,7 @@ type ConfidenceLevel = "low" | "moderate" | "medium" | "high" | "very_high";
 
 type OpportunityCounts = {
   hands: number;
+  threeBet?: number;
   cbetFlop: number;
   cbetTurn: number;
   foldToCbet: number;
@@ -66,10 +67,13 @@ type PositionMetricRow = {
   pct: number;
 };
 
+type TournamentCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
+
 const POSITION_ORDER = ["UTG", "UTG+1", "MP", "MP+1", "HJ", "CO", "BTN", "SB", "BB", "UNKNOWN"];
 
 const HAND_REVIEW_CONSENT_VERSION = "v1.0";
-const HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX = "hand-review-history-snapshot-v2";
+const HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX = "hand-review-history-snapshot-v5";
+const CLEAR_REVIEW_HISTORY_CONFIRM_TEXT = "LIMPAR";
 
 function getSnapshotKey(userId: string | number | undefined): string {
   return userId ? `${HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX}-${userId}` : HAND_REVIEW_HISTORY_SNAPSHOT_KEY_PREFIX;
@@ -99,11 +103,102 @@ function clearHistorySnapshot(userId: string | number | undefined) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(getSnapshotKey(userId));
-    // Also clear legacy key if present
+    // Also clear legacy keys if present
     window.localStorage.removeItem("hand-review-history-snapshot-v1");
+    window.localStorage.removeItem("hand-review-history-snapshot-v2");
+    window.localStorage.removeItem("hand-review-history-snapshot-v3");
+    window.localStorage.removeItem("hand-review-history-snapshot-v4");
+    if (userId !== undefined && userId !== null) {
+      window.localStorage.removeItem(`hand-review-history-snapshot-v2-${userId}`);
+      window.localStorage.removeItem(`hand-review-history-snapshot-v3-${userId}`);
+      window.localStorage.removeItem(`hand-review-history-snapshot-v4-${userId}`);
+    }
   } catch {
     // No-op
   }
+}
+
+function normalizeTournamentCurrency(value: string | null | undefined): TournamentCurrency {
+  const code = String(value ?? "").trim().toUpperCase();
+  if (code === "BRL" || code === "USD" || code === "CAD" || code === "JPY" || code === "CNY" || code === "EUR") {
+    return code;
+  }
+  return "USD";
+}
+
+function parseMonetaryMajorValue(raw: string): number {
+  const normalized = String(raw)
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "")
+    .replace(",", ".");
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function parseBuyInExpression(rawExpression: string): { buyIn: number; fee: number } | null {
+  const expression = String(rawExpression ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/US\$|R\$|C\$|€|¥|\$/gi, "");
+
+  if (!expression.includes("+")) return null;
+
+  const terms = expression
+    .split("+")
+    .map((term) => term.trim())
+    .filter(Boolean);
+
+  if (terms.length < 2) return null;
+
+  const buyInRaw = terms[0];
+  const firstAmount = parseMonetaryMajorValue(buyInRaw);
+  if (firstAmount <= 0) return null;
+
+  const buyInHasExplicitDecimals = /[.,]/.test(buyInRaw);
+  const restTotal = terms.slice(1).reduce((acc, term) => {
+    if (/[.,]/.test(term)) {
+      return acc + parseMonetaryMajorValue(term);
+    }
+
+    // GG compact notation often encodes rake cents without separator: 0,30+2 => 0,30 + 0,02.
+    if (buyInHasExplicitDecimals && /^\d{1,2}$/.test(term)) {
+      return acc + Number(term) / 100;
+    }
+
+    return acc + parseMonetaryMajorValue(term);
+  }, 0);
+
+  // Treat the whole expression as a single buy-in total. PokerStars and GG split it into
+  // "buy-in + rake (+ bounty)" but the player effectively paid the sum to enter the tournament,
+  // so we collapse it into one number to keep ABI/ROI consistent.
+  return { buyIn: firstAmount + restTotal, fee: 0 };
+}
+
+function inferTournamentCostFromRawInput(rawInput: string): { buyIn: number; fee: number; currency?: TournamentCurrency } | null {
+  const text = String(rawInput ?? "");
+
+  const buyInPlusFeeRegex = /((?:R\$|US\$|C\$|€|¥|\$)?\s*\d+(?:[.,]\d{1,2})?(?:\s*\+\s*(?:R\$|US\$|C\$|€|¥|\$)?\s*\d+(?:[.,]\d{1,2})?){1,4})\s*(BRL|USD|CAD|JPY|CNY|EUR)?/i;
+  const buyInPlusFeeMatch = text.match(buyInPlusFeeRegex);
+  if (buyInPlusFeeMatch) {
+    const parsedExpression = parseBuyInExpression(buyInPlusFeeMatch[1]);
+    const currency = buyInPlusFeeMatch[2] ? normalizeTournamentCurrency(buyInPlusFeeMatch[2]) : undefined;
+    if (parsedExpression) {
+      return { buyIn: parsedExpression.buyIn, fee: parsedExpression.fee, currency };
+    }
+  }
+
+  const buyInOnlyRegex = /(?:buy[ -]?in|entrada|inscri[cç][aã]o)\s*[:=]?\s*(?:R\$|US\$|C\$|€|¥|\$)?\s*(\d+(?:[.,]\d{1,2})?)\s*(BRL|USD|CAD|JPY|CNY|EUR)?/i;
+  const buyInOnlyMatch = text.match(buyInOnlyRegex);
+  if (buyInOnlyMatch) {
+    const buyIn = parseMonetaryMajorValue(buyInOnlyMatch[1]);
+    const currency = buyInOnlyMatch[2] ? normalizeTournamentCurrency(buyInOnlyMatch[2]) : undefined;
+    if (buyIn > 0) {
+      return { buyIn, fee: 0, currency };
+    }
+  }
+
+  return null;
 }
 
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; emoji: string; color: string }> = {
@@ -255,12 +350,12 @@ function GeneralConfidenceIndicator({ level, hands }: { level: ConfidenceLevel; 
 function TabConfidenceHeader({ hands, level }: { hands: number; level: ConfidenceLevel }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="inline-flex items-center gap-2 text-xs font-semibold text-white/80">
+      <div className="inline-flex items-center gap-2 text-xs font-semibold text-foreground/80 dark:text-white/80">
         <span aria-hidden>Estat</span>
         <span>Painel estatístico</span>
       </div>
       <div className="flex items-center justify-between gap-2 sm:justify-end">
-        <span className="text-xs text-white/70">{hands} mãos analisadas</span>
+        <span className="text-xs text-muted-foreground dark:text-white/70">{hands} mãos analisadas</span>
         <GeneralConfidenceIndicator level={level} hands={hands} />
       </div>
     </div>
@@ -277,8 +372,8 @@ const BENCHMARKS: Record<MetricKey, { min: number; max: number; label: string; i
   bbDefense: { min: 35, max: 55, label: "Defesa de BB", interpretation: "Defesa do big blind quando atacado.", formula: "Defesas (call/raise) no BB / Ataques ao BB × 100" },
   attemptToSteal: { min: 30, max: 50, label: "Attempt to Steal", interpretation: "Open raise em CO/BTN/SB quando a ação chega limpa (fold) até você.", formula: "Raises de roubo / Oportunidades de roubo × 100" },
   aggressionFactor: { min: 2, max: 3.5, label: "Aggression Factor", interpretation: "Razão entre ações agressivas e calls.", formula: "(Bets + Raises) / Calls (sem blinds)" },
-  wtsd: { min: 25, max: 35, label: "WTSD", interpretation: "Frequência de ida ao showdown.", formula: "Mãos ao showdown / Total de mãos × 100" },
-  wsd: { min: 50, max: 60, label: "WSD", interpretation: "Vitória quando chega ao showdown.", formula: "Vitórias no showdown / Mãos no showdown × 100" },
+  wtsd: { min: 25, max: 35, label: "WTSD", interpretation: "Frequência de mãos que chegaram ao showdown com cartas reveladas.", formula: "Mãos ao showdown / Total de mãos × 100" },
+  wsd: { min: 50, max: 60, label: "WSD", interpretation: "Percentual de vitórias apenas nas mãos que chegaram ao showdown.", formula: "Vitórias no showdown / Mãos no showdown × 100" },
   rfi: { min: 20, max: 32, label: "RFI", interpretation: "Raise first in: abriu o pote com raise.", formula: "Raises primeiro a entrar / Total de mãos × 100" },
   coldCall: { min: 2, max: 8, label: "Cold Call", interpretation: "Pagou um raise sem ter investido antes.", formula: "Cold calls / Oportunidades de cold call × 100" },
   squeeze: { min: 4, max: 10, label: "Squeeze", interpretation: "3-bet contra raise + caller(s).", formula: "Squeezes / Oportunidades de squeeze × 100" },
@@ -289,7 +384,7 @@ const BENCHMARKS: Record<MetricKey, { min: number; max: number; label: string; i
   cbetOop: { min: 45, max: 65, label: "C-Bet OOP", interpretation: "C-bet flop fora de posição.", formula: "C-bets fora de posição / Oportunidades fora de posição × 100" },
   floatFlop: { min: 8, max: 18, label: "Float Flop", interpretation: "Pagou c-bet flop IP e atacou turn.", formula: "Floats bem-sucedidos / Oportunidades de float × 100" },
   checkRaiseFlop: { min: 6, max: 14, label: "Check-Raise Flop", interpretation: "Check + raise no flop.", formula: "Check-raises / Flops jogados × 100" },
-  allInAdjBb100: { min: 1, max: 8, label: "All-in Adj BB/100", interpretation: "EV BB/100 dos all-ins: calcula por mão com (Equidade × Pote Total − Investimento) e projeta para 100 mãos.", formula: "((Σ(Equidade × Pote Total − Investimento) / BB) / Mãos) × 100" },
+  allInAdjBb100: { min: 1, max: 8, label: "All-in Adj BB/100", interpretation: "EV BB/100 dos all-ins: calcula por mão com (Equidade × Pote Total − Investimento) e projeta para 100 mãos. Use com cautela em amostras pequenas: abaixo de 30.000 a 50.000 maos o indicador ainda sofre muito com variancia.", formula: "((Σ(Equidade × Pote Total − Investimento) / BB) / Mãos) × 100" },
 };
 
 const SPECIFIC_PATTERN_SAMPLE_DATA = [
@@ -305,6 +400,11 @@ const WINRATE_SAMPLE_DATA = [
   { confidence: "Média (90%)", lowVariance: 2436, typicalVariance: 4888, highVariance: 9742 },
   { confidence: "Alta (95%)", lowVariance: 3458, typicalVariance: 6939, highVariance: 13830 },
   { confidence: "Muito Alta (99%)", lowVariance: 5973, typicalVariance: 11986, highVariance: 23889 },
+];
+
+const ALL_IN_ADJ_SAMPLE_GUIDANCE = [
+  "Amostragem minima (indicativo): pelo menos 30.000 a 50.000 maos. Antes disso, os dados podem ser mais ruido estatistico do que sinal real de sorte ou habilidade em all-in.",
+  "Amostragem confiavel (solido): acima de 100.000 maos. Nesse volume, a linha de All-in Adj tende a estabilizar e separar melhor run bad de leaks tecnicos.",
 ];
 
 function getMetricStatus(key: MetricKey, value: number | null | undefined): "below" | "ok" | "above" {
@@ -484,12 +584,14 @@ function MetricLabel({
   formula,
   details,
   onOpen,
+  showInfo = true,
 }: {
   label: string;
   hint: string;
   formula?: string;
   details?: string[];
   onOpen?: () => void;
+  showInfo?: boolean;
 }) {
   return (
     <div className="inline-flex items-center gap-1">
@@ -504,45 +606,47 @@ function MetricLabel({
       ) : (
         <span>{label}</span>
       )}
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/25 text-[10px] text-white/70 hover:border-cyan-400 hover:text-cyan-300 transition-colors"
-            aria-label={`Ajuda sobre ${label}`}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
+      {showInfo ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/25 text-[10px] text-white/70 transition-colors hover:border-cyan-400 hover:text-cyan-300"
+              aria-label={`Ajuda sobre ${label}`}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              ?
+            </button>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            align="start"
+            sideOffset={8}
+            className="max-w-[320px] border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 shadow-xl"
           >
-            ?
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          side="top"
-          align="start"
-          sideOffset={8}
-          className="max-w-[320px] border border-slate-700 bg-slate-950 text-slate-100 shadow-xl"
-        >
-          <div className="space-y-2">
-            <p className="text-xs font-medium leading-relaxed text-slate-100">{hint}</p>
-            {formula && (
-              <div className="border-t border-slate-700 pt-2">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300">Formula</p>
-                <p className="rounded bg-slate-900 px-2 py-1 text-[11px] font-mono leading-relaxed text-slate-200">{formula}</p>
-              </div>
-            )}
-            {details && details.length > 0 && (
-              <div className="border-t border-slate-700 pt-2">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300">Detalhes</p>
-                <ul className="space-y-1 text-[11px] text-slate-300">
-                  {details.map((item) => (
-                    <li key={item}>- {item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
+            <div className="space-y-2">
+              <p className="text-xs font-medium leading-relaxed text-slate-100">{hint}</p>
+              {formula && (
+                <div className="border-t border-slate-700 pt-2">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300">Formula</p>
+                  <p className="rounded bg-slate-900 px-2 py-1 text-[11px] font-mono leading-relaxed text-slate-200">{formula}</p>
+                </div>
+              )}
+              {details && details.length > 0 && (
+                <div className="border-t border-slate-700 pt-2">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300">Detalhes</p>
+                  <ul className="space-y-1 text-[11px] text-slate-300">
+                    {details.map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
     </div>
   );
 }
@@ -670,9 +774,30 @@ function buildReplayPayload(rawInput: string, selectedPlatform: ParserSelection)
     return list;
   });
 
-  const eliminationHand = parsed.hands.find((hand) => hand.summary.eliminationPosition != null);
-  const buyInChips = Math.round((firstHand.buyIn ?? 0) * 100);
-  const feeChips = Math.round((firstHand.fee ?? 0) * 100);
+  const eliminationHand = [...parsed.hands]
+    .reverse()
+    .find((hand) => hand.summary.eliminationPosition != null);
+  const inferredCost = inferTournamentCostFromRawInput(rawInput);
+  const buyInMajor = Number(
+    firstHand.buyIn
+    ?? parsed.tournamentInfo.buyIn
+    ?? inferredCost?.buyIn
+    ?? 0,
+  );
+  const feeMajor = Number(
+    firstHand.fee
+    ?? parsed.tournamentInfo.fee
+    ?? inferredCost?.fee
+    ?? 0,
+  );
+  const buyInChips = Math.max(0, Math.round(buyInMajor * 100));
+  const feeChips = Math.max(0, Math.round(feeMajor * 100));
+  const tournamentCurrency = normalizeTournamentCurrency(
+    firstHand.currency
+    ?? parsed.tournamentInfo.currency
+    ?? inferredCost?.currency
+    ?? "USD",
+  );
 
   return {
     parsed,
@@ -684,7 +809,7 @@ function buildReplayPayload(rawInput: string, selectedPlatform: ParserSelection)
         format: firstHand.format || "tournament",
         buyIn: buyInChips,
         fee: feeChips,
-        currency: (firstHand.currency || "USD") as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR",
+        currency: tournamentCurrency,
         importedAt: new Date(),
         totalHands: parsed.hands.length,
         finalPosition: parsed.tournamentInfo.finalPosition ?? undefined,
@@ -704,12 +829,18 @@ function buildReplayPayload(rawInput: string, selectedPlatform: ParserSelection)
 export default function HandReviewer() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  const userId = (user as any)?.id;
   const [rawInput, setRawInput] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<ParserSelection>("AUTO");
   const [activeTab, setActiveTab] = useState<"tournament" | "player">("tournament");
   const [lastReplayPayload, setLastReplayPayload] = useState<any | null>(null);
   const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false);
+  const [clearHistoryConfirmText, setClearHistoryConfirmText] = useState("");
   const [selectedMetricForPositions, setSelectedMetricForPositions] = useState<MetricKey | null>(null);
+  const [favorites, setFavorites] = useState<FavoriteTournament[]>([]);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [hasSyncedLocalFavorites, setHasSyncedLocalFavorites] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -735,6 +866,15 @@ export default function HandReviewer() {
 
   const requiresConsent = !consentQuery.isLoading && !hasAcceptedCurrentConsent;
 
+  const favoritesQuery = trpc.memory.favorites.list.useQuery(undefined, {
+    enabled: !!userId,
+    refetchOnWindowFocus: false,
+  });
+
+  const addFavoriteMutation = trpc.memory.favorites.add.useMutation();
+  const renameFavoriteMutation = trpc.memory.favorites.rename.useMutation();
+  const removeFavoriteMutation = trpc.memory.favorites.remove.useMutation();
+
   useEffect(() => {
     if (requiresConsent) {
       setConsentModalOpen(true);
@@ -742,6 +882,63 @@ export default function HandReviewer() {
       setConsentModalOpen(false);
     }
   }, [requiresConsent]);
+
+  useEffect(() => {
+    if (!userId) {
+      setFavorites(recoverGuestFavoritesForUser(undefined));
+      return;
+    }
+
+    if (favoritesQuery.data) {
+      setFavorites(favoritesQuery.data as FavoriteTournament[]);
+    }
+  }, [userId, favoritesQuery.data]);
+
+  useEffect(() => {
+    if (!userId || hasSyncedLocalFavorites) return;
+    if (favoritesQuery.isLoading) return;
+
+    const localFavorites = recoverGuestFavoritesForUser(userId);
+    const serverCount = favoritesQuery.data?.length ?? 0;
+    if (serverCount > 0 || localFavorites.length === 0) {
+      setHasSyncedLocalFavorites(true);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        for (const item of localFavorites) {
+          if (cancelled) return;
+          await addFavoriteMutation.mutateAsync({
+            rawInput: item.rawInput,
+            parserSelection: item.parserSelection,
+            handCount: Number(item.handCount || 0),
+            label: String(item.label || "Favorito"),
+            createdAt: Number(item.createdAt || Date.now()),
+          });
+        }
+        if (!cancelled) {
+          await favoritesQuery.refetch();
+        }
+      } catch {
+        // Keep local fallback untouched if backend sync fails.
+      } finally {
+        if (!cancelled) setHasSyncedLocalFavorites(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    userId,
+    hasSyncedLocalFavorites,
+    favoritesQuery.isLoading,
+    favoritesQuery.data,
+    addFavoriteMutation,
+    favoritesQuery,
+  ]);
 
   const analyzeMutation = trpc.memory.analyzeReplay.useMutation({
     onSuccess: () => {
@@ -757,13 +954,15 @@ export default function HandReviewer() {
     onSuccess: async (result) => {
       if ((result as any)?.reusedExisting) {
         toast.warning("Torneio identificado como duplicado e não foi somado novamente.", {
-          description: "Os dados consolidados serao atualizados em background em ate 1 hora.",
+          description: "Os dados consolidados estao sendo atualizados automaticamente em background.",
         });
       } else {
         toast.success("Torneio adicionado ao historico do jogador.", {
-          description: "Atualizacao completa em background: em ate 1 hora os dados refletem este torneio.",
+          description: "Atualizacao automatica em andamento. As estatisticas devem aparecer em instantes.",
         });
       }
+      clearHistorySnapshot((user as any)?.id);
+      await utils.memory.playerHistoricalProfile.invalidate();
       setActiveTab("player");
     },
     onError: (error) => {
@@ -790,11 +989,12 @@ export default function HandReviewer() {
         ? new Date((result as any).scheduledFor).toLocaleString("pt-BR")
         : null;
 
-      toast.success("Recalculo agendado em background.", {
+      toast.success("Atualizacao completa iniciada.", {
         description: eta
-          ? `Execucao prevista para ${eta}. Seus dados serao atualizados sem travar a tela.`
-          : "Seus dados serao atualizados em background sem travar a tela.",
+          ? `Execucao prevista para ${eta}. Estamos recalculando todas as maos importadas e atualizando VPIP/PFR/WSD/ROI em segundo plano, sem travar a tela.`
+          : "Estamos recalculando todas as maos importadas e atualizando VPIP/PFR/WSD/ROI em segundo plano, sem travar a tela.",
       });
+      void utils.memory.playerHistoricalProfile.invalidate();
       setActiveTab("player");
     },
     onError: (error) => {
@@ -868,7 +1068,8 @@ export default function HandReviewer() {
       bump("rfi", position, priorToHero.length === 0 ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, priorToHero.length === 0 ? 1 : 0);
 
       const isStealPos = position === "CO" || position === "BTN" || position === "SB";
-      bump("attemptToSteal", position, (isStealPos && priorToHero.length === 0) ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, (isStealPos && priorToHero.length === 0) ? 1 : 0);
+      const priorAllFoldsForSteal = priorToHero.every((a) => isFold(a.action));
+      bump("attemptToSteal", position, (isStealPos && priorAllFoldsForSteal) ? (heroPreflop.some((a) => isAgg(a.action)) ? 1 : 0) : 0, (isStealPos && priorAllFoldsForSteal) ? 1 : 0);
       bump("bbDefense", position, position === "BB" && priorAgg ? (heroFirstPre && !isFold(heroFirstPre.action) ? 1 : 0) : 0, position === "BB" && priorAgg ? 1 : 0);
 
       const flop = hand.actions.filter((a) => a.street === "flop");
@@ -998,17 +1199,122 @@ export default function HandReviewer() {
     saveToHistoryMutation.mutate(built.payload);
   };
 
+  const handleFavoriteTournament = () => {
+    if (!userId) {
+      toast.warning("Faça login para salvar favoritos na sua conta.");
+      return;
+    }
+
+    if (!rawInput.trim()) {
+      toast.warning("Carregue um torneio antes de favoritar.");
+      return;
+    }
+    const parsed = parseHandHistoryTranscript(rawInput, { preferredPlatform: selectedPlatform });
+    const handCount = parsed.hands.length;
+    if (handCount === 0) {
+      toast.warning("Nenhuma mão válida detectada.");
+      return;
+    }
+    const dateStr = new Date().toLocaleDateString("pt-BR");
+    const label = `${dateStr} · ${handCount} mãos${parsed.hands[0]?.tournamentId ? ` · #${parsed.hands[0].tournamentId}` : ""}`;
+    addFavoriteMutation.mutate({
+      rawInput,
+      parserSelection: selectedPlatform,
+      handCount,
+      label,
+    }, {
+      onSuccess: async () => {
+        await favoritesQuery.refetch();
+        toast.success("Torneio favoritado! Acesse em 'Favoritos' para reprisar.");
+      },
+      onError: () => {
+        toast.error("Não foi possível salvar o favorito.");
+      },
+    });
+  };
+
+  const handleReplayFavorite = (fav: FavoriteTournament) => {
+    try {
+      const sessionId = saveHandReviewSession(fav.rawInput, fav.parserSelection);
+      setLocation(`/hand-review/replay/${sessionId}`);
+    } catch {
+      toast.error("Falha ao abrir a mesa. Tente novamente.");
+    }
+  };
+
+  const handleAnalyzeFavorite = (fav: FavoriteTournament) => {
+    if (requiresConsent) {
+      toast.warning("Aceite o termo de consentimento para usar o Revisor de Mãos.");
+      return;
+    }
+
+    const built = buildReplayPayload(fav.rawInput, fav.parserSelection);
+    if (!built || built.parsed.hands.length === 0) {
+      toast.warning("Nenhuma mão válida detectada nesse favorito.");
+      return;
+    }
+
+    setRawInput(fav.rawInput);
+    setSelectedPlatform(fav.parserSelection);
+    setLastReplayPayload(built.payload);
+    setActiveTab("tournament");
+    analyzeMutation.mutate(built.payload);
+  };
+
+  const handleRenameFavorite = (fav: FavoriteTournament) => {
+    if (typeof window === "undefined") return;
+    if (!userId) {
+      toast.warning("Faça login para editar favoritos.");
+      return;
+    }
+
+    const nextLabel = window.prompt("Novo nome para o favorito:", fav.label);
+    if (nextLabel == null) return;
+
+    renameFavoriteMutation.mutate({ id: String(fav.id), label: nextLabel }, {
+      onSuccess: async () => {
+        await favoritesQuery.refetch();
+        toast.success("Favorito renomeado.");
+      },
+      onError: () => {
+        toast.error("Não foi possível renomear o favorito.");
+      },
+    });
+  };
+
+  const handleDeleteFavorite = (id: string) => {
+    if (!userId) {
+      toast.warning("Faça login para remover favoritos.");
+      return;
+    }
+
+    removeFavoriteMutation.mutate({ id: String(id) }, {
+      onSuccess: async () => {
+        await favoritesQuery.refetch();
+        toast.success("Favorito removido.");
+      },
+      onError: () => {
+        toast.error("Não foi possível remover o favorito.");
+      },
+    });
+  };
+
   const handleClearReplayHistory = () => {
     if (requiresConsent) {
       toast.warning("Aceite o termo de consentimento para limpar os dados do revisor.");
       return;
     }
 
-    const shouldClear = window.confirm(
-      "Tem certeza que deseja limpar TODO o histórico do Revisor de Mãos? Esta ação não pode ser desfeita.",
-    );
-    if (!shouldClear) return;
+    setClearHistoryConfirmText("");
+    setClearHistoryDialogOpen(true);
+  };
 
+  const confirmClearReplayHistory = () => {
+    if (clearHistoryConfirmText.trim().toUpperCase() !== CLEAR_REVIEW_HISTORY_CONFIRM_TEXT) {
+      toast.warning(`Digite ${CLEAR_REVIEW_HISTORY_CONFIRM_TEXT} para confirmar a limpeza.`);
+      return;
+    }
+    setClearHistoryDialogOpen(false);
     clearReplayHistoryMutation.mutate();
   };
 
@@ -1019,7 +1325,7 @@ export default function HandReviewer() {
     }
 
     const shouldRecalculate = window.confirm(
-      "Deseja agendar o recalculo completo em background? O app continuara responsivo durante a atualizacao.",
+      "Atualizar todas as estatisticas do historico agora? O recalculo completo roda em segundo plano e a tela continua responsiva.",
     );
     if (!shouldRecalculate) return;
 
@@ -1084,6 +1390,7 @@ export default function HandReviewer() {
     const t = analyzeMutation.data;
     return {
       hands: Number(t?.opportunities?.hands ?? t?.tournament?.handsAnalyzed ?? 0),
+      threeBet: Number((t?.opportunities as any)?.threeBet ?? 0),
       cbetFlop: Number(t?.opportunities?.cbetFlop ?? 0),
       cbetTurn: Number(t?.opportunities?.cbetTurn ?? 0),
       foldToCbet: Number(t?.opportunities?.foldToCbet ?? 0),
@@ -1140,7 +1447,12 @@ export default function HandReviewer() {
 
       writeTitle("Resumo do Torneio");
       writeLine(`Mao analisadas: ${data.tournament.handsAnalyzed}`);
-      writeLine(`Buy-in: ${(data.tournament.buyIn / 100).toFixed(2)} | ABI: ${(data.tournament.abiValue / 100).toFixed(2)}`);
+      const tournamentBuyIn = Number(data.tournament.buyIn ?? 0);
+      const tournamentFee = Number(data.tournament.fee ?? 0);
+      const tournamentTotalEntry = tournamentBuyIn + tournamentFee;
+      writeLine(
+        `Buy-in: ${(tournamentBuyIn / 100).toFixed(2)} + taxa: ${(tournamentFee / 100).toFixed(2)} = ${(tournamentTotalEntry / 100).toFixed(2)} | ABI: ${(data.tournament.abiValue / 100).toFixed(2)}`,
+      );
       writeLine(`Colocacao final: ${data.tournament.finalPositionLabel ?? "-"}`);
       writeLine(`Showdowns: ${data.tournament.showdownsCount}`);
       writeLine(`Duracao: ${data.tournament.durationMinutes ? `${data.tournament.durationMinutes} min` : "-"}`);
@@ -1198,6 +1510,7 @@ export default function HandReviewer() {
   const historicalOpp = (playerHistoryQuery.data?.summary as any)?.opportunities as Partial<OpportunityCounts> | undefined;
   const historicalOppSafe: OpportunityCounts = {
     hands: Number(historicalOpp?.hands ?? playerHands ?? 0),
+    threeBet: Number((historicalOpp as any)?.threeBet ?? 0),
     cbetFlop: Number(historicalOpp?.cbetFlop ?? 0),
     cbetTurn: Number(historicalOpp?.cbetTurn ?? 0),
     foldToCbet: Number(historicalOpp?.foldToCbet ?? 0),
@@ -1221,9 +1534,10 @@ export default function HandReviewer() {
     switch (key) {
       case "vpip":
       case "pfr":
-      case "threeBet":
       case "wtsd":
         return Number(opp.hands ?? 0);
+      case "threeBet":
+        return Number(opp.threeBet ?? 0);
       case "wsd":
         return roundMade(activeTab === "tournament" ? Number(analyzeMutation.data?.stats?.wtsd ?? 0) : Number((playerHistoryQuery.data?.summary as any)?.wtsdAvg ?? 0), Number(opp.hands ?? 0));
       case "cbetFlop":
@@ -1353,8 +1667,14 @@ export default function HandReviewer() {
     </div>
   ) : null;
 
+  const showProcessingSplash =
+    analyzeMutation.isPending
+    || saveToHistoryMutation.isPending
+    || recalculateHistoryMutation.isPending;
+
   return (
-    <div className="tokyo-reviewer mx-auto w-full max-w-[1400px] flex flex-col gap-3 px-2 py-3 md:px-4 pb-10">
+    <div className="tokyo-reviewer tokyo-reviewer-home mx-auto w-full max-w-[1400px] flex flex-col gap-3 px-2 py-3 md:px-4 pb-10">
+      {showProcessingSplash && <SplashScreen />}
       <div className="tokyo-grid-overlay" />
 
       <Dialog open={requiresConsent && consentModalOpen}>
@@ -1437,6 +1757,45 @@ export default function HandReviewer() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={clearHistoryDialogOpen} onOpenChange={setClearHistoryDialogOpen}>
+        <DialogContent className="border border-red-400/40 bg-slate-950 text-slate-100 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-300">Confirmar limpeza total do histórico</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-red-100/90">
+              Esta ação apaga todos os torneios e métricas salvos pelo Revisor de Mãos e não pode ser desfeita.
+            </p>
+            <p className="text-slate-300">
+              Para continuar, digite <span className="font-bold text-red-200">{CLEAR_REVIEW_HISTORY_CONFIRM_TEXT}</span> no campo abaixo.
+            </p>
+            <Input
+              value={clearHistoryConfirmText}
+              onChange={(event) => setClearHistoryConfirmText(event.target.value)}
+              placeholder={`Digite ${CLEAR_REVIEW_HISTORY_CONFIRM_TEXT}`}
+              autoComplete="off"
+              className="border-red-300/40 bg-slate-900 text-slate-100 placeholder:text-slate-500"
+            />
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="outline"
+                onClick={() => setClearHistoryDialogOpen(false)}
+                disabled={clearReplayHistoryMutation.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmClearReplayHistory}
+                disabled={clearReplayHistoryMutation.isPending || clearHistoryConfirmText.trim().toUpperCase() !== CLEAR_REVIEW_HISTORY_CONFIRM_TEXT}
+              >
+                {clearReplayHistoryMutation.isPending ? "Limpando histórico..." : "Confirmar limpeza"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {requiresConsent && !consentModalOpen && (
         <div className="tokyo-panel rounded-xl border-amber-400/30 px-4 py-3 text-sm">
           <p className="font-semibold text-amber-200">Revisor de Mãos indisponível sem consentimento</p>
@@ -1478,8 +1837,16 @@ export default function HandReviewer() {
               </Button>
               <Button
                 variant="outline"
+                onClick={handleFavoriteTournament}
+                disabled={!hasHands}
+                className="gap-2 border-amber-400/40 text-amber-600 hover:border-amber-400 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-500/10"
+              >
+                ⭐ Favoritar torneio ({favorites.length}/10)
+              </Button>
+              <Button
                 onClick={handleSaveTournamentToHistory}
                 disabled={!hasHands || saveToHistoryMutation.isPending}
+                className="border border-emerald-300/70 bg-emerald-500 font-semibold text-white shadow-[0_10px_24px_rgba(16,185,129,0.35)] transition hover:-translate-y-0.5 hover:bg-emerald-400 disabled:translate-y-0 disabled:opacity-70"
               >
                 {saveToHistoryMutation.isPending ? "Salvando no histórico..." : "Adicionar este torneio aos dados do jogador"}
               </Button>
@@ -1502,6 +1869,67 @@ export default function HandReviewer() {
         </Card>
       </div>
 
+      {/* Favorites panel */}
+      {favorites.length > 0 && (
+        <Card className="tokyo-panel rounded-2xl">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                ⭐ Torneios favoritos <span className="text-xs font-normal text-muted-foreground">({favorites.length}/10)</span>
+              </CardTitle>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowFavorites((v) => !v)}>
+                {showFavorites ? "Ocultar" : "Ver lista"}
+              </Button>
+            </div>
+          </CardHeader>
+          {showFavorites && (
+            <CardContent className="space-y-2">
+              {[...favorites].sort((a, b) => b.createdAt - a.createdAt).map((fav) => (
+                <div key={fav.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 dark:border-white/10 bg-muted/20 dark:bg-slate-950/60 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{fav.label}</p>
+                    <p className="text-xs text-muted-foreground">{fav.handCount} mãos · {fav.parserSelection}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-3 text-xs"
+                      onClick={() => handleAnalyzeFavorite(fav)}
+                    >
+                      Analisar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-3 text-xs"
+                      onClick={() => handleRenameFavorite(fav)}
+                    >
+                      Renomear
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-7 px-3 text-xs bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+                      onClick={() => handleReplayFavorite(fav)}
+                    >
+                      ▶ Reprisar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteFavorite(fav.id)}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       <Card className="tokyo-panel rounded-2xl">
         <CardHeader>
           <CardTitle>Painel de leitura</CardTitle>
@@ -1509,9 +1937,9 @@ export default function HandReviewer() {
         <CardContent>
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "tournament" | "player")}>
             <div className="overflow-x-auto pb-1">
-              <TabsList className="flex min-w-max gap-1 bg-slate-950/55 border border-cyan-400/20 rounded-xl p-1 md:grid md:w-full md:min-w-0 md:grid-cols-2 md:gap-0">
-                <TabsTrigger value="tournament" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Análise do Torneio</TabsTrigger>
-                <TabsTrigger value="player" className="min-w-[148px] md:min-w-0 data-[state=active]:bg-cyan-400/20 data-[state=active]:text-cyan-100 data-[state=active]:shadow-[0_0_0_1px_rgba(34,211,238,0.35)]">Dados do Jogador + Posições/Foco</TabsTrigger>
+              <TabsList className="review-tabs-shell flex min-w-max gap-1 rounded-xl p-1 md:grid md:w-full md:min-w-0 md:grid-cols-2 md:gap-0">
+                <TabsTrigger value="tournament" className="review-tab-trigger min-w-[148px] md:min-w-0">Análise do Torneio</TabsTrigger>
+                <TabsTrigger value="player" className="review-tab-trigger min-w-[148px] md:min-w-0">Dados do Jogador + Posições/Foco</TabsTrigger>
               </TabsList>
             </div>
 
@@ -1598,16 +2026,20 @@ export default function HandReviewer() {
                       ];
                       const sample = sampleText(c.made, c.of);
                       if (sample) lines.unshift(`Amostra: ${sample}`);
+                      if (c.key === "allInAdjBb100") lines.push(...ALL_IN_ADJ_SAMPLE_GUIDANCE);
                       return lines;
                     };
                     const pct = (v: number) => formatPercent(v);
                     const roundMade = (percent: number, of: number) => Math.round((percent / 100) * of);
+                    const showdownHands = Number((opp as any).showdownHands ?? 0);
+                    const showdownWins = showdownHands > 0 ? roundMade(Number(stats.wsd ?? 0), showdownHands) : 0;
+                    const wtsdHands = roundMade(Number(stats.wtsd ?? 0), Number(opp.hands ?? 0));
                     const preFlop: CardDef[] = [
                       { key: "vpip", label: "VPIP", value: stats.vpip, display: pct(stats.vpip), hint: "Mãos em que você entrou voluntariamente no pote.", formula: BENCHMARKS.vpip.formula, made: roundMade(stats.vpip, opp.hands), of: opp.hands },
                       { key: "pfr", label: "PFR", value: stats.pfr, display: pct(stats.pfr), hint: "Mãos com raise pré-flop.", formula: BENCHMARKS.pfr.formula, made: roundMade(stats.pfr, opp.hands), of: opp.hands },
                       { key: "rfi", label: "RFI", value: (stats as any).rfi ?? 0, display: pct((stats as any).rfi ?? 0), hint: "Raise first in: abriu o pote com raise.", formula: BENCHMARKS.rfi.formula, made: opp.rfi ? roundMade((stats as any).rfi ?? 0, opp.rfi) : null, of: opp.rfi || null },
                       { key: "coldCall", label: "COLD CALL", value: (stats as any).coldCall ?? 0, display: pct((stats as any).coldCall ?? 0), hint: "Pagou um raise pré-flop sem investimento prévio.", formula: BENCHMARKS.coldCall.formula, made: opp.coldCall ? roundMade((stats as any).coldCall ?? 0, opp.coldCall) : null, of: opp.coldCall || null },
-                      { key: "threeBet", label: "3-BET", value: stats.threeBet, display: pct(stats.threeBet), hint: "Re-raise pré-flop contra um open.", formula: BENCHMARKS.threeBet.formula, made: roundMade(stats.threeBet, opp.hands), of: opp.hands },
+                      { key: "threeBet", label: "3-BET", value: stats.threeBet, display: pct(stats.threeBet), hint: "Re-raise pré-flop contra um open.", formula: BENCHMARKS.threeBet.formula, made: roundMade(stats.threeBet, Number(opp.threeBet ?? 0)), of: Number(opp.threeBet ?? 0) },
                       { key: "squeeze", label: "SQUEEZE", value: (stats as any).squeeze ?? 0, display: pct((stats as any).squeeze ?? 0), hint: "3-bet contra raise + caller(s).", formula: BENCHMARKS.squeeze.formula, made: opp.squeeze ? roundMade((stats as any).squeeze ?? 0, opp.squeeze) : null, of: opp.squeeze || null },
                       { key: "resteal", label: "RESTEAL", value: (stats as any).resteal ?? 0, display: pct((stats as any).resteal ?? 0), hint: "3-bet em blind contra tentativa de roubo.", formula: BENCHMARKS.resteal.formula, made: opp.resteal ? roundMade((stats as any).resteal ?? 0, opp.resteal) : null, of: opp.resteal || null },
                       { key: "attemptToSteal", label: "ATTEMPT TO STEAL", value: stats.attemptToSteal, display: pct(stats.attemptToSteal), hint: "Open raise em CO/BTN/SB após fold geral, sem limp/raise/straddle antes.", formula: BENCHMARKS.attemptToSteal.formula, made: opp.steal > 0 ? roundMade(stats.attemptToSteal, opp.steal) : null, of: opp.steal || null },
@@ -1628,28 +2060,32 @@ export default function HandReviewer() {
                     ];
                     const general: CardDef[] = [
                       { key: "aggressionFactor", label: "AGGRESSION", value: stats.aggressionFactor, display: stats.aggressionFactor.toFixed(2), hint: "Razão entre ações agressivas (bet/raise) e calls pós-flop.", formula: BENCHMARKS.aggressionFactor.formula, made: Number((opp as any).aggressionActions ?? 0), of: Number((opp as any).aggressionCalls ?? 0) },
-                      { key: "wtsd", label: "WTSD", value: stats.wtsd, display: pct(stats.wtsd), hint: "Frequência de ida ao showdown.", formula: BENCHMARKS.wtsd.formula, made: roundMade(stats.wtsd, opp.hands), of: opp.hands },
-                      { key: "wsd", label: "WSD", value: stats.wsd, display: pct(stats.wsd), hint: "Vitória quando chega ao showdown.", formula: BENCHMARKS.wsd.formula, made: (() => { const sd = roundMade(stats.wtsd, opp.hands); return sd > 0 ? roundMade(stats.wsd, sd) : 0; })(), of: roundMade(stats.wtsd, opp.hands) },
-                      { key: "allInAdjBb100", label: "ALL-IN ADJ BB/100", value: (stats as any).allInAdjBb100 ?? 0, display: `${((stats as any).allInAdjBb100 ?? 0) >= 0 ? "+" : ""}${Number((stats as any).allInAdjBb100 ?? 0).toFixed(2)}`, hint: "Win-rate em BB/100 removendo a sorte dos all-ins pré-showdown (equity × pote − investimento).", formula: BENCHMARKS.allInAdjBb100.formula, made: Number((opp as any).allInAdjSample ?? 0), of: Number((opp as any).allInAdjOpportunities ?? 0) },
+                      { key: "wtsd", label: "WTSD", value: stats.wtsd, display: showdownHands > 0 ? `${pct(stats.wtsd)} (${wtsdHands}/${opp.hands})` : pct(stats.wtsd), hint: "Percentual de mãos que foram até o showdown e tiveram cartas expostas.", formula: BENCHMARKS.wtsd.formula, made: wtsdHands, of: opp.hands },
+                      { key: "wsd", label: "WSD", value: stats.wsd, display: showdownHands > 0 ? `${pct(stats.wsd)} (${showdownWins}/${showdownHands})` : pct(stats.wsd), hint: "Vitórias somente entre as mãos que chegaram ao showdown.", formula: BENCHMARKS.wsd.formula, made: showdownWins, of: showdownHands },
+                      { key: "allInAdjBb100", label: "ALL-IN ADJ BB/100", value: (stats as any).allInAdjBb100 ?? 0, display: `${((stats as any).allInAdjBb100 ?? 0) >= 0 ? "+" : ""}${Number((stats as any).allInAdjBb100 ?? 0).toFixed(2)}`, hint: "Win-rate em BB/100 removendo a sorte dos all-ins pre-showdown (equity x pote - investimento). A leitura so fica realmente util com volume; abaixo de 30.000 a 50.000 maos ainda ha muito ruido.", formula: BENCHMARKS.allInAdjBb100.formula, made: Number((opp as any).allInAdjSample ?? 0), of: Number((opp as any).allInAdjOpportunities ?? 0) },
                     ];
-                    const renderCard = (c: CardDef) => (
+                    const renderCard = (c: CardDef, allowDrilldown = true, allowInfo = true) => (
                       <div
                         key={c.key}
-                        className={`rounded-xl border p-3 shadow-inner transition-all cursor-pointer ${
-                          selectedMetricForPositions === c.key
+                        className={`rounded-xl border p-3 shadow-inner transition-all ${
+                          allowDrilldown && selectedMetricForPositions === c.key
                             ? "border-amber-400/70 bg-amber-500/12 shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
-                            : "border-white/10 bg-slate-950/70 hover:border-cyan-400/45"
+                            : allowDrilldown
+                              ? "border-white/10 bg-slate-950/70 hover:border-cyan-400/45 cursor-pointer"
+                              : "border-white/10 bg-slate-950/70"
                         }`}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Abrir ${c.label} por posição`}
-                        onClick={() => openMetricDrilldown(c.key)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openMetricDrilldown(c.key);
-                          }
-                        }}
+                        role={allowDrilldown ? "button" : undefined}
+                        tabIndex={allowDrilldown ? 0 : undefined}
+                        aria-label={allowDrilldown ? `Abrir ${c.label} por posição` : undefined}
+                        onClick={allowDrilldown ? () => openMetricDrilldown(c.key) : undefined}
+                        onKeyDown={allowDrilldown
+                          ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                openMetricDrilldown(c.key);
+                              }
+                            }
+                          : undefined}
                       >
                         {(() => {
                           const status = getMetricStatus(c.key, c.value);
@@ -1662,7 +2098,8 @@ export default function HandReviewer() {
                                   hint={c.hint}
                                   formula={c.formula}
                                   details={buildMetricDetails(c)}
-                                  onOpen={() => openMetricDrilldown(c.key)}
+                                  onOpen={allowDrilldown ? () => openMetricDrilldown(c.key) : undefined}
+                                  showInfo={allowInfo}
                                 />
                                 {metricStatusIndicator(status, c.key === "allInAdjBb100")}
                               </div>
@@ -1680,30 +2117,31 @@ export default function HandReviewer() {
                           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                             {preFlop.map(renderCard)}
                           </div>
+                          {selectedMetricForPositions && preFlop.some((card) => card.key === selectedMetricForPositions)
+                            ? <div className="pt-1">{metricDrilldownPanel}</div>
+                            : null}
                         </section>
                         <section className="space-y-2">
                           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Defesa Pré-flop</p>
                           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                            {preFlopDefense.map(renderCard)}
+                            {preFlopDefense.map((card) => renderCard(card, false, true))}
                           </div>
                         </section>
                         <section className="space-y-2">
                           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Pós-flop</p>
                           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                            {postFlop.map(renderCard)}
+                            {postFlop.map((card) => renderCard(card, false, true))}
                           </div>
                         </section>
                         <section className="space-y-2">
                           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Geral</p>
                           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                            {general.map(renderCard)}
+                            {general.map((card) => renderCard(card, false, true))}
                           </div>
                         </section>
                       </div>
                     );
                   })()}
-
-                  {metricDrilldownPanel}
 
                   <div className="rounded-xl bg-blue-500/8 p-3 text-xs text-blue-100 shadow-[inset_0_1px_0_rgba(59,130,246,0.08)]">
                     Esses valores são referências práticas de jogadores sólidos, não regras fixas de GTO.
@@ -1841,11 +2279,12 @@ export default function HandReviewer() {
                           <div className="mt-2 text-xs text-amber-100/90">
                             <MetricLabel
                               label="ALL-IN ADJ BB/100 (GERAL)"
-                              hint="Win-rate ajustado para all-ins no histórico consolidado."
+                              hint="Win-rate ajustado para all-ins no historico consolidado. Antes de 30.000 a 50.000 maos, trate o numero como indicativo; acima de 100.000 maos ele fica muito mais estavel."
                               formula={BENCHMARKS.allInAdjBb100.formula}
                               details={[
                                 "Spot de foco: revisar ranges de open, defesa e linhas de c-bet.",
                                 `Amostra all-in: ${formatMadeOf(Number(historicalOppSafe.allInAdjSample ?? 0), Number(historicalOppSafe.allInAdjOpportunities ?? 0))}`,
+                                ...ALL_IN_ADJ_SAMPLE_GUIDANCE,
                               ]}
                               onOpen={() => openMetricDrilldown("allInAdjBb100")}
                             />
@@ -1875,9 +2314,12 @@ export default function HandReviewer() {
                         onClick={handleRecalculateHistory}
                         disabled={recalculateHistoryMutation.isPending}
                       >
-                        {recalculateHistoryMutation.isPending ? "Agendando recálculo..." : "Agendar recálculo em background"}
+                        {recalculateHistoryMutation.isPending ? "Iniciando atualizacao..." : "Atualizar estatisticas agora"}
                       </Button>
                     </div>
+                    <p className="mb-2 text-xs text-cyan-200/80">
+                      Recalcula todo o historico importado do jogador e atualiza os indicadores consolidados (VPIP, PFR, WSD, ROI e demais metricas) em segundo plano.
+                    </p>
                     {(() => {
                       const historicalValues: Partial<Record<MetricKey, number>> = {
                         vpip: Number(playerHistoryQuery.data.summary.vpipAvg ?? 0),
@@ -1896,7 +2338,8 @@ export default function HandReviewer() {
 
                       const histOpp = ((playerHistoryQuery.data.summary as any)?.opportunities ?? {}) as Record<string, number>;
                       const denominatorFor = (key: MetricKey): number => {
-                        if (key === "vpip" || key === "pfr" || key === "threeBet") return Number(histOpp.hands ?? 0);
+                        if (key === "vpip" || key === "pfr") return Number(histOpp.hands ?? 0);
+                        if (key === "threeBet") return Number(histOpp.threeBet ?? 0);
                         if (key === "cbetFlop") return Number(histOpp.cbetFlop ?? 0);
                         if (key === "cbetTurn") return Number(histOpp.cbetTurn ?? 0);
                         if (key === "foldToCbet") return Number(histOpp.foldToCbet ?? 0);
@@ -1914,12 +2357,12 @@ export default function HandReviewer() {
                       ];
                       return (
                         <div className="space-y-4">
-                          {analyzeMutation.isPending && <SplashScreen />}
                           {sections.map((section) => (
                             <section key={section.title} className="space-y-2">
                               <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">{section.title}</p>
                               <div className="grid gap-2 md:grid-cols-2">
                                 {section.keys.map((key) => {
+                                  const allowDrilldown = section.title === "Pré-flop";
                                   const benchmark = BENCHMARKS[key];
                                   const value = Number(historicalValues[key] ?? 0);
                                   const of = denominatorFor(key);
@@ -1935,17 +2378,19 @@ export default function HandReviewer() {
                                   return (
                                     <div
                                       key={`benchmark-${key}`}
-                                      className="tokyo-metric rounded-md p-3 transition-colors hover:border-amber-300/40 hover:bg-slate-900/70"
-                                      role="button"
-                                      tabIndex={0}
-                                      aria-label={`Abrir ${benchmark.label} por posição`}
-                                      onClick={() => openMetricDrilldown(key)}
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter" || event.key === " ") {
-                                          event.preventDefault();
-                                          openMetricDrilldown(key);
-                                        }
-                                      }}
+                                      className={`tokyo-metric rounded-md p-3 transition-colors ${allowDrilldown ? "hover:border-amber-300/40 hover:bg-slate-900/70" : ""}`}
+                                      role={allowDrilldown ? "button" : undefined}
+                                      tabIndex={allowDrilldown ? 0 : undefined}
+                                      aria-label={allowDrilldown ? `Abrir ${benchmark.label} por posição` : undefined}
+                                      onClick={allowDrilldown ? () => openMetricDrilldown(key) : undefined}
+                                      onKeyDown={allowDrilldown
+                                        ? (event) => {
+                                            if (event.key === "Enter" || event.key === " ") {
+                                              event.preventDefault();
+                                              openMetricDrilldown(key);
+                                            }
+                                          }
+                                        : undefined}
                                     >
                                       {(() => {
                                         const status = getMetricStatus(key, value);
@@ -1961,7 +2406,8 @@ export default function HandReviewer() {
                                                   metricStatusText(key, value),
                                                   `Amostra: ${formatMadeOf(made, ratioOf)}`,
                                                 ]}
-                                                onOpen={() => openMetricDrilldown(key)}
+                                                onOpen={allowDrilldown ? () => openMetricDrilldown(key) : undefined}
+                                                showInfo
                                               />
                                             </div>
                                             {metricStatusIndicator(status, key === "allInAdjBb100")}
@@ -1981,6 +2427,7 @@ export default function HandReviewer() {
                                 })}
                               </div>
                               {selectedMetricForPositions && section.keys.includes(selectedMetricForPositions)
+                                && section.title === "Pré-flop"
                                 ? <div className="pt-1">{metricDrilldownPanel}</div>
                                 : null}
                             </section>

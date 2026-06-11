@@ -48,6 +48,25 @@ async function runSafeMigrations() {
     const runSql = async (statement: string) => {
       return db.execute(drizzleSql.raw(statement));
     };
+    const isIgnorableMigrationError = (err: any, kind: "create" | "alter") => {
+      const errno = Number(err?.errno ?? err?.cause?.errno ?? -1);
+      const code = String(err?.code ?? err?.cause?.code ?? "").toUpperCase();
+      const message = String(err?.message ?? err?.cause?.message ?? "").toLowerCase();
+
+      if (kind === "create") {
+        if (errno === 1061 || code === "ER_DUP_KEYNAME") return true;
+        if (message.includes("duplicate key name") || message.includes("already exists")) return true;
+      }
+
+      if (kind === "alter") {
+        if (errno === 1060 || code === "ER_DUP_FIELDNAME") return true;
+        if (errno === 1061 || code === "ER_DUP_KEYNAME") return true;
+        if (message.includes("duplicate column name") || message.includes("already exists")) return true;
+        if (message.includes("duplicate key name")) return true;
+      }
+
+      return false;
+    };
 
     const alterStatements = [
       "ALTER TABLE `users` MODIFY COLUMN `role` enum('user','coach','reviewer','admin','developer','system_ai_service') NOT NULL DEFAULT 'user'",
@@ -60,12 +79,22 @@ async function runSafeMigrations() {
       "ALTER TABLE `users` ADD COLUMN `preferredBuyIns` text",
       "ALTER TABLE `users` ADD COLUMN `playsMultiPlatform` int DEFAULT 0",
       "ALTER TABLE `users` ADD COLUMN `onboardingCompletedAt` timestamp NULL",
+      "ALTER TABLE `users` ADD COLUMN `onboardingReviewedAt` timestamp NULL",
       // 0019 – split ABI online/live
       "ALTER TABLE `users` ADD COLUMN `preferredBuyInsOnline` text",
       "ALTER TABLE `users` ADD COLUMN `preferredBuyInsLive` text",
       // 0020 – ranking consent
       "ALTER TABLE `users` ADD COLUMN `showInGlobalRanking` int NOT NULL DEFAULT 0",
       "ALTER TABLE `users` ADD COLUMN `showInFriendsRanking` int NOT NULL DEFAULT 0",
+      "ALTER TABLE `users` ADD COLUMN `country` varchar(120)",
+      "ALTER TABLE `users` ADD COLUMN `stateRegion` varchar(120)",
+      "ALTER TABLE `users` ADD COLUMN `city` varchar(120)",
+      "ALTER TABLE `users` ADD COLUMN `addressLine` text",
+      "ALTER TABLE `users` ADD COLUMN `postalCode` varchar(20)",
+      "ALTER TABLE `users` ADD COLUMN `taxDocument` varchar(24)",
+      "ALTER TABLE `users` ADD COLUMN `locationLatE6` int",
+      "ALTER TABLE `users` ADD COLUMN `locationLngE6` int",
+      "ALTER TABLE `users` ADD COLUMN `locationConsentAt` timestamp NULL",
       "ALTER TABLE `users` ADD COLUMN `rankingConsentAnsweredAt` timestamp NULL",
       // passwordHash (legacy email auth – may already exist)
       "ALTER TABLE `users` ADD COLUMN `passwordHash` varchar(255)",
@@ -102,6 +131,20 @@ async function runSafeMigrations() {
     ];
 
     const createStatements = [
+      `CREATE TABLE IF NOT EXISTS \`email_verification_codes\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`email\` varchar(320) NOT NULL,
+        \`purpose\` varchar(40) NOT NULL,
+        \`codeHash\` varchar(255) NOT NULL,
+        \`attempts\` int NOT NULL DEFAULT 0,
+        \`maxAttempts\` int NOT NULL DEFAULT 6,
+        \`expiresAt\` timestamp NOT NULL,
+        \`consumedAt\` timestamp NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT (now()),
+        CONSTRAINT \`email_verification_codes_id\` PRIMARY KEY(\`id\`)
+      )`,
+      "CREATE INDEX `email_verification_codes_lookup_idx` ON `email_verification_codes` (`userId`,`email`,`purpose`,`consumedAt`)",
       `CREATE TABLE IF NOT EXISTS \`friend_requests\` (
         \`id\` int AUTO_INCREMENT NOT NULL,
         \`requesterId\` int NOT NULL,
@@ -394,6 +437,59 @@ async function runSafeMigrations() {
         \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
         CONSTRAINT \`player_position_stats_id\` PRIMARY KEY(\`id\`)
       )`,
+      `CREATE TABLE IF NOT EXISTS \`hand_review_favorites\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`label\` varchar(191) NOT NULL,
+        \`handCount\` int NOT NULL DEFAULT 0,
+        \`rawInput\` mediumtext NOT NULL,
+        \`parserSelection\` enum('AUTO','POKERSTARS','GG') NOT NULL DEFAULT 'AUTO',
+        \`createdAt\` timestamp NOT NULL DEFAULT (now()),
+        \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT \`hand_review_favorites_id\` PRIMARY KEY(\`id\`)
+      )`,
+      "CREATE INDEX `hrf_user_created_idx` ON `hand_review_favorites` (`userId`,`createdAt`,`id`)",
+      `CREATE TABLE IF NOT EXISTS \`gto_baseado_scenarios\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`slug\` varchar(120) NOT NULL,
+        \`title\` varchar(191) NOT NULL,
+        \`source\` varchar(80) NOT NULL DEFAULT 'gto_wizard_ai',
+        \`gameType\` varchar(40) NOT NULL DEFAULT 'heads_up',
+        \`heroPosition\` varchar(8) NOT NULL DEFAULT 'SB',
+        \`villainPosition\` varchar(8) NOT NULL DEFAULT 'BB',
+        \`effectiveStackBb\` int NOT NULL DEFAULT 200,
+        \`smallBlind\` int NOT NULL DEFAULT 50,
+        \`bigBlind\` int NOT NULL DEFAULT 100,
+        \`weightedRaisePctX10\` int NOT NULL DEFAULT 0,
+        \`weightedLimpCheckPctX10\` int NOT NULL DEFAULT 0,
+        \`weightedFoldPctX10\` int NOT NULL DEFAULT 0,
+        \`cellAvgRaisePctX10\` int NOT NULL DEFAULT 0,
+        \`cellAvgLimpCheckPctX10\` int NOT NULL DEFAULT 0,
+        \`cellAvgFoldPctX10\` int NOT NULL DEFAULT 0,
+        \`totalCombos\` int NOT NULL DEFAULT 1326,
+        \`createdAt\` timestamp NOT NULL DEFAULT (now()),
+        \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT \`gto_baseado_scenarios_id\` PRIMARY KEY(\`id\`)
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`gto_baseado_hands\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`scenarioId\` int NOT NULL,
+        \`handCode\` varchar(8) NOT NULL,
+        \`handType\` enum('pares','suited','offsuit') NOT NULL,
+        \`combos\` int NOT NULL,
+        \`raisePctX10\` int NOT NULL DEFAULT 0,
+        \`limpCheckPctX10\` int NOT NULL DEFAULT 0,
+        \`foldPctX10\` int NOT NULL DEFAULT 0,
+        \`raiseBucket\` varchar(40),
+        \`createdAt\` timestamp NOT NULL DEFAULT (now()),
+        \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT \`gto_baseado_hands_id\` PRIMARY KEY(\`id\`)
+      )`,
+      "CREATE UNIQUE INDEX `gto_baseado_scenarios_slug_unique` ON `gto_baseado_scenarios` (`slug`)",
+      "CREATE UNIQUE INDEX `gto_baseado_hands_scenario_hand_unique` ON `gto_baseado_hands` (`scenarioId`,`handCode`)",
+      "CREATE INDEX `gto_baseado_hands_scenario_idx` ON `gto_baseado_hands` (`scenarioId`)",
+      "CREATE INDEX `gto_baseado_hands_type_idx` ON `gto_baseado_hands` (`handType`)",
+      "CREATE INDEX `gto_baseado_hands_bucket_idx` ON `gto_baseado_hands` (`raiseBucket`)",
     ];
 
     // Run CREATE statements first (so tables exist before we try to ALTER them)
@@ -401,8 +497,7 @@ async function runSafeMigrations() {
       try {
         await runSql(statement);
       } catch (err: any) {
-        // 1061 = ER_DUP_KEYNAME (index already exists), safe to ignore.
-        if (err?.errno !== 1061) {
+        if (!isIgnorableMigrationError(err, "create")) {
           console.warn("[migrations] Unexpected create error:", err?.message ?? err);
         }
       }
@@ -413,8 +508,7 @@ async function runSafeMigrations() {
       try {
         await runSql(statement);
       } catch (err: any) {
-        // 1060 = ER_DUP_FIELDNAME – column already exists, safe to ignore
-        if (err?.errno !== 1060) {
+        if (!isIgnorableMigrationError(err, "alter")) {
           console.warn("[migrations] Unexpected error:", err?.message ?? err);
         }
       }
@@ -567,6 +661,10 @@ async function startServer() {
       createContext,
     })
   );
+  // O fallback SPA (serveStatic) ja entrega a landing como arquivo estatico em
+  // /landing-all-in-edge.html e o index.html para qualquer outra rota do app.
+  // Nao redirecionamos rotas do SPA para a landing aqui — o React Router decide
+  // o destino (Dashboard, /login, etc.) com base na sessao do usuario.
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

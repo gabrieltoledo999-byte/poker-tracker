@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { Bot, Upload, FileText } from "lucide-react";
+import { Bot, Upload, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ParserSelection } from "@/parser/handHistoryDispatcher";
@@ -22,6 +22,13 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
 
   const handleOpenFile = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleClear = () => {
+    props.onChange("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -129,6 +136,16 @@ export function HandHistoryInput(props: HandHistoryInputProps) {
         <Button size="sm" variant="outline" className="border-border/70 bg-background text-foreground hover:bg-accent dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10" onClick={handleOpenFile}>
           <Upload className="mr-2 h-4 w-4" />
           Importar arquivo
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-border/70 bg-background text-foreground hover:bg-accent dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+          onClick={handleClear}
+          disabled={props.value.trim().length === 0}
+        >
+          <X className="mr-2 h-4 w-4" />
+          Limpar caixa
         </Button>
         <Button size="sm" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300" onClick={props.onSubmit}>
           Enviar para mesa

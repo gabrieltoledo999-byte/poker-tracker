@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, MessageCircle, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OnlinePresenceDot, OnlinePresenceLabel } from "@/components/OnlinePresence";
 
 export interface MessageNotification {
   id: string;
@@ -87,13 +88,13 @@ export function MessageNotificationPopup({
                   alt={notification.friendName}
                   className="h-12 w-12 rounded-full object-cover border-2 border-primary/30"
                 />
-                <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 bg-green-500 rounded-full border-2 border-card animate-pulse" />
+                <OnlinePresenceDot className="absolute -bottom-1 -right-1" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-sm truncate">
                   {notification.friendName}
                 </p>
-                <p className="text-xs text-muted-foreground">Está online agora</p>
+                <OnlinePresenceLabel text="Está online agora" className="mt-1 px-2 py-0.5 text-[10px]" />
               </div>
             </div>
             <button

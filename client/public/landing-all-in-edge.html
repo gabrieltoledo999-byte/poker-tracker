@@ -1,0 +1,1243 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Poker replayer da All-in-Edge para revisar mãos ganhas, perdidas e folds com análise de bankroll e evolução no torneio." />
+    <meta name="keywords" content="poker replayer, replayer poker, replay de mãos poker, revisão de mãos poker, análise de mãos poker, mtt poker" />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <link rel="canonical" href="https://www.allinedge.com.br/landing-all-in-edge.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="All-in-Edge" />
+    <meta property="og:title" content="Poker Replayer All-in-Edge | Revise mãos e evolua" />
+    <meta property="og:description" content="Use o poker replayer da All-in-Edge para analisar mãos ganhas, perdidas e folds em um hub interativo." />
+    <meta property="og:url" content="https://www.allinedge.com.br/landing-all-in-edge.html" />
+    <meta property="og:image" content="https://www.allinedge.com.br/landing-replayer.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Poker Replayer All-in-Edge | Revise mãos e evolua" />
+    <meta name="twitter:description" content="Replayer de poker com hub interativo para estudar mãos ganhas, perdidas e folds." />
+    <meta name="twitter:image" content="https://www.allinedge.com.br/landing-replayer.png" />
+    <title>Poker Replayer All-in-Edge | Revise mãos e evolua</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "All-in-Edge Poker Replayer",
+        "applicationCategory": "SportsApplication",
+        "operatingSystem": "Web",
+        "url": "https://www.allinedge.com.br/landing-all-in-edge.html",
+        "description": "Poker replayer para revisar mãos ganhas, perdidas e folds com análise de bankroll e evolução em torneios.",
+        "inLanguage": "pt-BR",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "BRL"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "All-in-Edge",
+          "url": "https://www.allinedge.com.br"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "All-in-Edge",
+        "url": "https://www.allinedge.com.br/landing-all-in-edge.html",
+        "inLanguage": "pt-BR"
+      }
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+
+      :root {
+        color-scheme: dark;
+        --text: #f7f7fb;
+        --muted: rgba(233, 236, 246, 0.74);
+        --shadow: 0 24px 90px rgba(0, 0, 0, 0.48);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 12% 18%, rgba(139, 92, 246, 0.18), transparent 26%),
+          radial-gradient(circle at 88% 22%, rgba(56, 189, 248, 0.12), transparent 24%),
+          radial-gradient(circle at 50% 100%, rgba(52, 211, 153, 0.08), transparent 28%),
+          linear-gradient(180deg, #040510 0%, #060815 52%, #040510 100%);
+        color: var(--text);
+        font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+        overflow-x: clip;
+      }
+
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        background-size: 120px 120px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.08));
+        opacity: 0.34;
+      }
+
+      a { color: inherit; text-decoration: none; }
+
+      .page {
+        position: relative;
+        width: min(1880px, 100%);
+        margin: 0 auto;
+        padding: 8px 8px 18px;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .shell {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid rgba(134, 96, 255, 0.26);
+        border-radius: 42px;
+        background: linear-gradient(180deg, rgba(5, 8, 18, 0.88), rgba(5, 8, 18, 0.6));
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+        overflow: hidden;
+      }
+
+      .shell::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 20% 18%, rgba(139, 92, 246, 0.14), transparent 24%),
+          radial-gradient(circle at 78% 28%, rgba(56, 189, 248, 0.10), transparent 26%);
+        pointer-events: none;
+      }
+
+      .topbar {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 26px 34px 0;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand img {
+        display: block;
+        width: 178px;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .topbar-actions {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .hero {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.18fr);
+        gap: 40px;
+        align-items: center;
+        padding: 28px 34px 40px;
+      }
+
+      .hero-copy {
+        padding: 16px 0;
+        max-width: 640px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(140, 105, 255, 0.3);
+        background: rgba(140, 105, 255, 0.08);
+        color: rgba(221, 214, 255, 0.88);
+        font-size: 0.84rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 22px;
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(3.3rem, 6vw, 6.15rem);
+        line-height: 0.94;
+        letter-spacing: -0.06em;
+        text-wrap: balance;
+        font-weight: 800;
+      }
+
+      .hero h1 .accent {
+        background: linear-gradient(90deg, #6ea0ff 0%, #8b5cf6 46%, #cb7bff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .hero p {
+        margin: 22px 0 0;
+        max-width: 32rem;
+        color: var(--muted);
+        font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+        line-height: 1.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 32px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 50px;
+        padding: 0 20px;
+        border-radius: 12px;
+        border: 1px solid transparent;
+        font-weight: 600;
+        font-size: 0.94rem;
+        letter-spacing: -0.01em;
+        transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+        cursor: pointer;
+      }
+
+      .btn:hover { transform: translateY(-2px); }
+
+      .btn-primary {
+        color: #fff;
+        background: #6d28d9;
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+
+      .btn-secondary {
+        color: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.04);
+        border-color: rgba(255, 255, 255, 0.18);
+      }
+
+      .btn-ghost {
+        color: rgba(233, 236, 246, 0.86);
+        background: transparent;
+        border-color: rgba(255, 255, 255, 0.16);
+        min-height: 44px;
+        padding: 0 16px;
+        font-size: 0.9rem;
+      }
+
+      .benefits {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        margin-top: 28px;
+        color: rgba(233, 236, 246, 0.72);
+        font-size: 0.95rem;
+      }
+
+      .benefits span + span {
+        padding-left: 18px;
+        border-left: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      /* Espaço para imagem/video principal */
+      .hero-video {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        border-radius: 0;
+        overflow: hidden;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .hero-video img,
+      .hero-video video,
+      .hero-video iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        object-fit: cover;
+      }
+
+      img[data-fade-media] {
+        opacity: 0;
+        transition: opacity 520ms ease;
+      }
+
+      img[data-fade-media].is-rendered {
+        opacity: 1;
+      }
+
+      .section {
+        position: relative;
+        z-index: 1;
+        margin: 0 24px;
+        padding: 42px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .section-replayer {
+        margin: 0;
+        padding: 0 14px 34px;
+      }
+
+      .section-replayer .section-grid.reverse {
+        grid-template-columns: 1fr;
+        gap: 1px;
+        align-items: start;
+      }
+
+      .section-replayer .section-copy {
+        order: 0;
+        max-width: min(980px, 100%);
+        margin: 0 auto;
+        text-align: center;
+      }
+
+      .section-replayer .section-copy h2 {
+        font-size: clamp(2rem, 3.8vw, 4rem);
+        line-height: 0.98;
+      }
+
+      .section-replayer .section-copy p {
+        margin: 14px auto 0;
+        max-width: 30rem;
+        font-size: clamp(0.96rem, 1.08vw, 1.05rem);
+        line-height: 1.5;
+      }
+
+      #resultados {
+        margin-top: 14px;
+      }
+
+      .section-replayer .section-image {
+        background:
+          radial-gradient(circle at 50% 0%, rgba(110, 160, 255, 0.12), transparent 38%),
+          linear-gradient(180deg, rgba(9, 12, 25, 0.96), rgba(7, 10, 20, 0.92));
+        border-color: rgba(140, 105, 255, 0.22);
+      }
+
+      .section-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+        gap: 28px;
+        align-items: center;
+      }
+
+      .section-grid.reverse {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      }
+
+      .section-copy h2 {
+        margin: 0;
+        font-size: clamp(2.25rem, 4vw, 4.4rem);
+        line-height: 0.96;
+        letter-spacing: -0.06em;
+        font-weight: 800;
+      }
+
+      .section-copy h2 .accent {
+        background: linear-gradient(90deg, #6ea0ff 0%, #8b5cf6 46%, #cb7bff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .section-copy p {
+        margin: 18px 0 0;
+        max-width: 30rem;
+        color: var(--muted);
+        font-size: clamp(1rem, 1.25vw, 1.18rem);
+        line-height: 1.72;
+      }
+
+      .section-image {
+        position: relative;
+        overflow: hidden;
+        border-radius: 28px;
+        border: 1px solid rgba(134, 96, 255, 0.18);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .section-image img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .section-replayer-live {
+        aspect-ratio: 16 / 11;
+        border-radius: 22px;
+        width: min(94vw, 1200px);
+        max-width: min(94vw, 1200px);
+        min-height: 720px;
+        margin: 0 auto;
+        padding: 0;
+      }
+
+      #gto-hub {
+        margin-top: 8px;
+      }
+
+      #gto-hub .section-image {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px 18px 22px;
+        min-height: 0;
+      }
+
+      #gto-hub .section-image img {
+        width: min(100%, 78%);
+        max-height: 420px;
+        object-fit: contain;
+      }
+
+      .section-replayer-live iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 720px;
+        border: 0;
+        border-radius: 22px;
+      }
+
+      .replayer-placeholder {
+        min-height: 320px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 22px;
+        color: rgba(233, 236, 246, 0.72);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .replayer-carousel {
+        position: relative;
+        width: min(94vw, 1200px);
+        max-width: min(94vw, 1200px);
+        margin: 0 auto;
+        margin-top: -6px;
+      }
+
+      .section-replayer .section-image.replayer-stage {
+        background: none;
+        border: 0;
+        border-radius: 0;
+        overflow: visible;
+      }
+
+      .replayer-track {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        scroll-behavior: smooth;
+        border-radius: 22px;
+        border: 1px solid rgba(140, 105, 255, 0.22);
+        background:
+          radial-gradient(circle at 50% 0%, rgba(110, 160, 255, 0.12), transparent 38%),
+          linear-gradient(180deg, rgba(9, 12, 25, 0.96), rgba(7, 10, 20, 0.92));
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .replayer-track::-webkit-scrollbar {
+        display: none;
+      }
+
+      .replayer-slide {
+        position: relative;
+        flex: 0 0 100%;
+        scroll-snap-align: center;
+        aspect-ratio: 16 / 11;
+        min-height: 720px;
+        border-radius: 22px;
+        overflow: hidden;
+      }
+
+      .replayer-slide iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 720px;
+        border: 0;
+        border-radius: 22px;
+      }
+
+      .replayer-art-slide {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        aspect-ratio: auto;
+        min-height: 0;
+        background:
+          radial-gradient(circle at 50% 0%, rgba(110, 160, 255, 0.10), transparent 38%),
+          linear-gradient(180deg, rgba(9, 12, 25, 0.96), rgba(7, 10, 20, 0.92));
+      }
+
+      .replayer-art-slide img {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-width: 100%;
+        max-height: none;
+        object-fit: contain;
+      }
+
+      .replayer-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 6;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(8, 12, 24, 0.72);
+        color: #e9ecf6;
+        font-size: 22px;
+        line-height: 1;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+        transition: background 0.2s ease, opacity 0.2s ease;
+      }
+
+      .replayer-nav:hover {
+        background: rgba(124, 92, 255, 0.85);
+      }
+
+      .replayer-nav.prev {
+        left: 14px;
+      }
+
+      .replayer-nav.next {
+        right: 14px;
+      }
+
+      .replayer-nav[disabled] {
+        opacity: 0.25;
+        cursor: default;
+      }
+
+      .replayer-dots {
+        display: flex;
+        justify-content: center;
+        gap: 9px;
+        margin-top: 16px;
+      }
+
+      .replayer-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        border: 0;
+        padding: 0;
+        background: rgba(255, 255, 255, 0.22);
+        cursor: pointer;
+        transition: background 0.2s ease, width 0.2s ease;
+      }
+
+      .replayer-dot.active {
+        width: 26px;
+        background: linear-gradient(90deg, #7c5cff, #36d1ff);
+      }
+
+      .replayer-hint {
+        margin-top: 10px;
+        text-align: center;
+        font-size: 0.84rem;
+        color: rgba(233, 236, 246, 0.5);
+      }
+
+      .section-slim {
+        max-width: 860px;
+      }
+
+      .section-note {
+        margin-top: 18px;
+        color: rgba(233, 236, 246, 0.62);
+        font-size: 0.96rem;
+      }
+
+      .footer {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 18px 34px 26px;
+        color: rgba(233, 236, 246, 0.62);
+      }
+
+      .social {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .social a {
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .reveal-on-scroll {
+        opacity: 0;
+        transform: translateY(28px) scale(0.985);
+        filter: blur(10px);
+        transition:
+          opacity 680ms ease,
+          transform 680ms cubic-bezier(0.22, 1, 0.36, 1),
+          filter 680ms ease;
+        transition-delay: var(--reveal-delay, 0ms);
+        will-change: opacity, transform, filter;
+      }
+
+      .reveal-on-scroll.is-visible {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+      }
+
+      .hero-copy.reveal-on-scroll,
+      .topbar.reveal-on-scroll {
+        transform: translateY(20px);
+      }
+
+      .hero-video.reveal-on-scroll,
+      .section-image.reveal-on-scroll {
+        transform: translateY(34px) scale(0.975);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .reveal-on-scroll,
+        .reveal-on-scroll.is-visible {
+          opacity: 1;
+          transform: none;
+          filter: none;
+          transition: none;
+        }
+      }
+
+      @media (max-width: 1180px) {
+        .hero,
+        .section-grid,
+        .section-grid.reverse,
+        .section-replayer .section-grid.reverse {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .page { width: 100%; padding-top: 8px; padding-left: 8px; padding-right: 8px; }
+        .shell { border-radius: 28px; }
+        .topbar, .hero, .section, .footer { padding-left: 18px; padding-right: 18px; margin-left: 0; margin-right: 0; }
+        .topbar { flex-direction: column; align-items: flex-start; }
+        .hero h1 { font-size: clamp(2.7rem, 12vw, 4rem); }
+        .section-replayer { padding: 0 8px 24px; }
+        .section-replayer .section-copy h2 { font-size: clamp(1.9rem, 8vw, 2.8rem); }
+        .section-replayer-live { aspect-ratio: 4 / 5; min-height: 560px; }
+        .replayer-carousel { width: 100%; max-width: 100%; }
+        .replayer-carousel { margin-top: -2px; }
+        .replayer-slide { aspect-ratio: 4 / 5; min-height: 560px; }
+        .replayer-slide iframe,
+        .section-replayer-live iframe,
+        .replayer-placeholder { min-height: 560px; }
+        .replayer-art-slide { padding: 4px; aspect-ratio: auto; min-height: 0; }
+        .replayer-art-slide img { width: 100%; height: auto; max-height: none; }
+        .replayer-nav { width: 38px; height: 38px; font-size: 19px; }
+        #resultados { margin-top: 10px; }
+        #gto-hub { margin-top: 6px; }
+        #gto-hub .section-image img {
+          width: min(100%, 90%);
+          max-height: 340px;
+        }
+        .benefits span + span { padding-left: 0; border-left: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="shell">
+        <header class="topbar">
+          <a class="brand" href="#hero" aria-label="All-in-Edge">
+            <img src="all-in-edge-logo-horizontal.webp" alt="All-in-Edge" decoding="async" data-fade-media />
+          </a>
+
+          <div class="topbar-actions">
+            <a class="btn btn-ghost" href="/login">Entrar</a>
+            <a class="btn btn-primary" href="/login">Criar conta</a>
+          </div>
+        </header>
+
+        <section class="hero" id="hero">
+          <div class="hero-copy">
+            <div class="eyebrow">Treine. Analise. Evolua.</div>
+            <h1>Transforme decisões em <span class="accent">vantagem</span> no poker.</h1>
+            <p>
+              Bankroll, replays e análise em uma só experiência. Foco em clareza,
+              consistência e ganho real de longo prazo.
+            </p>
+            <div class="actions">
+              <a class="btn btn-primary" href="/login">Criar minha conta</a>
+              <a class="btn btn-secondary" href="/login">Entrar</a>
+            </div>
+            <div class="benefits">
+              <span>14 dias grátis</span>
+              <span>Cancele quando quiser</span>
+              <span>Sem cartão de crédito</span>
+            </div>
+          </div>
+
+          <div class="hero-video" aria-label="Imagem principal All-in-Edge">
+            <img src="landing-hero-side.png" alt="All-in-Edge apresentação" loading="eager" fetchpriority="high" decoding="async" data-fade-media />
+          </div>
+        </section>
+
+        <section class="section section-replayer" id="replayer">
+          <div class="section-grid reverse">
+            <div class="section-copy">
+              <h2>Seu <span class="accent">Poker Replayer</span> em ação.</h2>
+              <p>Deslize para o lado para conhecer o poker replayer ao vivo e o hub da sessão.</p>
+            </div>
+            <div class="section-image replayer-stage">
+              <div class="replayer-carousel" id="replayerCarousel">
+                <div class="replayer-track" id="replayerTrack">
+                  <div class="replayer-slide section-replayer-live">
+                    <iframe
+                      id="landingReplayFrame"
+                      src="about:blank"
+                      title="Replayer oficial All-in-Edge"
+                      loading="lazy"
+                      allow="clipboard-read; clipboard-write"
+                    ></iframe>
+                    <div class="replayer-placeholder" id="landingReplayPlaceholder" hidden>
+                      Nenhum replay favorito encontrado no navegador.<br />
+                      Entre em Hand Reviewer, marque uma mão em Favoritos e volte aqui.
+                    </div>
+                  </div>
+                  <div class="replayer-slide section-replayer-live">
+                    <iframe
+                      id="landingHubFrame"
+                      src="about:blank"
+                      data-src="/preview/replayer-hub?embed=1"
+                      title="Hub de mãos da sessão All-in-Edge"
+                      loading="lazy"
+                    ></iframe>
+                  </div>
+                  <div class="replayer-slide replayer-art-slide">
+                    <img
+                      src="landing-dashboard.png"
+                      alt="Hub de GTO para clientes"
+                      loading="lazy"
+                      decoding="async"
+                      data-fade-media
+                    />
+                  </div>
+                </div>
+                <button class="replayer-nav prev" id="replayerPrev" type="button" aria-label="Slide anterior">‹</button>
+                <button class="replayer-nav next" id="replayerNext" type="button" aria-label="Próximo slide">›</button>
+                <div class="replayer-dots" id="replayerDots"></div>
+                <div class="replayer-hint">Deslize para o lado &nbsp;•&nbsp; Poker replayer + hub da sessão</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section section-slim" id="gto-hub">
+          <div class="section-grid">
+            <div class="section-copy">
+              <h2>Seu <span class="accent">GTO</span> virá em breve.</h2>
+              <p>
+                Uma amostra em hub para clientes acompanharem linhas, decisões e evolução de forma clara e contínua.
+              </p>
+              <div class="section-note">O próximo passo da jornada aparece aqui como um preview do hub.</div>
+            </div>
+            <div class="section-image">
+              <img src="landing-block-3.png" alt="Hub de GTO para clientes" loading="lazy" decoding="async" data-fade-media />
+            </div>
+          </div>
+        </section>
+
+        <section class="section section-slim" id="resultados">
+          <div class="section-grid reverse">
+            <div class="section-image">
+              <img src="landing-block-3.png" alt="Resultados reais do All-in-Edge" loading="lazy" decoding="async" data-fade-media />
+            </div>
+            <div class="section-copy">
+              <h2>Resultados reais. <span class="accent">Ponto final.</span></h2>
+              <p>
+                Acompanhe seu progresso como ele é: direto, consistente e sem enfeite. Uma única linha visual para mostrar evolução.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section section-slim" id="metodo">
+          <div class="section-grid">
+            <div class="section-copy">
+              <h2>Poker não é sorte. <span class="accent">É método.</span></h2>
+              <p>
+                Processo, disciplina e repetição inteligente. O resto fica abaixo como continuação da mesma peça.
+              </p>
+              <div class="section-note">Depois daqui, a página continua com a mesma linguagem visual.</div>
+            </div>
+            <div class="section-image">
+              <img src="landing-block-4.png" alt="Método do All-in-Edge" loading="lazy" decoding="async" data-fade-media />
+            </div>
+          </div>
+        </section>
+
+        <section class="section section-slim" id="base">
+          <div class="section-image">
+            <img src="landing-block-1.png" alt="Base visual do All-in-Edge" loading="lazy" decoding="async" data-fade-media />
+          </div>
+        </section>
+
+        <footer class="footer">
+          <div>All-in-Edge © 2026</div>
+          <div class="social" aria-label="Redes sociais">
+            <a href="#hero">Discord</a>
+            <a href="#hero">YouTube</a>
+            <a href="#hero">Instagram</a>
+            <a href="#hero">X</a>
+          </div>
+        </footer>
+      </div>
+    </main>
+    <script>
+      (function () {
+        const FAVORITES_KEY_PREFIX = "hand-review-favorites:";
+        const SESSION_LOCAL_PREFIX = "hand-review-session-local:";
+        const REPLAYER_FALLBACK_URL = "/preview/replayer-landing?embed=1";
+        const PUBLIC_REPLAYER_ONLY = true;
+        const PREMIUM_COMBOS = new Set(["AA", "KK", "QQ", "JJ", "AK"]);
+
+        const frame = document.getElementById("landingReplayFrame");
+        const placeholder = document.getElementById("landingReplayPlaceholder");
+
+        if (!frame || !placeholder) return;
+
+        function escapeRegExp(str) {
+          return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        }
+
+        function sanitizeReplayRawInput(rawInput) {
+          const lines = String(rawInput || "").split(/\r?\n/);
+          const filtered = [];
+          const names = [];
+          const bySeat = /^Seat\s+\d+:\s+(.+?)\s+\(/i;
+          const byDealt = /^Dealt to\s+(.+?)\s+\[/i;
+          let dealtHero = "";
+
+          for (const line of lines) {
+            const cleaned = line.trim();
+            if (cleaned && /^tournament\b|^torneio\b|^event\b|^buy-?in\b/i.test(cleaned)) {
+              continue;
+            }
+
+            filtered.push(line);
+
+            const seatMatch = line.match(bySeat);
+            if (seatMatch && seatMatch[1]) {
+              names.push(seatMatch[1].trim());
+            }
+
+            const dealtMatch = line.match(byDealt);
+            if (dealtMatch && dealtMatch[1]) {
+              dealtHero = dealtMatch[1].trim();
+              names.push(dealtHero);
+            }
+          }
+
+          const uniqueNames = Array.from(new Set(names)).filter(Boolean);
+          const aliasMap = new Map();
+
+          if (dealtHero) {
+            aliasMap.set(dealtHero, "Hero");
+            let villainIndex = 0;
+            for (const name of uniqueNames) {
+              if (name === dealtHero) continue;
+              villainIndex += 1;
+              aliasMap.set(name, villainIndex === 1 ? "Vilao" : `Vilao${villainIndex}`);
+            }
+          } else {
+            for (let index = 0; index < uniqueNames.length; index += 1) {
+              const name = uniqueNames[index];
+              if (index === 0) aliasMap.set(name, "Hero");
+              else if (index === 1) aliasMap.set(name, "Vilao");
+              else aliasMap.set(name, `Vilao${index}`);
+            }
+          }
+
+          let text = filtered.join("\n");
+          const replacements = Array.from(aliasMap.entries()).sort((a, b) => b[0].length - a[0].length);
+          for (const [original, alias] of replacements) {
+            text = text.replace(new RegExp(escapeRegExp(original), "g"), alias);
+          }
+
+          return text;
+        }
+
+        function findAllFavorites() {
+          const allFavorites = [];
+          for (let i = 0; i < window.localStorage.length; i += 1) {
+            const key = window.localStorage.key(i);
+            if (!key || !key.startsWith(FAVORITES_KEY_PREFIX)) continue;
+            try {
+              const parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
+              if (!Array.isArray(parsed)) continue;
+              parsed.forEach((entry) => {
+                if (!entry || !entry.rawInput) return;
+                allFavorites.push(entry);
+              });
+            } catch (_err) {
+              // ignore invalid favorites payload
+            }
+          }
+
+          allFavorites.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+          return allFavorites;
+        }
+
+        function splitHands(rawInput) {
+          const text = String(rawInput || "").replace(/\r\n/g, "\n");
+          const chunks = text.split(/(?=^(?:PokerStars Hand #|Hand #\d+|GGPoker Hand #|Ignition Hand #|Winamax Poker - HandId:))/gim);
+          return chunks
+            .map((chunk) => chunk.trim())
+            .filter((chunk) => chunk.length > 40 && /dealt to/i.test(chunk));
+        }
+
+        function parsePremiumCombo(handBlock) {
+          const dealt = handBlock.match(/Dealt to\s+(.+?)\s+\[([2-9TJQKA])[shdc]\s+([2-9TJQKA])[shdc]\]/i);
+          if (!dealt) return { hero: "", combo: "" };
+          const hero = String(dealt[1] || "").trim();
+          const a = String(dealt[2] || "").toUpperCase();
+          const b = String(dealt[3] || "").toUpperCase();
+          const combo = [a, b].sort((x, y) => y.localeCompare(x)).join("");
+          return { hero, combo };
+        }
+
+        function classifyHand(handBlock) {
+          const lower = handBlock.toLowerCase();
+          const { hero, combo } = parsePremiumCombo(handBlock);
+          const heroEscaped = escapeRegExp(hero);
+          const heroWon = hero
+            ? new RegExp(`${heroEscaped}\\s+(collected|wins?)`, "i").test(handBlock) ||
+              new RegExp(`Seat\\s+\\d+:\\s+${heroEscaped}.*(won|collected)`, "i").test(handBlock)
+            : /\bcollected\b|\bwins?\b/i.test(handBlock);
+          const heroFolded = hero
+            ? new RegExp(`${heroEscaped}:\\s+folds`, "i").test(handBlock)
+            : /\bfolds\b/i.test(handBlock);
+          const heroAllIn = hero
+            ? new RegExp(`${heroEscaped}:.*all-?in|${heroEscaped}.*is all[- ]in`, "i").test(handBlock)
+            : /all-?in|is all[- ]in/i.test(handBlock);
+          const lostLike = /lost|mucked|didn't show|did not show/i.test(lower);
+          const heroLost = !heroWon && (lostLike || /showdown/i.test(lower) || /collected by/i.test(lower));
+
+          return {
+            text: handBlock,
+            combo,
+            premium: PREMIUM_COMBOS.has(combo),
+            won: heroWon,
+            lost: heroLost,
+            folded: heroFolded,
+            allIn: heroAllIn,
+          };
+        }
+
+        function pickBest(candidates, used) {
+          if (!candidates || candidates.length === 0) return null;
+          const available = candidates.filter((item) => !used.has(item.text));
+          if (available.length === 0) return null;
+          available.sort((a, b) => Number(b.premium) - Number(a.premium));
+          return available[0];
+        }
+
+        function buildCuratedTranscript(favorites) {
+          const classified = [];
+
+          favorites.forEach((favorite) => {
+            if (!favorite || !favorite.rawInput) return;
+            const sanitized = sanitizeReplayRawInput(favorite.rawInput);
+            splitHands(sanitized).forEach((block) => {
+              classified.push(classifyHand(block));
+            });
+          });
+
+          if (classified.length === 0) return "";
+
+          const used = new Set();
+          const picked = [];
+
+          const wantWon = pickBest(classified.filter((h) => h.won), used);
+          if (wantWon) {
+            picked.push(wantWon);
+            used.add(wantWon.text);
+          }
+
+          const wantLost = pickBest(classified.filter((h) => h.lost), used);
+          if (wantLost) {
+            picked.push(wantLost);
+            used.add(wantLost.text);
+          }
+
+          const wantFold = pickBest(classified.filter((h) => h.folded), used);
+          if (wantFold) {
+            picked.push(wantFold);
+            used.add(wantFold.text);
+          }
+
+          const wantAllIn = pickBest(classified.filter((h) => h.allIn), used);
+          if (wantAllIn) {
+            picked.push(wantAllIn);
+            used.add(wantAllIn.text);
+          }
+
+          const premiumPool = classified.filter((h) => h.premium && !used.has(h.text));
+          while (picked.length < 4 && premiumPool.length > 0) {
+            const next = premiumPool.shift();
+            if (!next) break;
+            picked.push(next);
+            used.add(next.text);
+          }
+
+          const anyPool = classified.filter((h) => !used.has(h.text));
+          while (picked.length < 4 && anyPool.length > 0) {
+            const next = anyPool.shift();
+            if (!next) break;
+            picked.push(next);
+            used.add(next.text);
+          }
+
+          return picked.map((p) => p.text).join("\n\n");
+        }
+
+        if (PUBLIC_REPLAYER_ONLY) {
+          frame.hidden = false;
+          placeholder.hidden = true;
+          frame.src = REPLAYER_FALLBACK_URL;
+        } else {
+          const favorites = findAllFavorites();
+          if (favorites.length === 0) {
+            frame.hidden = false;
+            placeholder.hidden = true;
+            frame.src = REPLAYER_FALLBACK_URL;
+            return;
+          }
+
+          const curatedRawInput = buildCuratedTranscript(favorites);
+          if (!curatedRawInput) {
+            frame.hidden = false;
+            placeholder.hidden = true;
+            frame.src = REPLAYER_FALLBACK_URL;
+            return;
+          }
+
+          const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const payload = {
+            id: sessionId,
+            createdAt: Date.now(),
+            rawInput: curatedRawInput,
+            parserSelection: favorites[0]?.parserSelection || "AUTO",
+          };
+
+          try {
+            window.localStorage.setItem(`${SESSION_LOCAL_PREFIX}${sessionId}`, JSON.stringify(payload));
+            frame.src = `/hand-review/replay/${sessionId}?embed=1`;
+          } catch (_err) {
+            frame.hidden = false;
+            placeholder.hidden = true;
+            frame.src = REPLAYER_FALLBACK_URL;
+          }
+        }
+
+        (function initReplayerCarousel() {
+          const carousel = document.getElementById("replayerCarousel");
+          const track = document.getElementById("replayerTrack");
+          if (!carousel || !track) return;
+
+          const slides = Array.from(track.querySelectorAll(".replayer-slide"));
+          const dotsWrap = document.getElementById("replayerDots");
+          const prevBtn = document.getElementById("replayerPrev");
+          const nextBtn = document.getElementById("replayerNext");
+          if (slides.length <= 1) {
+            if (prevBtn) prevBtn.style.display = "none";
+            if (nextBtn) nextBtn.style.display = "none";
+            return;
+          }
+
+          let current = 0;
+          let loadedDeferred = false;
+
+          const dots = slides.map((_, index) => {
+            const dot = document.createElement("button");
+            dot.type = "button";
+            dot.className = "replayer-dot" + (index === 0 ? " active" : "");
+            dot.setAttribute("aria-label", `Ir para o slide ${index + 1}`);
+            dot.addEventListener("click", () => goTo(index));
+            if (dotsWrap) dotsWrap.appendChild(dot);
+            return dot;
+          });
+
+          function loadDeferredFrames() {
+            if (loadedDeferred) return;
+            loadedDeferred = true;
+            slides.forEach((slide) => {
+              const iframe = slide.querySelector("iframe[data-src]");
+              if (iframe && iframe.getAttribute("src") !== iframe.dataset.src) {
+                iframe.src = iframe.dataset.src;
+              }
+            });
+          }
+
+          function setActive(index) {
+            current = Math.max(0, Math.min(index, slides.length - 1));
+            dots.forEach((dot, i) => dot.classList.toggle("active", i === current));
+            if (prevBtn) prevBtn.disabled = current === 0;
+            if (nextBtn) nextBtn.disabled = current === slides.length - 1;
+            if (current > 0) loadDeferredFrames();
+          }
+
+          function goTo(index) {
+            const target = slides[Math.max(0, Math.min(index, slides.length - 1))];
+            if (!target) return;
+            track.scrollTo({ left: target.offsetLeft, behavior: "smooth" });
+            setActive(index);
+          }
+
+          let scrollRaf = 0;
+          track.addEventListener("scroll", () => {
+            if (scrollRaf) cancelAnimationFrame(scrollRaf);
+            scrollRaf = requestAnimationFrame(() => {
+              const index = Math.round(track.scrollLeft / track.clientWidth);
+              if (index !== current) setActive(index);
+            });
+          });
+
+          if (prevBtn) prevBtn.addEventListener("click", () => goTo(current - 1));
+          if (nextBtn) nextBtn.addEventListener("click", () => goTo(current + 1));
+
+          // Pre-load the deferred hub frame once the carousel is near the viewport
+          // so swiping is instant, without blocking the live replayer.
+          if ("IntersectionObserver" in window) {
+            const io = new IntersectionObserver((entries) => {
+              entries.forEach((entry) => {
+                if (entry.isIntersecting) {
+                  setTimeout(loadDeferredFrames, 600);
+                  io.disconnect();
+                }
+              });
+            }, { rootMargin: "200px" });
+            io.observe(carousel);
+          } else {
+            setTimeout(loadDeferredFrames, 1200);
+          }
+
+          setActive(0);
+        })();
+
+        function initMediaFadeIn() {
+          const media = Array.from(document.querySelectorAll("img[data-fade-media]"));
+          media.forEach((img) => {
+            const markReady = () => img.classList.add("is-rendered");
+
+            if (img.complete && img.naturalWidth > 0) {
+              requestAnimationFrame(markReady);
+              return;
+            }
+
+            img.addEventListener("load", markReady, { once: true });
+            img.addEventListener("error", markReady, { once: true });
+          });
+        }
+
+        initMediaFadeIn();
+
+        const revealTargets = [
+          ".topbar",
+          ".hero-copy",
+          ".hero-video",
+          ".section-replayer .section-copy",
+          ".section-replayer .section-image",
+          "#resultados .section-image",
+          "#resultados .section-copy",
+          "#metodo .section-copy",
+          "#metodo .section-image",
+          "#base .section-image",
+          ".footer"
+        ];
+
+        const revealNodes = revealTargets
+          .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+          .filter((node, index, list) => list.indexOf(node) === index);
+
+        revealNodes.forEach((node, index) => {
+          node.classList.add("reveal-on-scroll");
+          node.style.setProperty("--reveal-delay", `${Math.min(index * 70, 320)}ms`);
+        });
+
+        if (!("IntersectionObserver" in window)) {
+          revealNodes.forEach((node) => node.classList.add("is-visible"));
+          return;
+        }
+
+        const revealObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              entry.target.classList.add("is-visible");
+              revealObserver.unobserve(entry.target);
+            });
+          },
+          {
+            threshold: 0.18,
+            rootMargin: "0px 0px -8% 0px",
+          }
+        );
+
+        revealNodes.forEach((node) => revealObserver.observe(node));
+      })();
+    </script>
+  </body>
+</html>

@@ -96,6 +96,13 @@ function formatDate(d: Date | string): string {
   });
 }
 
+function normalizeExternalUrl(rawUrl: string): string {
+  const value = String(rawUrl ?? "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
+
 // ─── Balance History Panel ────────────────────────────────────────────────────
 
 function BalanceHistoryPanel({ venueId, currency }: { venueId: number; currency: Currency }) {
@@ -293,6 +300,7 @@ function VenueForm({
     id?: number;
     name: string;
     type: "online" | "live";
+    currency?: Currency;
     logoUrl?: string | null;
     website?: string | null;
     address?: string | null;
@@ -304,6 +312,7 @@ function VenueForm({
 }) {
   const [name, setName] = useState(initialData?.name || "");
   const [type, setType] = useState<"online" | "live">(initialData?.type || "online");
+  const [currency, setCurrency] = useState<Currency>(initialData?.currency || "BRL");
   const [logoUrl, setLogoUrl] = useState(initialData?.logoUrl || "");
   const [website, setWebsite] = useState(initialData?.website || "");
   const [address, setAddress] = useState(initialData?.address || "");
@@ -315,7 +324,7 @@ function VenueForm({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 5MB."); return; }
+    if (file.size > 10 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 10MB."); return; }
     setIsUploading(true);
     try {
       const reader = new FileReader();
@@ -336,7 +345,16 @@ function VenueForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { toast.error("Nome é obrigatório"); return; }
-    onSubmit({ id: initialData?.id, name: name.trim(), type, logoUrl: logoUrl || undefined, website: website || undefined, address: address || undefined, notes: notes || undefined });
+    onSubmit({
+      id: initialData?.id,
+      name: name.trim(),
+      type,
+      currency,
+      logoUrl: logoUrl || undefined,
+      website: website || undefined,
+      address: address || undefined,
+      notes: notes || undefined,
+    });
   };
 
   return (
@@ -352,6 +370,20 @@ function VenueForm({
           <SelectContent>
             <SelectItem value="online"><span className="flex items-center gap-2"><Monitor className="h-4 w-4" /> Online</span></SelectItem>
             <SelectItem value="live"><span className="flex items-center gap-2"><Users className="h-4 w-4" /> Live</span></SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Moeda do local</Label>
+        <Select value={currency} onValueChange={(v) => setCurrency(v as Currency)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="BRL">BRL (R$)</SelectItem>
+            <SelectItem value="USD">USD (US$)</SelectItem>
+            <SelectItem value="CAD">CAD (CA$)</SelectItem>
+            <SelectItem value="JPY">JPY (¥)</SelectItem>
+            <SelectItem value="CNY">CNY (CN¥)</SelectItem>
+            <SelectItem value="EUR">EUR (EUR)</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -429,6 +461,7 @@ function VenueCard({
                currency === "CNY" ? rates?.CNY?.rate :
                currency === "EUR" ? rates?.EUR?.rate : 1;
   const balanceBrl = rate ? Math.round(venue.balance * rate) : venue.balance;
+  const websiteHref = normalizeExternalUrl(venue.website || "");
 
   return (
     <div className="tokyo-chip rounded-2xl p-4 space-y-3">
@@ -452,8 +485,8 @@ function VenueCard({
                 {venue.type === "online" ? <Monitor className="h-3 w-3" /> : <Users className="h-3 w-3" />}
                 {venue.type === "online" ? "Online" : "Live"}
               </span>
-              {venue.website && (
-                <a href={venue.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-cyan-300 transition-colors">
+              {websiteHref && (
+                <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-cyan-300 transition-colors">
                   <Globe className="h-3 w-3" /> Site
                 </a>
               )}
@@ -574,17 +607,43 @@ export default function Venues() {
   const { data: rates } = trpc.currency.getRates.useQuery();
 
   const createMutation = trpc.venues.create.useMutation({
-    onSuccess: () => { toast.success("Local criado!"); setIsCreateOpen(false); utils.venues.list.invalidate(); },
+    onSuccess: () => {
+      toast.success("Local criado!");
+      setIsCreateOpen(false);
+      utils.venues.list.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.sessions.list.invalidate();
+    },
     onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 
   const updateMutation = trpc.venues.update.useMutation({
-    onSuccess: () => { toast.success("Local atualizado!"); setEditingVenue(null); utils.venues.list.invalidate(); },
+    onSuccess: () => {
+      toast.success("Local atualizado!");
+      setEditingVenue(null);
+      utils.venues.list.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.sessions.list.invalidate();
+    },
     onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 
   const deleteMutation = trpc.venues.delete.useMutation({
-    onSuccess: () => { toast.success("Local excluído!"); utils.venues.list.invalidate(); },
+    onSuccess: () => {
+      toast.success("Local excluído!");
+      utils.venues.list.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.sessions.list.invalidate();
+    },
     onError: (e) => toast.error(`Erro: ${e.message}`),
   });
 

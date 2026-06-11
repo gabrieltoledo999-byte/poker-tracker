@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy, RotateCw, Edit2 } from "lucide-react";
+import { Settings as SettingsIcon, DollarSign, Monitor, Users, Save, User, Camera, Upload, X, Sun, Moon, Trophy, RotateCw, Edit2, ShieldCheck, Lock, KeyRound } from "lucide-react";
 import { useTheme, ACCENT_COLORS, type AccentColor } from "@/contexts/ThemeContext";
 
 // Helper to format currency
@@ -312,7 +312,12 @@ export default function Settings() {
   const [hasProfileChanges, setHasProfileChanges] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState("");
+  const [passwordCode, setPasswordCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [codeDestination, setCodeDestination] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialGoogleAvatarRef = useRef<string>("");
 
   const { data: settings, isLoading } = trpc.bankroll.getSettings.useQuery();
   const { data: onboardingProfile } = trpc.sessions.getOnboardingProfile.useQuery();
@@ -383,6 +388,28 @@ export default function Settings() {
     },
   });
 
+  const sendPasswordCodeMutation = trpc.auth.sendPasswordChangeCode.useMutation({
+    onSuccess: (data) => {
+      setCodeDestination(data.maskedEmail || "seu e-mail");
+      toast.success("Codigo enviado para seu e-mail.");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Nao foi possivel enviar o codigo.");
+    },
+  });
+
+  const changePasswordMutation = trpc.auth.changePasswordWithCode.useMutation({
+    onSuccess: () => {
+      toast.success("Senha alterada com sucesso.");
+      setPasswordCode("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Nao foi possivel alterar a senha.");
+    },
+  });
+
   useEffect(() => {
     if (settings) {
       setOnlineBankroll(String(settings.initialOnline / 100));
@@ -393,6 +420,14 @@ export default function Settings() {
   useEffect(() => {
     if (user && (user as any).avatarUrl) {
       setAvatarUrl((user as any).avatarUrl);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const avatar = String((user as any)?.avatarUrl ?? "").trim();
+    const loginMethod = String((user as any)?.loginMethod ?? "").toLowerCase();
+    if (!initialGoogleAvatarRef.current && loginMethod === "google" && /^https?:\/\//i.test(avatar)) {
+      initialGoogleAvatarRef.current = avatar;
     }
   }, [user]);
 
@@ -455,8 +490,8 @@ export default function Settings() {
     }
 
     // Keep client/server constraints aligned.
-    if (file.size > 1 * 1024 * 1024) {
-      toast.error("A imagem deve ter no máximo 1MB");
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 10MB");
       return;
     }
 
@@ -513,6 +548,31 @@ export default function Settings() {
     updateNameMutation.mutate({ name: trimmedName });
   };
 
+  const handleSendPasswordCode = () => {
+    sendPasswordCodeMutation.mutate();
+  };
+
+  const handleChangePasswordWithCode = () => {
+    const cleanCode = passwordCode.replace(/\D/g, "");
+    if (cleanCode.length !== 6) {
+      toast.error("Informe o codigo de 6 digitos.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast.error("As senhas nao conferem.");
+      return;
+    }
+
+    changePasswordMutation.mutate({
+      code: cleanCode,
+      newPassword,
+    });
+  };
+
   // Handle file input change
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -553,6 +613,16 @@ export default function Settings() {
   const handleApplyPresetAvatar = () => {
     if (!selectedPresetAvatar) return;
     updateAvatarMutation.mutate({ avatarUrl: selectedPresetAvatar });
+  };
+
+  const handleRestoreGoogleAvatar = () => {
+    const avatar = initialGoogleAvatarRef.current;
+    if (!avatar) {
+      toast.error("Foto do Gmail indisponivel para esta conta.");
+      return;
+    }
+    setSelectedPresetAvatar(null);
+    updateAvatarMutation.mutate({ avatarUrl: avatar });
   };
 
   const toggleProfileFormat = (format: string) => {
@@ -783,7 +853,7 @@ export default function Settings() {
                           {isDragging ? "Solte a imagem aqui" : "Arraste sua foto aqui"}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          ou clique para selecionar. Formato livre, máximo de 1MB.
+                          ou clique para selecionar. Formato livre, máximo de 10MB.
                         </p>
                       </div>
                     </div>
@@ -855,15 +925,27 @@ export default function Settings() {
                         ? "Avatar alternativo selecionado pronto para aplicar."
                         : "Escolha um avatar alternativo para salvar no perfil."}
                     </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleApplyPresetAvatar}
-                      disabled={!selectedPresetAvatar || updateAvatarMutation.isPending}
-                    >
-                      <Save className="mr-2 h-4 w-4" />
-                      Usar avatar
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {initialGoogleAvatarRef.current && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleRestoreGoogleAvatar}
+                          disabled={updateAvatarMutation.isPending}
+                        >
+                          Voltar foto do Gmail
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleApplyPresetAvatar}
+                        disabled={!selectedPresetAvatar || updateAvatarMutation.isPending}
+                      >
+                        <Save className="mr-2 h-4 w-4" />
+                        Usar avatar
+                      </Button>
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1146,6 +1228,86 @@ export default function Settings() {
       </Card>
 
       {/* Theme Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            Seguranca da Conta
+          </CardTitle>
+          <CardDescription>
+            Troque sua senha com confirmacao por codigo enviado ao seu e-mail.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm text-muted-foreground">
+            O codigo sera enviado para {codeDestination || user?.email || "seu e-mail"}. Isso confirma que e voce antes de alterar a senha.
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSendPasswordCode}
+              disabled={sendPasswordCodeMutation.isPending}
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              {sendPasswordCodeMutation.isPending ? "Enviando codigo..." : "Enviar codigo por e-mail"}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="password-code">Codigo de verificacao</Label>
+              <Input
+                id="password-code"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                placeholder="000000"
+                value={passwordCode}
+                onChange={(e) => setPasswordCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password" className="flex items-center gap-2">
+                <Lock className="h-4 w-4" />
+                Nova senha
+              </Label>
+              <Input
+                id="new-password"
+                type="password"
+                minLength={6}
+                placeholder="Minimo 6 caracteres"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-new-password">Confirmar nova senha</Label>
+              <Input
+                id="confirm-new-password"
+                type="password"
+                minLength={6}
+                placeholder="Repita a nova senha"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={handleChangePasswordWithCode}
+              disabled={changePasswordMutation.isPending}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {changePasswordMutation.isPending ? "Alterando senha..." : "Confirmar troca de senha"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

@@ -10,7 +10,10 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "gto:import:sb-open": "tsx scripts/import-gto-baseado-sb-open.ts",
+    "gto:import:bb-vs-sb-open": "tsx scripts/import-gto-baseado-sb-open.ts",
+    "gto:import:spots": "tsx scripts/import-gto-spots-json.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -53,6 +56,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cookie": "^1.0.2",
+    "country-state-city": "^3.2.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.2",
     "drizzle-orm": "^0.44.5",
@@ -71,6 +75,7 @@
     "react-dom": "^19.1.1",
     "react-hook-form": "^7.64.0",
     "react-resizable-panels": "^3.0.6",
+    "react-simple-maps": "^3.0.0",
     "recharts": "^2.15.2",
     "sonner": "^2.0.7",
     "streamdown": "^1.4.0",

@@ -424,7 +424,11 @@ function parseSingle(block: string, tournamentIdFallback: string, heroFallback: 
   const heroSummaryLine = summaryLines.find(line => /^Seat\s+\d+:\s+Hero\b/i.test(line));
   const heroWonBySummary = /\bwon\b/i.test(heroSummaryLine ?? "") || heroCollected > 0;
   const heroFoldedBySummary = (/folded before/i.test(heroSummaryLine ?? "") || heroFolded) && !heroInvestedVoluntarily;
-  const showdown = normalizedActions.some(action => action.action === "show") || summaryShowdownEntries.length > 0;
+  // Hero went to showdown iff hero shows cards OR (any showdown entry exists in summary AND hero did not fold).
+  // Without the heroFolded guard, hands where two villains showdown but hero folded were marked as hero showdowns, distorting WSD.
+  const heroShowedAction = !!heroName && normalizedActions.some(action => action.player === heroName && action.action === "show");
+  const heroAppearsInShowdownSummary = !!heroName && summaryShowdownEntries.some(entry => entry.player === heroName);
+  const showdown = heroShowedAction || heroAppearsInShowdownSummary || (summaryShowdownEntries.length > 0 && !heroFolded);
   const handEndType = showdown ? "showdown" : "fold";
   const heroResult: "won" | "lost" | "folded" = heroWonBySummary ? "won" : (heroFoldedBySummary ? "folded" : "lost");
 
@@ -529,7 +533,10 @@ export function parseOtherPlatformHandHistory(rawTextInput: string): ParsedPoker
     .filter((hand): hand is ParsedPokerStarsHand => Boolean(hand));
   const hands = sortHandsChronologically(unsortedHands);
 
-  const finalPosition = hands.map(hand => hand.summary.eliminationPosition).find(value => value != null) ?? null;
+  const finalPosition = [...hands]
+    .reverse()
+    .map(hand => hand.summary.eliminationPosition)
+    .find(value => value != null) ?? null;
 
   return {
     header: {

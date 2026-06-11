@@ -519,8 +519,13 @@ export function parseGgHandHistory(rawText: string): ParsedPokerStarsHand | null
 
   const heroSeat = seats.find(s => s.playerName === heroName);
 
-  // Detect showdown and uncalled bets
-  const showdown = actions.some(a => a.action === "show") || lines.some(l => /\*\*\*\s*SHOWDOWN\s*\*\*\*/i.test(l));
+  // Detect showdown and uncalled bets.
+  // Hero went to showdown iff hero explicitly shows cards OR hand reached the showdown marker AND hero did not fold beforehand.
+  // Without the heroFolded guard, hands where the hero folded but two villains went to showdown were being counted as hero showdowns, distorting WSD.
+  const heroFoldedAnyStreet = !!heroName && actions.some(a => a.player === heroName && a.action === "fold");
+  const heroShowedCards = !!heroName && actions.some(a => a.player === heroName && a.action === "show");
+  const reachedShowdownMarker = lines.some(l => /\*\*\*\s*SHOWDOWN\s*\*\*\*/i.test(l));
+  const showdown = heroShowedCards || (reachedShowdownMarker && !heroFoldedAnyStreet);
   const uncalledReturned = actions
     .filter(a => a.action === "returned_uncalled_bet")
     .reduce((sum, a) => sum + (a.amount ?? 0), 0);

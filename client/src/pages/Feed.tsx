@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OnlinePresenceDot, OnlinePresenceLabel } from "@/components/OnlinePresence";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import SocialHubNav from "@/components/SocialHubNav";
+import { buildProfilePath } from "@/lib/socialProfile";
+import { useLocation } from "wouter";
 import {
+  Activity,
+  Bookmark,
   Heart,
   MessageCircle,
   ImagePlus,
@@ -17,11 +21,22 @@ import {
   Users,
   ChevronDown,
   ChevronUp,
-  X,
-  Sparkles,
   Flame,
+  MoreHorizontal,
+  Edit2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 function timeAgo(date: Date | string): string {
   const now = new Date();
@@ -31,6 +46,73 @@ function timeAgo(date: Date | string): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}min`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   return `${Math.floor(diff / 86400)}d`;
+}
+
+const COMMUNITY_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+function extractBase64Payload(dataUrl: string): string | null {
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) return null;
+  const payload = dataUrl.slice(commaIndex + 1).trim();
+  return payload.length > 0 ? payload : null;
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function normalizeCommunityImage(file: File): Promise<{ blob: Blob; mimeType: string }> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = objectUrl;
+    });
+
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return { blob: file, mimeType: file.type || "image/jpeg" };
+    }
+    ctx.drawImage(image, 0, 0, width, height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((result) => resolve(result), "image/jpeg", 0.8);
+    });
+
+    if (!blob) {
+      return { blob: file, mimeType: file.type || "image/jpeg" };
+    }
+
+    return { blob, mimeType: "image/jpeg" };
+  } catch {
+    // Mobile browsers may fail to decode camera formats (ex: HEIC); keep a safe fallback.
+    return { blob: file, mimeType: file.type || "image/jpeg" };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function blobToBase64Payload(blob: Blob): Promise<string> {
+  const dataUrl = await blobToDataUrl(blob);
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) return "";
+  return dataUrl.slice(commaIndex + 1).trim();
 }
 
 function CommentSection({ postId, currentUserId }: { postId: number; currentUserId: number }) {
@@ -115,13 +197,19 @@ function CommentSection({ postId, currentUserId }: { postId: number; currentUser
 
 const REACTIONS = ["🔥", "👏", "😂", "😮", "😢", "🎯"] as const;
 
-function PostCard({ post, currentUserId }: { post: any; currentUserId: number }) {
+function PostCard({ post, currentUserId, onOpenProfile }: { post: any; currentUserId: number; onOpenProfile: (author: { id: number; name?: string | null }) => void }) {
   const [showComments, setShowComments] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGestureLike, setShowGestureLike] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState(post.content ?? "");
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const likeFlashTimeoutRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    setDraftContent(post.content ?? "");
+  }, [post.content]);
 
   useEffect(() => {
     return () => {
@@ -202,6 +290,17 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
     },
   });
 
+  const updatePost = trpc.feed.update.useMutation({
+    onSuccess: () => {
+      setIsEditing(false);
+      utils.feed.list.invalidate();
+      toast.success("Post atualizado");
+    },
+    onError: (err) => {
+      toast.error("Erro ao editar post", { description: err.message });
+    },
+  });
+
   const playGestureLikeFlash = () => {
     setShowGestureLike(true);
     if (likeFlashTimeoutRef.current) {
@@ -252,10 +351,20 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
   };
 
   return (
-    <article className="social-post p-4 md:p-5" onDoubleClick={handleDoubleClickLike} onTouchEnd={handleTouchEndLike}>
+    <article className="social-post p-3 md:p-4" onDoubleClick={handleDoubleClickLike} onTouchEnd={handleTouchEndLike}>
         {/* Header */}
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="flex items-center gap-3">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <button
+            type="button"
+            data-no-double-like="true"
+            className="flex items-center gap-3 rounded-xl p-1 text-left transition-colors hover:bg-muted/40"
+            onClick={() => {
+              const authorId = Number(post.author?.id ?? 0);
+              if (Number.isFinite(authorId) && authorId > 0) {
+                onOpenProfile({ id: authorId, name: post.author?.name ?? null });
+              }
+            }}
+          >
             <Avatar className="h-10 w-10">
               <AvatarImage src={post.author?.avatarUrl ?? undefined} />
               <AvatarFallback className="text-sm font-semibold">
@@ -263,7 +372,7 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
               </AvatarFallback>
             </Avatar>
             <div>
-              <p className="font-semibold text-sm">{post.author?.name ?? "Jogador"}</p>
+              <p className="text-sm font-semibold">{post.author?.name ?? "Jogador"}</p>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span>{timeAgo(post.createdAt)}</span>
                 <span>·</span>
@@ -274,18 +383,42 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
                 )}
               </div>
             </div>
-          </div>
-          {post.author?.id === currentUserId && (
+          </button>
+          <div className="flex items-center gap-1">
+            {post.author?.id === currentUserId ? (
+              <>
+              <Button
+                size="icon"
+                variant="ghost"
+                data-no-double-like="true"
+                className="h-8 w-8 rounded-full text-muted-foreground"
+                onClick={() => {
+                  setDraftContent(post.content ?? "");
+                  setIsEditing((prev) => !prev);
+                }}
+              >
+                <Edit2 className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                data-no-double-like="true"
+                className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive"
+                onClick={() => deletePost.mutate({ id: post.id })}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              </>
+            ) : null}
             <Button
               size="icon"
               variant="ghost"
               data-no-double-like="true"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              onClick={() => deletePost.mutate({ id: post.id })}
+              className="h-8 w-8 rounded-full text-muted-foreground"
             >
-              <Trash2 className="h-4 w-4" />
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
-          )}
+          </div>
         </div>
 
         {/* Content */}
@@ -293,18 +426,12 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
           <div
             className="relative mb-3 select-none"
           >
-            {post.content?.trim() && (
-              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words mb-3">
-                {post.content}
-              </p>
-            )}
-
             {post.imageUrl && (
-              <div className="rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+              <div className="overflow-hidden rounded-[0.8rem] bg-muted flex items-center justify-center border border-white/8">
                 <img
                   src={post.imageUrl}
                   alt="Imagem do post"
-                  className="w-full max-h-[480px] object-contain"
+                  className="mx-auto w-full max-h-[620px] object-contain"
                 />
               </div>
             )}
@@ -319,37 +446,75 @@ function PostCard({ post, currentUserId }: { post: any; currentUserId: number })
 
         {/* Actions */}
         <div className="space-y-2" data-no-double-like="true">
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <button
               className={`flex items-center gap-1.5 transition-colors hover:text-rose-500 ${
                 post.likedByMe ? "text-rose-500" : ""
               }`}
               onClick={() => toggleLike.mutate({ postId: post.id })}
             >
-              <Heart className={`h-4 w-4 ${post.likedByMe ? "fill-rose-500" : ""}`} />
-              <span>{post.likeCount}</span>
+              <Heart className={`h-5 w-5 ${post.likedByMe ? "fill-rose-500" : ""}`} />
+            </button>
+            <button
+              className="flex items-center gap-1.5 transition-colors hover:text-primary"
+              onClick={() => setShowComments((v) => !v)}
+            >
+              <MessageCircle className="h-5 w-5" />
             </button>
             <button
               className={`flex items-center gap-1.5 transition-colors hover:text-yellow-500 ${showEmojiPicker ? "text-yellow-500" : ""}`}
               onClick={() => setShowEmojiPicker((v) => !v)}
               title="Reagir"
             >
-              <span className="text-base leading-none">{post.myReaction ?? "🙂"}</span>
-              {(post.reactionSummary?.length ?? 0) > 0 && !post.myReaction && (
-                <span className="text-xs">{(post.reactionSummary as any[]).reduce((s: number, r: any) => s + r.count, 0)}</span>
-              )}
+              <Send className="h-5 w-5" />
             </button>
+            <button className="ml-auto text-muted-foreground transition-colors hover:text-foreground">
+              <Bookmark className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="space-y-1.5 text-sm">
+            <p className="font-semibold text-foreground">{post.likeCount ?? 0} curtidas</p>
+            {isEditing ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={draftContent}
+                  onChange={(e) => setDraftContent(e.target.value)}
+                  className="min-h-[80px] resize-none rounded-xl border-white/10 bg-white/[0.03]"
+                  maxLength={1000}
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setDraftContent(post.content ?? "");
+                      setIsEditing(false);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={updatePost.isPending || draftContent.trim() === (post.content ?? "").trim()}
+                    onClick={() => updatePost.mutate({ id: post.id, content: draftContent })}
+                  >
+                    {updatePost.isPending ? "Salvando..." : "Salvar"}
+                  </Button>
+                </div>
+              </div>
+            ) : post.content?.trim() ? (
+              <p className="leading-relaxed text-foreground/95 whitespace-pre-wrap break-words">
+                <span className="mr-1 font-semibold">{post.author?.name ?? "Jogador"}</span>
+                {post.content}
+              </p>
+            ) : null}
             <button
-              className="flex items-center gap-1.5 transition-colors hover:text-primary"
+              type="button"
+              className="text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
               onClick={() => setShowComments((v) => !v)}
             >
-              <MessageCircle className="h-4 w-4" />
-              <span>{post.commentCount}</span>
-              {showComments ? (
-                <ChevronUp className="h-3 w-3" />
-              ) : (
-                <ChevronDown className="h-3 w-3" />
-              )}
+              {showComments ? "Ocultar comentários" : `Ver comentários (${post.commentCount ?? 0})`}
             </button>
           </div>
 
@@ -407,64 +572,126 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
   const [content, setContent] = useState("");
   const [visibility, setVisibility] = useState<"public" | "friends">("public");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageBase64, setImageBase64] = useState<string | null>(null);
-  const [imageMime, setImageMime] = useState<string>("image/jpeg");
+  const [hasImage, setHasImage] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const imageBlobRef = useRef<Blob | null>(null);
+  const imageMimeRef = useRef<string>("image/jpeg");
+  const imagePreviewUrlRef = useRef<string | null>(null);
   const utils = trpc.useUtils();
+
+  const clearImage = () => {
+    imageBlobRef.current = null;
+    imageMimeRef.current = "image/jpeg";
+    if (imagePreviewUrlRef.current) {
+      try {
+        URL.revokeObjectURL(imagePreviewUrlRef.current);
+      } catch {
+        /* noop */
+      }
+      imagePreviewUrlRef.current = null;
+    }
+    setImagePreview(null);
+    setHasImage(false);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrlRef.current) {
+        try {
+          URL.revokeObjectURL(imagePreviewUrlRef.current);
+        } catch {
+          /* noop */
+        }
+        imagePreviewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const uploadImage = trpc.upload.postImage.useMutation();
   const createPost = trpc.feed.create.useMutation({
     onSuccess: () => {
       setContent("");
-      setImagePreview(null);
-      setImageBase64(null);
+      clearImage();
       utils.feed.list.invalidate();
       toast.success("Post publicado!");
     },
     onError: () => toast.error("Erro ao publicar post"),
   });
 
-  const processImageFile = (file: File) => {
+  const processImageFile = async (file: File) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error("Somente imagens são suportadas.");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Imagem muito grande (máx. 5MB)");
+    if (file.size > COMMUNITY_IMAGE_MAX_BYTES) {
+      toast.error("Imagem muito grande (máx. 10MB)");
       return;
     }
-    setImageMime(file.type);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      setImagePreview(result);
-      // Extract base64 without data URL prefix
-      setImageBase64(result.split(",")[1]);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const normalized = await normalizeCommunityImage(file);
+      imageBlobRef.current = normalized.blob;
+      imageMimeRef.current = normalized.mimeType;
+
+      if (imagePreviewUrlRef.current) {
+        try {
+          URL.revokeObjectURL(imagePreviewUrlRef.current);
+        } catch {
+          /* noop */
+        }
+      }
+      const previewUrl = URL.createObjectURL(normalized.blob);
+      imagePreviewUrlRef.current = previewUrl;
+      setImagePreview(previewUrl);
+      setHasImage(true);
+    } catch {
+      toast.error("Nao foi possivel processar a imagem selecionada.");
+    }
+  };
+
+  const safeProcessImageFile = (file: File) => {
+    try {
+      processImageFile(file).catch(() => {
+        toast.error("Nao foi possivel processar a imagem selecionada.");
+      });
+    } catch {
+      toast.error("Nao foi possivel processar a imagem selecionada.");
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    processImageFile(file);
+    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      safeProcessImageFile(file);
+    } catch {
+      toast.error("Nao foi possivel ler o arquivo selecionado.");
+    } finally {
+      // Permite escolher o mesmo arquivo novamente caso o usuário queira.
+      if (e.target) e.target.value = "";
+    }
   };
 
   const handlePasteImage = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items?.length) return;
+    try {
+      const items = e.clipboardData?.items;
+      if (!items?.length) return;
 
-    for (const item of Array.from(items)) {
-      if (item.kind === "file" && item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file) {
-          e.preventDefault();
-          processImageFile(file);
-          return;
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            safeProcessImageFile(file);
+            return;
+          }
         }
       }
+    } catch {
+      toast.error("Nao foi possivel processar a imagem colada.");
     }
   };
 
@@ -472,47 +699,76 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingImage(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    processImageFile(file);
+    try {
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      safeProcessImageFile(file);
+    } catch {
+      toast.error("Nao foi possivel processar a imagem solta.");
+    }
   };
 
   const handleSubmit = async () => {
-    const trimmedContent = content.trim();
-    if (!trimmedContent && !imageBase64) return;
-    let imageUrl: string | undefined;
-    let imageKey: string | undefined;
-    if (imageBase64) {
-      try {
-        const uploaded = await uploadImage.mutateAsync({
-          base64: imageBase64,
-          mimeType: imageMime,
-        });
-        imageUrl = uploaded.url;
-        imageKey = uploaded.key;
-      } catch (error: any) {
-        const message =
-          typeof error?.message === "string" && error.message.trim().length > 0
-            ? error.message
-            : "Falha ao enviar imagem. Verifique a configuração de armazenamento.";
-        if (trimmedContent) {
-          toast.warning(`${message} Publicando somente o texto.`);
-          setImagePreview(null);
-          setImageBase64(null);
-          if (fileRef.current) fileRef.current.value = "";
-        } else {
-          toast.error(message);
-          return;
+    try {
+      const trimmedContent = content.trim();
+      const blob = imageBlobRef.current;
+      if (!trimmedContent && !blob) return;
+      let imageUrl: string | undefined;
+      let imageKey: string | undefined;
+      if (blob) {
+        try {
+          const base64 = await blobToBase64Payload(blob);
+          if (!base64) {
+            throw new Error("Imagem inválida no envio. Tente outra foto.");
+          }
+          const uploaded = await uploadImage.mutateAsync({
+            base64,
+            mimeType: imageMimeRef.current,
+          });
+          imageUrl = uploaded.url;
+          imageKey = uploaded.key;
+        } catch (error: any) {
+          const message =
+            typeof error?.message === "string" && error.message.trim().length > 0
+              ? error.message
+              : "Falha ao enviar imagem. Verifique a configuração de armazenamento.";
+          if (trimmedContent) {
+            toast.warning(`${message} Publicando somente o texto.`);
+            clearImage();
+          } else {
+            toast.error(message);
+            return;
+          }
         }
       }
+      createPost.mutate({ content: trimmedContent, visibility, imageUrl, imageKey });
+    } catch {
+      toast.error("Falha inesperada ao publicar. Tente novamente.");
     }
-    createPost.mutate({ content: trimmedContent, visibility, imageUrl, imageKey });
   };
+
+  useEffect(() => {
+    const openComposer = () => {
+      const target = document.getElementById("feed-create-post-card");
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      textareaRef.current?.focus();
+    };
+
+    if (localStorage.getItem("social-open-create-post") === "1") {
+      localStorage.removeItem("social-open-create-post");
+      window.setTimeout(openComposer, 80);
+    }
+
+    window.addEventListener("social:open-create-post", openComposer);
+    return () => window.removeEventListener("social:open-create-post", openComposer);
+  }, []);
 
   return (
     <div
-      className={`social-post p-4 space-y-3 transition-colors md:p-5 ${isDraggingImage ? "border-dashed border-primary/60 bg-primary/5" : ""}`}
+      id="feed-create-post-card"
+      className={`social-post space-y-3 p-3 transition-colors md:p-4 ${isDraggingImage ? "border-dashed border-primary/60 bg-primary/5" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -530,11 +786,12 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
         onDrop={handleDropImage}
       >
         <Textarea
+          ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onPaste={handlePasteImage}
           placeholder="Compartilhe um resultado, uma mão interessante ou uma conquista..."
-          className="min-h-[92px] resize-none rounded-[1.5rem] border-border/60 bg-background/75 px-4 py-3"
+          className="min-h-[76px] resize-none rounded-xl border-white/10 bg-white/[0.03] px-3 py-2.5"
           maxLength={1000}
         />
 
@@ -549,16 +806,14 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
             <img
               src={imagePreview}
               alt="Preview"
-              className="max-h-48 rounded-lg object-cover"
+              className="max-h-48 rounded-lg object-contain"
             />
             <Button
               size="icon"
               variant="destructive"
               className="absolute top-1 right-1 h-6 w-6"
               onClick={() => {
-                setImagePreview(null);
-                setImageBase64(null);
-                if (fileRef.current) fileRef.current.value = "";
+                clearImage();
               }}
             >
               <X className="h-3 w-3" />
@@ -579,7 +834,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
               size="sm"
               variant="outline"
               onClick={() => fileRef.current?.click()}
-              className="gap-1.5 rounded-full"
+              className="gap-1.5 rounded-full border-white/10 bg-transparent"
             >
               <ImagePlus className="h-4 w-4" />
               Foto
@@ -588,7 +843,7 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
               value={visibility}
               onValueChange={(v) => setVisibility(v as "public" | "friends")}
             >
-              <SelectTrigger className="h-10 w-36 rounded-full text-sm">
+              <SelectTrigger className="h-9 w-32 rounded-full border-white/10 bg-transparent text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -607,8 +862,8 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={(!content.trim() && !imageBase64) || createPost.isPending || uploadImage.isPending}
-            className="gap-1.5 rounded-full px-5"
+            disabled={(!content.trim() && !hasImage) || createPost.isPending || uploadImage.isPending}
+            className="gap-1.5 rounded-full px-4"
           >
             <Send className="h-4 w-4" />
             {createPost.isPending || uploadImage.isPending ? "Publicando..." : "Publicar"}
@@ -620,8 +875,119 @@ function NewPostForm({ currentUserId }: { currentUserId: number }) {
 
 export default function Feed() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const { data: posts, isLoading } = trpc.feed.list.useQuery();
+  const { data: friends = [] } = trpc.ranking.friends.useQuery(undefined, {
+    enabled: !!user?.id,
+    staleTime: 15000,
+  });
+  const { data: conversations = [] } = trpc.chat.conversations.useQuery(undefined, {
+    enabled: !!user?.id,
+    refetchInterval: 15000,
+    staleTime: 8000,
+  });
   const { data: globalHandPatternStats, isLoading: loadingGlobalHandStats } = trpc.feed.handPatternStats.useQuery({ limit: 50, minHands: 1 });
+  const [scope, setScope] = useState<"global" | "friends">("global");
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const openMyProfile = () => {
+      setLocation(buildProfilePath({ id: user.id, name: user.name }));
+    };
+
+    if (localStorage.getItem("social-open-my-profile") === "1") {
+      localStorage.removeItem("social-open-my-profile");
+      openMyProfile();
+    }
+
+    window.addEventListener("social:open-my-profile", openMyProfile);
+    return () => window.removeEventListener("social:open-my-profile", openMyProfile);
+  }, [setLocation, user?.id, user?.name]);
+
+  useEffect(() => {
+    const savedScope = localStorage.getItem("social-feed-scope");
+    if (savedScope === "friends" || savedScope === "global") {
+      setScope(savedScope);
+      localStorage.removeItem("social-feed-scope");
+    }
+  }, []);
+
+  useEffect(() => {
+    const onSetScope = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      const nextScope = customEvent.detail;
+      if (nextScope === "friends" || nextScope === "global") {
+        setScope(nextScope);
+      }
+    };
+
+    window.addEventListener("social:set-feed-scope", onSetScope as EventListener);
+    return () => window.removeEventListener("social:set-feed-scope", onSetScope as EventListener);
+  }, []);
+
+  const friendIdSet = useMemo(() => {
+    return new Set<number>((friends ?? []).map((item: any) => Number(item.id)).filter((id) => Number.isFinite(id)));
+  }, [friends]);
+
+  const allPosts = posts ?? [];
+
+  const globalPostsCount = useMemo(() => allPosts.filter((post: any) => post.visibility === "public").length, [allPosts]);
+  const friendsPostsCount = useMemo(() => allPosts.filter((post: any) => {
+    const authorId = Number(post?.author?.id ?? 0);
+    if (!Number.isFinite(authorId) || authorId <= 0) return false;
+    return authorId === user?.id || friendIdSet.has(authorId);
+  }).length, [allPosts, friendIdSet, user?.id]);
+  const myPostsCount = useMemo(() => allPosts.filter((post: any) => Number(post?.author?.id ?? 0) === user?.id).length, [allPosts, user?.id]);
+  const myPosts = useMemo(() => {
+    return allPosts
+      .filter((post: any) => Number(post?.author?.id ?? 0) === user?.id)
+      .sort((a: any, b: any) => {
+        const aTime = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [allPosts, user?.id]);
+  const myPhotoPosts = useMemo(() => myPosts.filter((post: any) => Boolean(post?.imageUrl)).slice(0, 6), [myPosts]);
+  const myTotalLikes = useMemo(() => myPosts.reduce((sum: number, post: any) => sum + Number(post?.likeCount ?? 0), 0), [myPosts]);
+  const myTotalComments = useMemo(() => myPosts.reduce((sum: number, post: any) => sum + Number(post?.commentCount ?? 0), 0), [myPosts]);
+
+  const scopedPosts = useMemo(() => {
+    if (!user) return [];
+
+    if (scope === "global") {
+      return allPosts.filter((post: any) => post.visibility === "public");
+    }
+
+    if (scope === "friends") {
+      return allPosts.filter((post: any) => {
+        const authorId = Number(post?.author?.id ?? 0);
+        if (!Number.isFinite(authorId) || authorId <= 0) return false;
+        return authorId === user.id || friendIdSet.has(authorId);
+      });
+    }
+
+    return allPosts.filter((post: any) => post.visibility === "public");
+  }, [allPosts, friendIdSet, scope, user]);
+
+  const onlineUsers = useMemo(() => {
+    const seen = new Set<number>();
+    const rows: Array<{ id: number; name: string | null; avatarUrl: string | null }> = [];
+
+    for (const conversation of conversations ?? []) {
+      if (!conversation?.isOnline) continue;
+      const friendId = Number(conversation?.friend?.id ?? 0);
+      if (!Number.isFinite(friendId) || friendId <= 0 || seen.has(friendId)) continue;
+      seen.add(friendId);
+      rows.push({
+        id: friendId,
+        name: conversation?.friend?.name ?? "Jogador",
+        avatarUrl: conversation?.friend?.avatarUrl ?? null,
+      });
+    }
+
+    return rows;
+  }, [conversations]);
 
   const kkTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.kk?.hands ?? 0), 0);
   const jjTotal = (globalHandPatternStats ?? []).reduce((sum: number, player: any) => sum + (player.jj?.hands ?? 0), 0);
@@ -643,11 +1009,30 @@ export default function Feed() {
   if (!user) return null;
 
   return (
-    <div className="social-page space-y-4">
-      <SocialHubNav />
+    <div className="social-page min-h-full space-y-4 pb-20 text-white">
+      <div className="relative mx-auto w-full max-w-[1040px] px-2 sm:px-3 xl:px-0">
+        <main className="w-full space-y-4 xl:max-w-[630px] xl:-ml-5">
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={scope === "global" ? "default" : "ghost"}
+              className="h-8 rounded-full border border-white/10 bg-white/[0.03] px-3 text-xs"
+              onClick={() => setScope("global")}
+            >
+              Global
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={scope === "friends" ? "default" : "ghost"}
+              className="h-8 rounded-full border border-white/10 bg-white/[0.03] px-3 text-xs"
+              onClick={() => setScope("friends")}
+            >
+              Amigos
+            </Button>
+          </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
-        <div className="space-y-4">
           <NewPostForm currentUserId={user.id} />
 
           {isLoading ? (
@@ -665,23 +1050,91 @@ export default function Feed() {
                 </div>
               ))}
             </div>
-          ) : posts && posts.length > 0 ? (
+          ) : scopedPosts.length > 0 ? (
             <div className="space-y-4">
-              {posts.map((post: any) => (
-                <PostCard key={post.id} post={post} currentUserId={user.id} />
+              {scopedPosts.map((post: any) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  currentUserId={user.id}
+                  onOpenProfile={(author) => setLocation(buildProfilePath({ id: author.id, name: author.name }))}
+                />
               ))}
             </div>
           ) : (
             <div className="social-post py-16 text-center text-muted-foreground">
               <Globe className="mx-auto mb-3 h-12 w-12 opacity-40" />
-              <p className="font-medium">Nenhum post ainda</p>
-              <p className="mt-1 text-sm">Seja o primeiro a compartilhar um resultado.</p>
+              <p className="font-medium">Nenhum post nesse filtro</p>
+              <p className="mt-1 text-sm">
+                {scope === "friends"
+                  ? "Sem posts de amizades por enquanto."
+                  : "Ainda nao ha posts publicos visiveis."}
+              </p>
             </div>
           )}
-        </div>
+        </main>
 
-        <aside className="space-y-4">
-          <div className="social-shell p-4 md:sticky md:top-4">
+        <aside className="hidden w-[320px] space-y-4 xl:fixed xl:right-20 xl:top-20 xl:block">
+          <div className="social-shell p-4">
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Sugestões</p>
+              <div className="space-y-2">
+                {(friends ?? []).slice(0, 3).map((friend: any) => (
+                  <button
+                    key={`suggestion-${friend.id}`}
+                    type="button"
+                    className="social-muted-panel flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-white/[0.06]"
+                    onClick={() => setLocation(buildProfilePath({ id: Number(friend.id), name: friend.name }))}
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={friend.avatarUrl ?? undefined} />
+                      <AvatarFallback>{getInitials(friend.name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{friend.name ?? "Jogador"}</p>
+                      <p className="text-xs text-muted-foreground">Sugestão para você</p>
+                    </div>
+                    <span className="text-xs font-semibold text-primary">Ver</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="social-shell p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+              <Activity className="h-4 w-4 text-emerald-400" />
+              Online no aplicativo
+            </div>
+            {onlineUsers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Sem jogadores online agora.</p>
+            ) : (
+              <div className="space-y-2">
+                {onlineUsers.slice(0, 6).map((online) => (
+                  <button
+                    key={`feed-online-${online.id}`}
+                    type="button"
+                    className="social-muted-panel flex w-full items-center gap-2 p-2 text-left"
+                    onClick={() => setLocation(buildProfilePath({ id: online.id, name: online.name }))}
+                  >
+                    <div className="relative">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={online.avatarUrl ?? undefined} />
+                        <AvatarFallback>{getInitials(online.name)}</AvatarFallback>
+                      </Avatar>
+                      <OnlinePresenceDot className="absolute -bottom-1 -right-1" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold">{online.name ?? "Jogador"}</p>
+                      <OnlinePresenceLabel text="online" className="px-2 py-0.5 text-[10px]" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="social-shell p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <Flame className="h-4 w-4 text-primary" />
               Destaques da mesa
@@ -695,28 +1148,28 @@ export default function Feed() {
                 <div className="social-muted-panel flex items-center justify-between px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold">KK</p>
-                    <p className="text-xs text-muted-foreground">Vitórias {kkWins} • Derrotas {kkLosses}</p>
+                    <p className="text-xs text-muted-foreground">Vitorias {kkWins} - Derrotas {kkLosses}</p>
                   </div>
                   <span className="text-xl font-black text-primary">{kkWinRate}%</span>
                 </div>
                 <div className="social-muted-panel flex items-center justify-between px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold">JJ</p>
-                    <p className="text-xs text-muted-foreground">Vitórias {jjWins} • Derrotas {jjLosses}</p>
+                    <p className="text-xs text-muted-foreground">Vitorias {jjWins} - Derrotas {jjLosses}</p>
                   </div>
                   <span className="text-xl font-black text-primary">{jjWinRate}%</span>
                 </div>
                 <div className="social-muted-panel flex items-center justify-between px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold">AA</p>
-                    <p className="text-xs text-muted-foreground">Vitórias {aaWins} • Derrotas {aaLosses}</p>
+                    <p className="text-xs text-muted-foreground">Vitorias {aaWins} - Derrotas {aaLosses}</p>
                   </div>
                   <span className="text-xl font-black text-primary">{aaWinRate}%</span>
                 </div>
                 <div className="social-muted-panel flex items-center justify-between px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold">AK</p>
-                    <p className="text-xs text-muted-foreground">Vitórias {akWins} • Derrotas {akLosses}</p>
+                    <p className="text-xs text-muted-foreground">Vitorias {akWins} - Derrotas {akLosses}</p>
                   </div>
                   <span className="text-xl font-black text-primary">{akWinRate}%</span>
                 </div>
@@ -724,7 +1177,23 @@ export default function Feed() {
             )}
           </div>
         </aside>
+
+        <Button
+          type="button"
+          className="fixed bottom-6 right-6 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-primary/35 bg-primary text-primary-foreground shadow-[0_12px_30px_rgba(109,40,217,0.45)] transition-transform hover:scale-[1.04]"
+          onClick={() => setLocation("/chat")}
+          aria-label="Abrir mensagens"
+        >
+          <MessageCircle className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+

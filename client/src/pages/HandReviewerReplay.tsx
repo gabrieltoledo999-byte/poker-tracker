@@ -26,6 +26,11 @@ export default function HandReviewerReplay() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute<{ sessionId: string }>("/hand-review/replay/:sessionId");
   const sessionId = params?.sessionId ?? "";
+  const isEmbedded = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const search = new URLSearchParams(window.location.search);
+    return search.get("embed") === "1";
+  }, []);
 
   const [session, setSession] = useState<HandReviewSession | null>(null);
   const [selectedHandIndex, setSelectedHandIndex] = useState(0);
@@ -131,7 +136,10 @@ export default function HandReviewerReplay() {
     );
   }, [handsUntilCurrent]);
   const nearestObservedPlacing = observedPlacingsUntilCurrent.length > 0 ? Math.min(...observedPlacingsUntilCurrent) : null;
-  const finalPosition = handsUntilCurrent.map(hand => hand.summary.eliminationPosition).find(position => position != null) ?? null;
+  const finalPosition = [...handsUntilCurrent]
+    .reverse()
+    .map(hand => hand.summary.eliminationPosition)
+    .find(position => position != null) ?? null;
   const playersRemainingOnElimination = nearestObservedPlacing != null ? Math.max(nearestObservedPlacing - 1, 0) : null;
 
   const moveToHand = (handIndex: number, actionIndex: number) => {
@@ -247,6 +255,57 @@ export default function HandReviewerReplay() {
             <Button variant="outline" onClick={() => setLocation("/hand-review/import")}>Voltar para importacao</Button>
           </CardContent>
         </Card>
+      </div>
+    );
+  }
+
+  if (isEmbedded) {
+    return (
+      <div className="hand-review-replay flex h-screen w-screen flex-col overflow-hidden bg-[#040510]">
+        <PokerTableReplay
+          className="flex-1 min-h-0 h-full w-full"
+          step={currentStep}
+          previousStep={previousStep}
+          maxPlayers={selectedHand.maxPlayers}
+          selectedSeat={selectedSeat}
+          onSelectSeat={setSelectedSeat}
+          displayUnit={displayUnit}
+          bigBlind={currentBigBlind}
+          controls={(
+            <div className="flex min-w-max items-center justify-end gap-2">
+              <Button
+                size="sm"
+                className="h-10 px-3 text-sm"
+                variant={displayUnit === "bb" ? "default" : "outline"}
+                onClick={() => setDisplayUnit(prev => (prev === "bb" ? "chips" : "bb"))}
+              >
+                {displayUnit === "bb" ? <Eye className="mr-1 h-4 w-4" /> : <EyeOff className="mr-1 h-4 w-4" />}
+                BB
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 px-3 text-sm"
+                onClick={goPrevActionContinuous}
+                disabled={!canPrevAction && !canPrevHand}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 px-3 text-sm"
+                onClick={goNextActionContinuous}
+                disabled={!canNextAction && !canNextHand}
+              >
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+              <span className="rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground">
+                {completedActionCount}/{handActions.length}
+              </span>
+            </div>
+          )}
+        />
       </div>
     );
   }

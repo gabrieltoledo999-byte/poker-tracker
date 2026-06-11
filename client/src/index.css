@@ -43,7 +43,7 @@
 }
 
 :root {
-  /* The Rail LIGHT theme - white/lavender with purple+cyan accents */
+  /* All in Edge LIGHT theme - white/lavender with purple+cyan accents */
   --primary: oklch(0.52 0.22 290);     /* Purple */
   --primary-foreground: oklch(0.98 0 0);
   --sidebar-primary: oklch(0.52 0.22 290);
@@ -90,7 +90,7 @@
 }
 
 .dark {
-  /* The Rail DARK theme - deep navy/purple with cyan neon accents */
+  /* All in Edge DARK theme - deep navy/purple with cyan neon accents */
   --primary: oklch(0.62 0.22 290);     /* Vibrant purple */
   --primary-foreground: oklch(0.98 0 0);
   --sidebar-primary: oklch(0.62 0.22 290);
@@ -167,6 +167,7 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
   }
 
   html,
@@ -263,33 +264,29 @@
   }
 
   .social-shell {
-    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
-    background:
-      linear-gradient(180deg, color-mix(in oklab, var(--card) 88%, transparent), color-mix(in oklab, var(--card) 76%, transparent)),
-      radial-gradient(circle at top, color-mix(in oklab, var(--primary) 12%, transparent), transparent 40%);
-    border-radius: 1.75rem;
-    box-shadow: 0 18px 60px rgba(18, 20, 38, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(9, 13, 26, 0.9), rgba(8, 11, 22, 0.86));
+    border-radius: 0.95rem;
+    box-shadow: 0 8px 22px rgba(3, 6, 15, 0.28);
   }
 
   .social-post {
-    border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
-    background: color-mix(in oklab, var(--card) 90%, transparent);
-    border-radius: 1.75rem;
-    box-shadow: 0 18px 45px rgba(18, 20, 38, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(9, 13, 26, 0.9);
+    border-radius: 0.9rem;
+    box-shadow: 0 8px 20px rgba(3, 6, 15, 0.24);
     overflow: hidden;
   }
 
   .social-muted-panel {
-    border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-    background: color-mix(in oklab, var(--muted) 42%, transparent);
-    border-radius: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(11, 15, 28, 0.78);
+    border-radius: 0.85rem;
   }
 
   .social-page {
     width: 100%;
-    max-width: 1280px;
-    margin-left: auto;
-    margin-right: auto;
+    max-width: none;
   }
 
   .brand-hover {
@@ -359,7 +356,7 @@
     inset: auto;
     pointer-events: none;
     z-index: -1;
-    filter: blur(72px);
+    filter: blur(64px);
   }
 
   .tokyo-reviewer::before {
@@ -369,7 +366,7 @@
     height: 28rem;
     border-radius: 9999px;
     background: radial-gradient(circle, color-mix(in oklab, var(--secondary) 28%, transparent), transparent 65%);
-    opacity: 0.35;
+    opacity: 0.2;
     animation: tokyo-float 9s ease-in-out infinite;
   }
 
@@ -380,7 +377,7 @@
     height: 32rem;
     border-radius: 9999px;
     background: radial-gradient(circle, color-mix(in oklab, var(--primary) 24%, transparent), transparent 65%);
-    opacity: 0.3;
+    opacity: 0.16;
     animation: tokyo-float 12s ease-in-out infinite reverse;
   }
 
@@ -396,6 +393,69 @@
     mask-image: linear-gradient(to bottom, transparent, black 22%, black 78%, transparent);
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 22%, black 78%, transparent);
     opacity: 0.16;
+  }
+
+  .tokyo-reviewer-home {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .review-tabs-shell {
+    border: 1px solid color-mix(in oklab, var(--border) 92%, var(--primary) 8%);
+    background: color-mix(in oklab, var(--card) 95%, var(--background) 5%);
+  }
+
+  .review-tab-trigger {
+    color: color-mix(in oklab, var(--foreground) 88%, transparent);
+    border: 1px solid transparent;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: color 0.16s ease, border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .review-tab-trigger:hover {
+    color: color-mix(in oklab, var(--foreground) 94%, transparent);
+    background: color-mix(in oklab, var(--accent) 72%, transparent);
+  }
+
+  .review-tab-trigger[data-state="active"] {
+    color: color-mix(in oklab, var(--foreground) 78%, var(--primary) 22%);
+    border-color: color-mix(in oklab, var(--border) 70%, var(--primary) 30%);
+    background: color-mix(in oklab, var(--card) 88%, var(--primary) 12%);
+  }
+
+  .dark .tokyo-reviewer-home {
+    /* no extra shell in dark mode — tokyo-panel cards carry their own surface */
+  }
+
+  .dark .tokyo-reviewer::before {
+    opacity: 0.12;
+  }
+
+  .dark .tokyo-reviewer::after {
+    opacity: 0.1;
+  }
+
+  .dark .review-tabs-shell {
+    border-color: color-mix(in oklab, var(--secondary) 34%, var(--border));
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--card) 64%, transparent), color-mix(in oklab, var(--card) 56%, transparent));
+  }
+
+  .dark .review-tab-trigger {
+    color: color-mix(in oklab, var(--foreground) 86%, transparent);
+  }
+
+  .dark .review-tab-trigger:hover {
+    background: color-mix(in oklab, var(--card) 72%, var(--secondary) 28%);
+    color: color-mix(in oklab, var(--foreground) 96%, transparent);
+  }
+
+  .dark .review-tab-trigger[data-state="active"] {
+    color: color-mix(in oklab, var(--foreground) 80%, var(--secondary) 20%);
+    border-color: color-mix(in oklab, var(--secondary) 60%, var(--border));
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--card) 56%, var(--secondary) 44%), color-mix(in oklab, var(--card) 66%, var(--primary) 34%));
   }
 
   .tokyo-panel {
@@ -472,6 +532,10 @@
   :is(html:not(.dark)) .tokyo-reviewer,
   :is(html:not(.dark)) .hand-review-replay {
     color: var(--foreground);
+    --tokyo-light-neon: oklch(0.45 0.14 235);
+    --tokyo-light-neon-soft: oklch(0.86 0.06 235);
+    --tokyo-light-gold: oklch(0.52 0.13 82);
+    --tokyo-light-gold-soft: oklch(0.9 0.05 84);
   }
 
   :is(html:not(.dark)) .tokyo-reviewer [class*="text-white/"],
@@ -489,6 +553,41 @@
     color: color-mix(in oklab, var(--primary) 48%, var(--foreground) 52%) !important;
   }
 
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-cyan-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-sky-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-cyan-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-sky-"] {
+    color: color-mix(in oklab, var(--tokyo-light-neon) 84%, var(--foreground) 16%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-amber-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-yellow-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-amber-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-yellow-"] {
+    color: color-mix(in oklab, var(--tokyo-light-gold) 82%, var(--foreground) 18%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-emerald-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-green-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-emerald-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-green-"] {
+    color: color-mix(in oklab, var(--foreground) 66%, oklch(0.58 0.14 158) 34%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-blue-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-indigo-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-blue-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-indigo-"] {
+    color: color-mix(in oklab, var(--foreground) 70%, oklch(0.5 0.14 255) 30%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-red-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="text-rose-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-red-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="text-rose-"] {
+    color: color-mix(in oklab, var(--foreground) 68%, oklch(0.52 0.18 24) 32%) !important;
+  }
+
   :is(html:not(.dark)) .tokyo-reviewer [class*="bg-slate-950/"],
   :is(html:not(.dark)) .tokyo-reviewer [class*="bg-black/"],
   :is(html:not(.dark)) .hand-review-replay [class*="bg-slate-950/"],
@@ -496,9 +595,79 @@
     background-color: color-mix(in oklab, var(--card) 97%, var(--background) 3%) !important;
   }
 
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-cyan-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-sky-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-cyan-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-sky-"] {
+    background-color: color-mix(in oklab, var(--card) 78%, var(--tokyo-light-neon-soft) 22%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-amber-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-yellow-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-amber-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-yellow-"] {
+    background-color: color-mix(in oklab, var(--card) 80%, var(--tokyo-light-gold-soft) 20%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-emerald-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-green-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-emerald-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-green-"] {
+    background-color: color-mix(in oklab, var(--card) 82%, oklch(0.9 0.05 158) 18%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-blue-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-indigo-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-blue-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-indigo-"] {
+    background-color: color-mix(in oklab, var(--card) 84%, oklch(0.9 0.04 255) 16%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-red-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="bg-rose-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-red-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="bg-rose-"] {
+    background-color: color-mix(in oklab, var(--card) 84%, oklch(0.88 0.05 24) 16%) !important;
+  }
+
   :is(html:not(.dark)) .tokyo-reviewer [class*="border-white/"],
   :is(html:not(.dark)) .hand-review-replay [class*="border-white/"] {
     border-color: color-mix(in oklab, var(--border) 86%, var(--foreground) 14%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-cyan-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-sky-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-cyan-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-sky-"] {
+    border-color: color-mix(in oklab, var(--border) 48%, var(--tokyo-light-neon) 52%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-amber-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-yellow-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-amber-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-yellow-"] {
+    border-color: color-mix(in oklab, var(--border) 50%, var(--tokyo-light-gold) 50%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-emerald-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-green-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-emerald-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-green-"] {
+    border-color: color-mix(in oklab, var(--border) 52%, oklch(0.58 0.14 158) 48%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-blue-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-indigo-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-blue-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-indigo-"] {
+    border-color: color-mix(in oklab, var(--border) 54%, oklch(0.5 0.14 255) 46%) !important;
+  }
+
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-red-"],
+  :is(html:not(.dark)) .tokyo-reviewer [class*="border-rose-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-red-"],
+  :is(html:not(.dark)) .hand-review-replay [class*="border-rose-"] {
+    border-color: color-mix(in oklab, var(--border) 56%, oklch(0.52 0.18 24) 44%) !important;
   }
 
   :is(html:not(.dark)) .tokyo-reviewer .tokyo-panel,
@@ -514,8 +683,10 @@
 
   :is(html:not(.dark)) .tokyo-reviewer .tokyo-data-value,
   :is(html:not(.dark)) .hand-review-replay .tokyo-data-value {
-    color: color-mix(in oklab, var(--foreground) 88%, var(--primary) 12%) !important;
-    text-shadow: none !important;
+    color: color-mix(in oklab, var(--foreground) 68%, var(--tokyo-light-neon) 32%) !important;
+    text-shadow:
+      0 0 10px color-mix(in oklab, var(--tokyo-light-neon) 26%, transparent),
+      0 0 18px color-mix(in oklab, var(--primary) 16%, transparent) !important;
   }
 }
 

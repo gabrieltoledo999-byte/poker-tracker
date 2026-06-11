@@ -20,13 +20,20 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
   Plus, Timer, Trophy, TrendingUp, TrendingDown, Trash2,
-  Edit2, CheckCircle, XCircle, Wifi, MapPin, Sparkles,
+  Edit2, CheckCircle, XCircle, Wifi, MapPin, Sparkles, Copy,
   ChevronDown, ChevronUp, Clock, DollarSign, BarChart2, Building2, RotateCcw, ImagePlus, Send, CalendarDays
 } from "lucide-react";
 
 // ─── Tournament Name Autocomplete ────────────────────────────────────────────
 function normalizeTournamentKey(name: string) {
   return name.toLowerCase().replace(/[\d#\-_.()/\\]+/g, "").replace(/\s+/g, " ").trim();
+}
+
+function extractBase64Payload(dataUrl: string): string | null {
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) return null;
+  const payload = dataUrl.slice(commaIndex + 1).trim();
+  return payload.length > 0 ? payload : null;
 }
 
 function TournamentNameInput({
@@ -173,6 +180,30 @@ const ONBOARDING_BUY_IN_RANGES = [
   { key: "r10", minUsdCents: 210000, maxUsdCents: 520000, valueUsdCents: 365000 },
 ] as const;
 
+function hasSavedLocationProfile(profile: { country?: unknown; stateRegion?: unknown; city?: unknown } | null | undefined): boolean {
+  return Boolean(
+    String(profile?.country ?? "").trim()
+    && String(profile?.stateRegion ?? "").trim()
+    && String(profile?.city ?? "").trim(),
+  );
+}
+
+const LOCATION_REFRESH_INTERVAL_MS = 365 * 24 * 60 * 60 * 1000; // 1 ano
+
+function isLocationRefreshDue(
+  locationConsentAt: string | Date | null | undefined,
+  profile: { country?: unknown; stateRegion?: unknown; city?: unknown } | null | undefined,
+): boolean {
+  // Sem região cadastrada = sempre pendente (primeira vez).
+  if (!hasSavedLocationProfile(profile)) return true;
+  // Sem timestamp de consentimento = considera pendente para registrar a 1ª confirmação.
+  if (!locationConsentAt) return true;
+  const consentMs = new Date(locationConsentAt as any).getTime();
+  if (!Number.isFinite(consentMs)) return true;
+  // Pede atualização apenas após 1 ano.
+  return (Date.now() - consentMs) >= LOCATION_REFRESH_INTERVAL_MS;
+}
+
 function formatUsdCents(valueCents: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valueCents / 100);
 }
@@ -254,6 +285,106 @@ function convertToBrlCents(value: number, currency: string, rates?: any) {
   if (currency === "JPY") return Math.round(value * (rates?.JPY?.rate ?? 0.033));
   if (currency === "CNY") return Math.round(value * (rates?.CNY?.rate ?? 0.80));
   return value;
+}
+
+type SupportedCurrency = "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
+
+const CURRENCY_OPTIONS: Array<{ value: SupportedCurrency; flagStyle: string; label: string; code?: string }> = [
+  { value: "BRL", flagStyle: "bg-[linear-gradient(180deg,#1f8f43_0%,#1f8f43_100%)]", label: "BRL (R$)", code: "BR" },
+  { value: "USD", flagStyle: "bg-[repeating-linear-gradient(180deg,#b91c1c_0_10%,#ffffff_10%_20%)]", label: "USD ($)", code: "US" },
+  { value: "CAD", flagStyle: "bg-[linear-gradient(90deg,#dc2626_0_24%,#ffffff_24%_76%,#dc2626_76%_100%)]", label: "CAD (CA$)", code: "CA" },
+  { value: "JPY", flagStyle: "bg-white", label: "JPY (¥)", code: "JP" },
+  { value: "CNY", flagStyle: "bg-[#de2910]", label: "CNY (CN¥)", code: "CN" },
+  { value: "EUR", flagStyle: "bg-[#1d4ed8]", label: "EUR (EUR)", code: "EU" },
+];
+
+function getCurrencyOption(currency: string | null | undefined) {
+  return CURRENCY_OPTIONS.find((option) => option.value === currency) ?? CURRENCY_OPTIONS[0];
+}
+
+function CurrencyFlag({ currency }: { currency: SupportedCurrency | string | null | undefined }) {
+  const option = getCurrencyOption(currency);
+
+  if (option.value === "JPY") {
+    return (
+      <span className="relative inline-flex h-4 w-5 shrink-0 overflow-hidden rounded-[3px] border border-black/10 bg-white shadow-sm">
+        <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#d91c1c]" />
+      </span>
+    );
+  }
+
+  if (option.value === "BRL") {
+    return (
+      <span className={`relative inline-flex h-4 w-5 shrink-0 overflow-hidden rounded-[3px] border border-black/10 shadow-sm ${option.flagStyle}`}>
+        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#facc15]" />
+        <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1d4ed8]" />
+      </span>
+    );
+  }
+
+  if (option.value === "USD") {
+    return (
+      <span className={`relative inline-flex h-4 w-5 shrink-0 overflow-hidden rounded-[3px] border border-black/10 shadow-sm ${option.flagStyle}`}>
+        <span className="absolute left-0 top-0 h-[55%] w-[45%] bg-[#1d4ed8]" />
+      </span>
+    );
+  }
+
+  if (option.value === "CAD") {
+    return (
+      <span className={`relative inline-flex h-4 w-5 shrink-0 overflow-hidden rounded-[3px] border border-black/10 shadow-sm ${option.flagStyle}`}>
+        <span className="absolute left-1/2 top-1/2 h-2 w-1 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-[#dc2626]" />
+      </span>
+    );
+  }
+
+  if (option.value === "CNY") {
+    return (
+      <span className={`relative inline-flex h-4 w-5 shrink-0 overflow-hidden rounded-[3px] border border-black/10 shadow-sm ${option.flagStyle}`}>
+        <span className="absolute left-1 top-0.5 text-[8px] leading-none text-yellow-300">★</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className={`relative inline-flex h-4 w-5 shrink-0 items-center justify-center overflow-hidden rounded-[3px] border border-black/10 text-[8px] font-bold text-yellow-300 shadow-sm ${option.flagStyle}`}>
+      {option.code}
+    </span>
+  );
+}
+
+function CurrencyOptionLabel({ currency }: { currency: SupportedCurrency | string | null | undefined }) {
+  const option = getCurrencyOption(currency);
+  return (
+    <span className="flex items-center gap-2 truncate">
+      <CurrencyFlag currency={option.value} />
+      <span className="truncate">{option.label}</span>
+    </span>
+  );
+}
+
+function inferCurrencyFromVenueName(venueName?: string | null): SupportedCurrency | null {
+  if (!venueName) return null;
+  const normalized = venueName.toLowerCase();
+  if (normalized.includes("suprema")) return "BRL";
+  if (normalized.includes("pokerstars") || normalized.includes("stars")) return "USD";
+  return null;
+}
+
+function resolveVenueCurrency(
+  venue: { currency?: string | null; name?: string | null } | undefined,
+  fallbackCurrency: SupportedCurrency,
+): SupportedCurrency {
+  const inferredCurrency = inferCurrencyFromVenueName(venue?.name);
+  if (inferredCurrency) {
+    return inferredCurrency;
+  }
+
+  const venueCurrency = venue?.currency;
+  if (venueCurrency === "BRL" || venueCurrency === "USD" || venueCurrency === "CAD" || venueCurrency === "JPY" || venueCurrency === "CNY" || venueCurrency === "EUR") {
+    return venueCurrency;
+  }
+  return fallbackCurrency;
 }
 
 function isSignificantGain(profitBrlCents: number, buyInBrlCents: number): boolean {
@@ -548,7 +679,7 @@ interface EditTableDialogProps {
     startedAt: string | Date;
     endedAt?: string | Date | null;
   };
-  venues: { id: number; name: string; logoUrl?: string | null }[];
+  venues: { id: number; name: string; logoUrl?: string | null; currency?: string | null }[];
   onSave: (data: { venueId?: number; type?: "online" | "live"; gameFormat?: "tournament" | "cash_game" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game"; currency?: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR"; buyIn?: number; cashOut?: number | null; clubName?: string; tournamentName?: string; stakes?: string; finalPosition?: number; fieldSize?: number; notes?: string }) => void;
   onClose: () => void;
   isPending: boolean;
@@ -573,6 +704,13 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
     typeof table.fieldSize === "number" && table.fieldSize > 0 ? String(table.fieldSize) : ""
   );
   const [notes, setNotes] = useState(table.notes ?? "");
+
+  const handleVenueChange = (nextVenueId: string) => {
+    setVenueId(nextVenueId);
+    const selectedVenue = venues.find((venue) => String(venue.id) === nextVenueId);
+    const fallbackCurrency: SupportedCurrency = type === "online" ? "USD" : "BRL";
+    setCurrency(resolveVenueCurrency(selectedVenue, fallbackCurrency));
+  };
 
   const duration = calcTableDuration(table.startedAt, table.endedAt);
 
@@ -638,21 +776,22 @@ function EditTableDialog({ table, venues, onSave, onClose, isPending }: EditTabl
             <div>
               <Label className="text-xs">Moeda</Label>
               <Select value={currency} onValueChange={(v) => setCurrency(v as any)}>
-                <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-sm mt-1">
+                  <CurrencyOptionLabel currency={currency} />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="BRL">BRL (R$)</SelectItem>
-                  <SelectItem value="USD">USD ($)</SelectItem>
-                  <SelectItem value="CAD">CAD (CA$)</SelectItem>
-                  <SelectItem value="JPY">JPY (¥)</SelectItem>
-                  <SelectItem value="CNY">CNY (CN¥)</SelectItem>
-                  <SelectItem value="EUR">EUR (EUR)</SelectItem>
+                  {CURRENCY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <CurrencyOptionLabel currency={option.value} />
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div>
             <Label className="text-xs">Plataforma / Local</Label>
-            <Select value={venueId} onValueChange={setVenueId}>
+            <Select value={venueId} onValueChange={handleVenueChange}>
               <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
               <SelectContent>
                 {(() => {
@@ -906,8 +1045,8 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
 
   const getVenueDefaultCurrency = (venueIdValue: string, currentType: "online" | "live") => {
     const selectedVenue = sortedVenues.find((venue: any) => String(venue.id) === venueIdValue);
-    if (!selectedVenue) return currentType === "online" ? "USD" : "BRL";
-    return (selectedVenue.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR") || (currentType === "online" ? "USD" : "BRL");
+    const fallbackCurrency: SupportedCurrency = currentType === "online" ? "USD" : "BRL";
+    return resolveVenueCurrency(selectedVenue, fallbackCurrency);
   };
 
   const handleVenueChange = (nextVenueId: string) => {
@@ -924,6 +1063,7 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
   const addTableMutation = trpc.sessions.addTable.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
+      utils.venues.list.invalidate();
       toast("Mesa adicionada!", { description: "Mesa incluída na sessão." });
       onSuccess();
     },
@@ -1068,14 +1208,15 @@ function AddTableForm({ activeSessionId, onSuccess, onCancel }: AddTableFormProp
         <div className="space-y-1">
           <Label>Moeda</Label>
           <Select value={currency} onValueChange={(v) => setCurrency(v as any)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <CurrencyOptionLabel currency={currency} />
+            </SelectTrigger>
             <SelectContent>
-              <SelectItem value="BRL">🇧🇷 BRL</SelectItem>
-              <SelectItem value="USD">🇺🇸 USD</SelectItem>
-              <SelectItem value="CAD">🇨🇦 CAD</SelectItem>
-              <SelectItem value="JPY">🇯🇵 JPY</SelectItem>
-              <SelectItem value="CNY">🇨🇳 CNY</SelectItem>
-              <SelectItem value="EUR">🇪🇺 EUR</SelectItem>
+              {CURRENCY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <CurrencyOptionLabel currency={option.value} />
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -1222,8 +1363,21 @@ function CashOutDialog({ tableId, currency, buyIn, onClose, onPositiveCelebratio
     },
   });
 
-  const profit = Math.round(parseFloat(cashOut.replace(",", ".")) * 100) - buyIn;
-  const profitDisplay = formatCurrency(Math.abs(profit), currency);
+  const parseCashOutToCents = (raw: string): number | null => {
+    const normalized = raw
+      .trim()
+      .replace(/\s+/g, "")
+      .replace(/[^\d,.-]/g, "")
+      .replace(",", ".");
+    if (!normalized || normalized === "." || normalized === "-") return null;
+    const value = Number(normalized);
+    if (!Number.isFinite(value)) return null;
+    return Math.round(value * 100);
+  };
+
+  const parsedCashOutCents = parseCashOutToCents(cashOut);
+  const profit = parsedCashOutCents !== null ? parsedCashOutCents - buyIn : null;
+  const profitDisplay = profit !== null ? formatCurrency(Math.abs(profit), currency) : null;
 
   return (
     <div className="space-y-4">
@@ -1257,7 +1411,7 @@ function CashOutDialog({ tableId, currency, buyIn, onClose, onPositiveCelebratio
           onChange={(e) => setFieldSize(e.target.value)}
         />
       </div>
-      {!isNaN(profit) && (
+      {profit !== null && profitDisplay && (
         <div className={`text-sm font-medium flex items-center gap-1 ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
           {profit >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
           {profit >= 0 ? "+" : "-"}{profitDisplay}
@@ -1267,10 +1421,17 @@ function CashOutDialog({ tableId, currency, buyIn, onClose, onPositiveCelebratio
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
         <Button
           onClick={() => {
-            const cents = Math.round(parseFloat(cashOut.replace(",", ".")) * 100);
+            const cents = parseCashOutToCents(cashOut);
             const parsedFinalPosition = finalPosition.trim() ? parseInt(finalPosition, 10) : undefined;
             const parsedFieldSize = fieldSize.trim() ? parseInt(fieldSize, 10) : undefined;
-            if (isNaN(cents) || cents < 0) return;
+            if (cents === null) {
+              toast.error("Cash-out inválido. Use um número como 0, 10 ou 10.50.");
+              return;
+            }
+            if (cents < 0) {
+              toast.error("Cash-out não pode ser negativo.");
+              return;
+            }
             if (parsedFinalPosition !== undefined && (!Number.isFinite(parsedFinalPosition) || parsedFinalPosition <= 0)) {
               toast.error("Posição final inválida");
               return;
@@ -1435,6 +1596,8 @@ interface ActiveSessionPanelProps {
       gameFormat: GameFormat;
       currency: "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR";
       buyIn: number;
+      initialBuyIn?: number | null;
+      rebuyCount?: number;
       cashOut?: number | null;
       venueId?: number | null;
       clubName?: string | null;
@@ -1496,6 +1659,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
   const removeMutation = trpc.sessions.removeTable.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
+      utils.venues.list.invalidate();
       toast("Mesa removida.");
     },
   });
@@ -1503,6 +1667,14 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
   const updateTableMutation = trpc.sessions.updateTable.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
+      utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.venues.list.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.getCurrent.invalidate();
       toast.success("Mesa atualizada!");
       setEditTableId(null);
     },
@@ -1512,6 +1684,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
   const replayTableMutation = trpc.sessions.addTable.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
+      utils.venues.list.invalidate();
       toast.success("Nova mesa criada com os mesmos dados!");
     },
     onError: (err) => toast.error("Erro ao jogar de novo", { description: err.message }),
@@ -1521,7 +1694,9 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
     onSuccess: (finalizedSession) => {
       utils.sessions.getActive.invalidate();
       utils.sessions.list.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
       utils.bankroll.getConsolidated.invalidate();
+      utils.venues.list.invalidate();
       toast("Sessão finalizada!", { description: "Resultado salvo com sucesso." });
       const profitCents = finalizedSession
         ? (finalizedSession.cashOut - finalizedSession.buyIn)
@@ -1542,6 +1717,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
   const discardMutation = trpc.sessions.discard.useMutation({
     onSuccess: () => {
       utils.sessions.getActive.invalidate();
+      utils.venues.list.invalidate();
       toast("Sessão descartada.");
       onFinalized();
     },
@@ -1613,34 +1789,34 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/10 bg-slate-950/78 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+      <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-none backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-200">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                 Sessão em andamento
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">Tempo correndo</p>
-                <div className="mt-1 flex items-center gap-2 font-mono text-2xl font-black tracking-tight text-white sm:text-3xl">
-                  <Timer className="h-5 w-5 text-cyan-300" />
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Tempo correndo</p>
+                <div className="mt-1 flex items-center gap-2 font-mono text-2xl font-black tracking-tight text-foreground sm:text-3xl">
+                  <Timer className="h-5 w-5 text-cyan-600 dark:text-cyan-300" />
                   {elapsed}
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:min-w-[320px]">
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Buy-in</p>
-                <p className="mt-1 text-base font-bold text-white">R${(totalBuyIn / 100).toFixed(2)}</p>
+              <div className="rounded-xl border border-border/70 bg-background/70 p-3 dark:border-white/8 dark:bg-white/[0.03]">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Buy-in</p>
+                <p className="mt-1 text-base font-bold text-foreground">R${(totalBuyIn / 100).toFixed(2)}</p>
               </div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Mesas</p>
-                <p className="mt-1 text-base font-bold text-white">{session.tables.length}</p>
+              <div className="rounded-xl border border-border/70 bg-background/70 p-3 dark:border-white/8 dark:bg-white/[0.03]">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Mesas</p>
+                <p className="mt-1 text-base font-bold text-foreground">{session.tables.length}</p>
               </div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Resultado</p>
-                <p className={`mt-1 text-base font-bold ${totalProfit === null ? "text-white/45" : totalProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              <div className="rounded-xl border border-border/70 bg-background/70 p-3 dark:border-white/8 dark:bg-white/[0.03]">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Resultado</p>
+                <p className={`mt-1 text-base font-bold ${totalProfit === null ? "text-muted-foreground" : totalProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                   {totalProfit === null ? "—" : `${totalProfit >= 0 ? "+" : ""}R$${(totalProfit / 100).toFixed(2)}`}
                 </p>
               </div>
@@ -1649,11 +1825,11 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-slate-950/78 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+      <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-none backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-white">Mãos premium</h3>
-            <p className="mt-1 text-xs text-white/55">Toque para registrar vitória ou perda sem poluir a seção.</p>
+            <h3 className="text-sm font-semibold text-foreground">Mãos premium</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Toque para registrar vitória ou perda sem poluir a seção.</p>
           </div>
           <Button
             size="sm"
@@ -1665,38 +1841,42 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
             <RotateCcw className="mr-1 h-3 w-3" /> Desfazer último toque
           </Button>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {([
+            { key: "aa", wins: handPatternStats?.aa?.wins ?? 0, losses: handPatternStats?.aa?.losses ?? 0 },
             { key: "kk", wins: handPatternStats?.kk?.wins ?? 0, losses: handPatternStats?.kk?.losses ?? 0 },
             { key: "jj", wins: handPatternStats?.jj?.wins ?? 0, losses: handPatternStats?.jj?.losses ?? 0 },
-            { key: "aa", wins: handPatternStats?.aa?.wins ?? 0, losses: handPatternStats?.aa?.losses ?? 0 },
             { key: "ak", wins: handPatternStats?.ak?.wins ?? 0, losses: handPatternStats?.ak?.losses ?? 0 },
           ] as const).map((item) => (
-            <div key={item.key} className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+            <div key={item.key} className="rounded-xl border border-border/70 bg-background/70 p-3 dark:border-white/8 dark:bg-white/[0.03]">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <span className="text-sm font-bold uppercase tracking-[0.18em] text-white/80">{item.key}</span>
-                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
+                <span className="text-sm font-bold uppercase tracking-[0.18em] text-foreground">{item.key}</span>
+                <span className="rounded-full border border-border/80 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
                   {item.wins + item.losses} regs
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="space-y-2">
                 <button
                   type="button"
-                  className="min-w-0 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-left transition-colors hover:bg-emerald-500/16 disabled:opacity-40 sm:px-3.5 sm:py-3"
+                  className="w-full rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5 text-left transition-colors hover:bg-emerald-500/20 disabled:opacity-40 sm:px-3.5 sm:py-3"
                   onClick={() => handleRegisterHandResult(item.key, "win")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
-                  <span className="block truncate text-[9px] font-semibold tracking-[0.04em] leading-tight text-emerald-300/80 sm:text-[11px] sm:tracking-[0.08em] sm:uppercase sm:whitespace-nowrap">Vitórias</span>
-                  <span className="mt-2 block text-xl font-bold leading-none text-emerald-300 sm:text-2xl">{item.wins}</span>
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold tracking-[0.04em] leading-tight text-emerald-700 dark:text-emerald-300/80 sm:text-[11px] sm:tracking-[0.08em] sm:uppercase">Vitórias</span>
+                    <span className="text-xl font-bold leading-none text-emerald-700 dark:text-emerald-300 sm:text-2xl">{item.wins}</span>
+                  </span>
                 </button>
                 <button
                   type="button"
-                  className="min-w-0 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2.5 text-left transition-colors hover:bg-rose-500/16 disabled:opacity-40 sm:px-3.5 sm:py-3"
+                  className="w-full rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2.5 text-left transition-colors hover:bg-rose-500/20 disabled:opacity-40 sm:px-3.5 sm:py-3"
                   onClick={() => handleRegisterHandResult(item.key, "loss")}
                   disabled={registerHandResultMutation.isPending || updateHandStatsMutation.isPending}
                 >
-                  <span className="block truncate text-[9px] font-semibold tracking-[0.04em] leading-tight text-rose-300/80 sm:text-[11px] sm:tracking-[0.08em] sm:uppercase sm:whitespace-nowrap">Perdas</span>
-                  <span className="mt-2 block text-xl font-bold leading-none text-rose-300 sm:text-2xl">{item.losses}</span>
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold tracking-[0.04em] leading-tight text-rose-700 dark:text-rose-300/80 sm:text-[11px] sm:tracking-[0.08em] sm:uppercase">Perdas</span>
+                    <span className="text-xl font-bold leading-none text-rose-700 dark:text-rose-300 sm:text-2xl">{item.losses}</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -1719,15 +1899,31 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
             <p className="text-xs mt-1">Clique em "Adicionar Mesa" para começar.</p>
           </div>
         ) : (
-          session.tables.map((table) => {
+          [...session.tables]
+            .sort((a, b) => {
+              const aFinished = a.endedAt !== null && a.endedAt !== undefined;
+              const bFinished = b.endedAt !== null && b.endedAt !== undefined;
+              if (aFinished !== bFinished) return aFinished ? 1 : -1;
+
+              const aActiveTournament = !aFinished && String(a.tournamentName ?? "").trim().length > 0;
+              const bActiveTournament = !bFinished && String(b.tournamentName ?? "").trim().length > 0;
+              if (aActiveTournament !== bActiveTournament) return aActiveTournament ? -1 : 1;
+
+              return b.id - a.id;
+            })
+            .map((table) => {
             const venue = venues?.find(v => v.id === table.venueId);
             const fmt = GAME_FORMATS.find(f => f.value === table.gameFormat);
             const isFinished = table.endedAt !== null && table.endedAt !== undefined;
             const canUseAddOn = table.gameFormat !== "cash_game";
+            const baseBuyIn = Math.max(0, Number(table.initialBuyIn ?? table.buyIn ?? 0));
+            const extraBuyIn = Math.max(0, Number(table.buyIn ?? 0) - baseBuyIn);
+            const hasExtraBuyIn = extraBuyIn > 0;
+            const rebuyCount = Math.max(0, Number(table.rebuyCount ?? 0));
             const profit = isFinished ? (table.cashOut ?? 0) - table.buyIn : null;
 
             return (
-              <div key={table.id} className={`flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isFinished ? "border-white/10 bg-slate-950/70" : "border-cyan-400/25 bg-slate-950/82"}`}>
+              <div key={table.id} className={`flex flex-col gap-3 rounded-lg border p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:flex-row ${isFinished ? "sm:items-center border-border bg-background/80 dark:border-white/10 dark:bg-slate-950/70" : "sm:items-start border-cyan-500/35 bg-cyan-50/50 dark:border-cyan-400/25 dark:bg-slate-950/82"}`}>
                 {/* Venue logo */}
                 <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {venue?.logoUrl ? (
@@ -1742,6 +1938,12 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium truncate">{venue?.name ?? (table.type === "online" ? "Online" : "Live")}</span>
                     <Badge variant="outline" className="text-xs shrink-0">{fmt?.label ?? table.gameFormat}</Badge>
+                    {!isFinished && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300 shrink-0">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Em jogo
+                      </span>
+                    )}
                     {table.type === "online" ? (
                       <Wifi className="h-3 w-3 text-muted-foreground shrink-0" />
                     ) : (
@@ -1750,23 +1952,23 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
                     <span className="text-xs text-muted-foreground">
-                      Buy-in: {formatCurrency(table.buyIn, table.currency)}
+                      Buy-in: {formatCurrency(baseBuyIn, table.currency)}
                     </span>
-                      {table.clubName && (
-                        <span className="text-xs text-muted-foreground">Clube: {table.clubName}</span>
-                      )}
-                      {table.tournamentName && (
-                        <span className="text-xs text-muted-foreground">Torneio: {table.tournamentName}</span>
-                      )}
+                    {hasExtraBuyIn && (
+                      <span className="text-xs text-amber-700 dark:text-amber-300">
+                        Acrescimos (rebuy/add-on): +{formatCurrency(extraBuyIn, table.currency)}
+                        {rebuyCount > 0 ? ` (${rebuyCount} rebuy${rebuyCount > 1 ? "s" : ""})` : ""}
+                      </span>
+                    )}
+                    {table.clubName && (
+                      <span className="text-xs text-muted-foreground">Clube: {table.clubName}</span>
+                    )}
+                    {table.tournamentName && (
+                      <span className="text-xs text-muted-foreground">Torneio: {table.tournamentName}</span>
+                    )}
                     {isFinished && profit !== null && (
                       <span className={`text-xs font-medium ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {profit >= 0 ? "+" : ""}{formatCurrency(Math.abs(profit), table.currency)}
-                      </span>
-                    )}
-                    {!isFinished && (
-                      <span className="text-xs text-green-500 flex items-center gap-1">
-                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                        Em jogo
                       </span>
                     )}
                   </div>
@@ -1786,7 +1988,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
                         type: table.type as "online" | "live",
                         gameFormat: table.gameFormat as GameFormat,
                         currency: table.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR",
-                        buyIn: table.buyIn,
+                        buyIn: baseBuyIn,
                         clubName: table.clubName ?? undefined,
                         tournamentName: table.tournamentName ?? undefined,
                         gameType: table.gameType ?? undefined,
@@ -1796,6 +1998,29 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
                       disabled={replayTableMutation.isPending}
                     >
                       <Plus className="h-3 w-3 mr-1" /> Jogar de novo
+                    </Button>
+                  )}
+                  {!isFinished && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-[13px] h-9 px-3 w-full whitespace-normal sm:w-auto sm:whitespace-nowrap"
+                      onClick={() => replayTableMutation.mutate({
+                        activeSessionId: session.id,
+                        venueId: table.venueId ?? undefined,
+                        type: table.type as "online" | "live",
+                        gameFormat: table.gameFormat as GameFormat,
+                        currency: table.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR",
+                        buyIn: baseBuyIn,
+                        clubName: table.clubName ?? undefined,
+                        tournamentName: table.tournamentName ?? undefined,
+                        gameType: table.gameType ?? undefined,
+                        stakes: table.stakes ?? undefined,
+                        notes: undefined,
+                      })}
+                      disabled={replayTableMutation.isPending}
+                    >
+                      <Copy className="h-3 w-3 mr-1" /> Duplicar mesa
                     </Button>
                   )}
                   {!isFinished && (
@@ -1850,7 +2075,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
                 </div>
               </div>
             );
-          })
+            })
         )}
       </div>
 
@@ -1929,7 +2154,7 @@ function ActiveSessionPanel({ session, onFinalized, onSignificantTableCashOut, o
               tableId={rebuyTable.id}
               currency={rebuyTable.currency}
               currentBuyIn={rebuyTable.buyIn}
-              suggestedRebuy={Math.max(100, rebuyTable.buyIn)}
+              suggestedRebuy={Math.max(100, Number(rebuyTable.initialBuyIn ?? rebuyTable.buyIn ?? 0))}
               onClose={() => setRebuyTableId(null)}
             />
           )}
@@ -2108,6 +2333,8 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
     onSuccess: () => {
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.venues.list.invalidate();
       utils.venues.statsByVenue.invalidate();
       utils.sessions.recentTables.invalidate();
       utils.bankroll.getConsolidated.invalidate();
@@ -2122,7 +2349,9 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
     onSuccess: () => {
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
       utils.sessions.recentTables.invalidate();
+      utils.venues.list.invalidate();
       utils.venues.statsByVenue.invalidate();
       utils.bankroll.getConsolidated.invalidate();
       utils.bankroll.history.invalidate();
@@ -2137,6 +2366,13 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
     onSuccess: () => {
       utils.sessions.getTables.invalidate({ sessionId: session.id });
       utils.sessions.list.invalidate();
+      utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
+      utils.sessions.recentTables.invalidate();
+      utils.venues.list.invalidate();
+      utils.venues.statsByVenue.invalidate();
+      utils.bankroll.getConsolidated.invalidate();
+      utils.bankroll.getCurrent.invalidate();
       toast.success("Mesa atualizada!");
       setEditTableId(null);
     },
@@ -2148,6 +2384,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
       utils.sessions.getTables.invalidate({ sessionId: session.id });
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
       utils.bankroll.getConsolidated.invalidate();
       utils.bankroll.getCurrent.invalidate();
       toast.success("Mesa excluída!");
@@ -2168,6 +2405,13 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
   const isMultiVenue = (session.uniqueVenueCount ?? 0) > 1;
   const fallbackVenueText = isMultiVenue ? `${session.uniqueVenueCount} plataformas` : venueName;
   const venueBadgeText = tournamentTitle || fallbackVenueText;
+
+  const handleEditVenueChange = (nextVenueId: string) => {
+    setEditVenueId(nextVenueId);
+    const selectedVenue = venues?.find((venue: any) => String(venue.id) === nextVenueId);
+    const fallbackCurrency: SupportedCurrency = editType === "online" ? "USD" : "BRL";
+    setEditCurrency(resolveVenueCurrency(selectedVenue, fallbackCurrency));
+  };
 
   function handleSaveEdit() {
     const parsedSessionDate = editSessionDate ? new Date(editSessionDate) : undefined;
@@ -2208,9 +2452,9 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
 
   return (
     <>
-    <Card className="overflow-hidden border-white/10 bg-slate-950/76 shadow-[0_18px_44px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+    <Card className="overflow-hidden border-border dark:border-white/10 bg-card dark:bg-slate-950/76 shadow-none">
       <div
-        className="cursor-pointer p-4 transition-colors hover:bg-white/5"
+        className="cursor-pointer p-4 transition-colors hover:bg-muted/40 dark:hover:bg-white/5"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start gap-3">
@@ -2301,7 +2545,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
       </div>
 
       {expanded && (
-        <div className="space-y-3 border-t border-white/10 px-4 pb-4 pt-3 bg-black/10">
+        <div className="space-y-3 border-t border-border dark:border-white/10 px-4 pb-4 pt-3 bg-muted/30 dark:bg-black/10">
           <div className="grid grid-cols-3 gap-3 text-center text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Buy-in</p>
@@ -2367,7 +2611,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
                 const tDuration = calcTableDuration(t.startedAt, t.endedAt);
                 const tableVenue = venues?.find(v => v.id === t.venueId);
                 return (
-                  <div key={t.id} className="space-y-0.5 rounded-lg border border-white/8 bg-slate-950/72 px-2 py-1.5 text-xs">
+                  <div key={t.id} className="space-y-0.5 rounded-lg border border-border/60 dark:border-white/8 bg-muted/20 dark:bg-slate-950/72 px-2 py-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{tfmt?.emoji} {tfmt?.label} · {t.type === "online" ? "Online" : "Live"}</span>
                       <span className={tp >= 0 ? "text-green-500" : "text-red-500"}>
@@ -2475,14 +2719,15 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
                 <div>
                   <Label className="text-xs">Moeda</Label>
                   <Select value={editCurrency} onValueChange={setEditCurrency}>
-                    <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-8 text-sm mt-1">
+                      <CurrencyOptionLabel currency={editCurrency} />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="BRL">BRL (R$)</SelectItem>
-                      <SelectItem value="USD">USD ($)</SelectItem>
-                      <SelectItem value="CAD">CAD (CA$)</SelectItem>
-                      <SelectItem value="JPY">JPY (¥)</SelectItem>
-                      <SelectItem value="CNY">CNY (CN¥)</SelectItem>
-                      <SelectItem value="EUR">EUR (EUR)</SelectItem>
+                      {CURRENCY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <CurrencyOptionLabel currency={option.value} />
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2500,7 +2745,7 @@ function SessionCard({ session, typeFilter }: { session: any; typeFilter?: "all"
               </div>
               <div>
                 <Label className="text-xs">Plataforma / Local</Label>
-                <Select value={editVenueId} onValueChange={setEditVenueId}>
+                <Select value={editVenueId} onValueChange={handleEditVenueChange}>
                   <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                   <SelectContent>
                     {venues && venues.length > 0 ? (
@@ -2928,6 +3173,39 @@ function SessionsPageBackdropChips() {
     return [...baseChips, ...extraChips];
   }, []);
 
+  // Pre-carrega todas as imagens das fichas e só monta o backdrop quando todas
+  // estiverem prontas. Assim o usuário não vê as fichas "carregando do topo"
+  // antes de começar a cair — as animações já estão no meio do ciclo (delays
+  // negativos) quando o overlay aparece com fade-in suave.
+  const [chipsReady, setChipsReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let remaining = FALLING_CHIP_ASSETS.length;
+    if (remaining === 0) {
+      setChipsReady(true);
+      return;
+    }
+    const done = () => {
+      remaining -= 1;
+      if (remaining <= 0 && !cancelled) {
+        // Aguarda mais um frame para garantir que as animações CSS
+        // já estejam posicionadas pelos delays negativos antes de revelar.
+        requestAnimationFrame(() => {
+          if (!cancelled) setChipsReady(true);
+        });
+      }
+    };
+    FALLING_CHIP_ASSETS.forEach((asset) => {
+      const img = new Image();
+      img.onload = done;
+      img.onerror = done;
+      img.src = asset.src;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div
       className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
@@ -2935,6 +3213,8 @@ function SessionsPageBackdropChips() {
       style={{
         maskImage: "linear-gradient(180deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 84%, rgba(0,0,0,0) 100%)",
         WebkitMaskImage: "linear-gradient(180deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 84%, rgba(0,0,0,0) 100%)",
+        opacity: chipsReady ? 1 : 0,
+        transition: "opacity 480ms ease-out",
       }}
     >
       <style>{`
@@ -2956,15 +3236,6 @@ function SessionsPageBackdropChips() {
       {chips.map((chip) => (
         <FallingChip key={chip.id} chip={chip} />
       ))}
-
-      <div
-        className="absolute top-0 bottom-0 hidden md:block"
-        style={{
-          left: "clamp(248px, 21vw, 308px)",
-          width: "42px",
-          background: "linear-gradient(90deg, rgba(2,6,23,0.32) 0%, rgba(2,6,23,0.18) 38%, rgba(2,6,23,0) 100%)",
-        }}
-      />
 
       <div
         className="absolute inset-x-0 bottom-0"
@@ -2989,11 +3260,13 @@ export default function Sessions() {
   const [historyDateToFilter, setHistoryDateToFilter] = useState("");
   const [historyTournamentFilter, setHistoryTournamentFilter] = useState("");
   const [importRawText, setImportRawText] = useState("");
-  const [importCurrencyMode, setImportCurrencyMode] = useState<"auto" | "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR">("auto");
+  const [importCurrencyMode, setImportCurrencyMode] = useState<"" | "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR">("");
+  const [importCurrencyError, setImportCurrencyError] = useState<string | null>(null);
   const [importTypeMode, setImportTypeMode] = useState<"auto" | "online" | "live">("auto");
   const [importResult, setImportResult] = useState<{ imported: number; failures: string[] } | null>(null);
   const [showDeleteHistoryConfirm, setShowDeleteHistoryConfirm] = useState(false);
   const [showPlayStyleOnboarding, setShowPlayStyleOnboarding] = useState(false);
+  const onboardingPromptCycleRef = useRef<string>("");
   const [selectedPlayStyle, setSelectedPlayStyle] = useState<"online" | "live">(primaryType);
   const [selectedFormats, setSelectedFormats] = useState<string[]>(["tournament"]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -3003,6 +3276,14 @@ export default function Sessions() {
   const [showInGlobalRanking, setShowInGlobalRanking] = useState<boolean>(false);
   const [showInFriendsRanking, setShowInFriendsRanking] = useState<boolean>(false);
   const [rankingConsentTouched, setRankingConsentTouched] = useState<boolean>(false);
+  const [onboardingCountry, setOnboardingCountry] = useState("");
+  const [onboardingStateRegion, setOnboardingStateRegion] = useState("");
+  const [onboardingCity, setOnboardingCity] = useState("");
+  const [onboardingAddressLine, setOnboardingAddressLine] = useState("");
+  const [onboardingPostalCode, setOnboardingPostalCode] = useState("");
+  const [onboardingTaxDocument, setOnboardingTaxDocument] = useState("");
+  const [onboardingLatE6, setOnboardingLatE6] = useState<number | null>(null);
+  const [onboardingLngE6, setOnboardingLngE6] = useState<number | null>(null);
   const [moneyRainVisible, setMoneyRainVisible] = useState(false);
   const [showFeedPublishDialog, setShowFeedPublishDialog] = useState(false);
   const [feedPublishContent, setFeedPublishContent] = useState("");
@@ -3015,6 +3296,7 @@ export default function Sessions() {
   const [optimisticSessionStartedAt, setOptimisticSessionStartedAt] = useState<Date | null>(null);
   const [optimisticElapsed, setOptimisticElapsed] = useState("00:00:00");
   const feedImageInputRef = useRef<HTMLInputElement>(null);
+  const importCurrencyFieldRef = useRef<HTMLDivElement>(null);
 
   const { data: activeSession, isLoading: loadingActive } = trpc.sessions.getActive.useQuery(undefined, {
     refetchInterval: 5000, // poll every 5s to keep timer in sync
@@ -3023,6 +3305,26 @@ export default function Sessions() {
   const { data: sessions, isLoading: loadingSessions } = trpc.sessions.list.useQuery({});
   const { data: onboardingVenues } = trpc.venues.list.useQuery({});
   const { data: onboardingProfile } = trpc.sessions.getOnboardingProfile.useQuery();
+
+  const onboardingRequirementCycleKey = useMemo(() => {
+    if (!user || onboardingProfile === undefined) return "";
+    // O ciclo muda apenas quando a localização é confirmada; assim o dismiss persiste
+    // entre aberturas até que se complete 1 ano (próximo ciclo).
+    return [
+      String(user.id ?? ""),
+      String((onboardingProfile as any)?.locationConsentAt ?? "none"),
+    ].join("|");
+  }, [user, onboardingProfile]);
+
+  const onboardingDismissStorageKey = useMemo(() => {
+    if (!user?.id) return "";
+    return `sessions-onboarding-dismissed-cycle:${user.id}`;
+  }, [user?.id]);
+
+  const markOnboardingDismissedForCurrentCycle = () => {
+    if (!onboardingDismissStorageKey || !onboardingRequirementCycleKey) return;
+    localStorage.setItem(onboardingDismissStorageKey, onboardingRequirementCycleKey);
+  };
 
   const saveOnboardingProfileMutation = trpc.sessions.saveOnboardingProfile.useMutation({
     onSuccess: () => {
@@ -3093,7 +3395,9 @@ export default function Sessions() {
     onSuccess: (result) => {
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
       utils.sessions.recentTables.invalidate();
+      utils.venues.list.invalidate();
       utils.venues.statsByVenue.invalidate();
       utils.bankroll.getConsolidated.invalidate();
       utils.bankroll.getCurrent.invalidate();
@@ -3112,10 +3416,24 @@ export default function Sessions() {
     onError: (err) => toast.error("Falha ao importar", { description: err.message }),
   });
 
+  const ensureImportCurrencySelected = () => {
+    if (importCurrencyMode) {
+      setImportCurrencyError(null);
+      return true;
+    }
+    setImportCurrencyError("Selecione a moeda antes de analisar/importar.");
+    importCurrencyFieldRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    toast.error("Selecione a moeda", {
+      description: "Escolha BRL, USD ou outra moeda para continuar.",
+    });
+    return false;
+  };
+
   const clearHistoryMutation = trpc.sessions.clearHistory.useMutation({
     onSuccess: (result) => {
       utils.sessions.list.invalidate();
       utils.sessions.stats.invalidate();
+      utils.sessions.getUserPreferences.invalidate();
       utils.sessions.recentTables.invalidate();
       utils.venues.statsByVenue.invalidate();
       utils.bankroll.getConsolidated.invalidate();
@@ -3130,7 +3448,29 @@ export default function Sessions() {
 
   useEffect(() => {
     if (!user || onboardingProfile === undefined) return;
-  }, [user, onboardingProfile]);
+    const missingLocation = isLocationRefreshDue((onboardingProfile as any)?.locationConsentAt, onboardingProfile as any);
+    // Mostra apenas na 1ª vez ou após 1 ano da última confirmação.
+    const hasPendingOnboarding = missingLocation;
+
+    if (!hasPendingOnboarding) {
+      onboardingPromptCycleRef.current = "";
+      if (onboardingDismissStorageKey) {
+        localStorage.removeItem(onboardingDismissStorageKey);
+      }
+      return;
+    }
+
+    const cycleKey = onboardingRequirementCycleKey;
+    const dismissedCycle = onboardingDismissStorageKey ? localStorage.getItem(onboardingDismissStorageKey) : null;
+    if (dismissedCycle === cycleKey) {
+      return;
+    }
+
+    if (onboardingPromptCycleRef.current !== cycleKey) {
+      onboardingPromptCycleRef.current = cycleKey;
+      setShowPlayStyleOnboarding(true);
+    }
+  }, [user, onboardingProfile, onboardingRequirementCycleKey, onboardingDismissStorageKey]);
 
   useEffect(() => {
     if (!onboardingProfile) return;
@@ -3144,6 +3484,14 @@ export default function Sessions() {
     setShowInGlobalRanking(Boolean(onboardingProfile.showInGlobalRanking));
     setShowInFriendsRanking(Boolean(onboardingProfile.showInFriendsRanking));
     setRankingConsentTouched(Boolean(onboardingProfile.rankingConsentAnsweredAt));
+    setOnboardingCountry(String((onboardingProfile as any).country ?? ""));
+    setOnboardingStateRegion(String((onboardingProfile as any).stateRegion ?? ""));
+    setOnboardingCity(String((onboardingProfile as any).city ?? ""));
+    setOnboardingAddressLine(String((onboardingProfile as any).addressLine ?? ""));
+    setOnboardingPostalCode(String((onboardingProfile as any).postalCode ?? ""));
+    setOnboardingTaxDocument(String((onboardingProfile as any).taxDocument ?? ""));
+    setOnboardingLatE6((onboardingProfile as any).locationLatE6 ?? null);
+    setOnboardingLngE6((onboardingProfile as any).locationLngE6 ?? null);
   }, [onboardingProfile]);
 
   useEffect(() => {
@@ -3171,6 +3519,7 @@ export default function Sessions() {
   if (!user) return null;
   const needsPlayStyleOnboarding = !user.onboardingCompletedAt;
   const needsRankingConsentOnboarding = !onboardingProfile?.rankingConsentAnsweredAt;
+  const needsLocationOnboarding = !hasSavedLocationProfile(onboardingProfile as any);
 
   const toggleOnboardingFormat = (format: string) => {
     setSelectedFormats((prev) => {
@@ -3217,7 +3566,33 @@ export default function Sessions() {
       playsMultiPlatform,
       showInGlobalRanking,
       showInFriendsRanking,
+      country: onboardingCountry,
+      stateRegion: onboardingStateRegion,
+      city: onboardingCity,
+      addressLine: onboardingAddressLine,
+      postalCode: onboardingPostalCode,
+      taxDocument: onboardingTaxDocument,
+      locationLatE6: onboardingLatE6,
+      locationLngE6: onboardingLngE6,
     });
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocalizacao nao suportada neste dispositivo.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setOnboardingLatE6(Math.round(position.coords.latitude * 1_000_000));
+        setOnboardingLngE6(Math.round(position.coords.longitude * 1_000_000));
+        toast.success("Localizacao atual capturada.");
+      },
+      () => {
+        toast.error("Nao foi possivel obter sua localizacao atual.");
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
+    );
   };
 
   const onboardingPlatformOptions = useMemo(() => {
@@ -3237,23 +3612,88 @@ export default function Sessions() {
     });
   }, [selectedFormats, sortFormats]);
 
-  const processFeedImageFile = (file: File) => {
+  const processFeedImageFile = async (file: File) => {
     if (!file.type.startsWith("image/")) {
       toast.error("Somente imagens são suportadas.");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Imagem muito grande (máx. 5MB).");
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Imagem muito grande (máx. 10MB).");
       return;
     }
-    setFeedImageMime(file.type);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      setFeedImagePreview(result);
-      setFeedImageBase64(result.split(",")[1]);
+    const blobToDataUrl = async (blob: Blob): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
     };
-    reader.readAsDataURL(file);
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = objectUrl;
+      });
+
+      const maxSide = 1920;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+
+      let finalDataUrl = "";
+      let finalMimeType = file.type || "image/jpeg";
+
+      if (ctx) {
+        ctx.drawImage(image, 0, 0, width, height);
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob((result) => resolve(result), "image/jpeg", 0.82);
+        });
+        if (blob) {
+          finalDataUrl = await blobToDataUrl(blob);
+          finalMimeType = "image/jpeg";
+        }
+      }
+
+      if (!finalDataUrl) {
+        finalDataUrl = await blobToDataUrl(file);
+      }
+
+      const base64Payload = extractBase64Payload(finalDataUrl);
+      if (!base64Payload) {
+        toast.error("Falha ao processar a imagem no celular. Tente outra foto.");
+        return;
+      }
+
+      setFeedImageMime(finalMimeType);
+      setFeedImagePreview(finalDataUrl);
+      setFeedImageBase64(base64Payload);
+    } catch {
+      try {
+        const fallbackDataUrl = await blobToDataUrl(file);
+        const base64Payload = extractBase64Payload(fallbackDataUrl);
+        if (!base64Payload) {
+          toast.error("Falha ao processar a imagem no celular. Tente outra foto.");
+          return;
+        }
+
+        setFeedImageMime(file.type || "image/jpeg");
+        setFeedImagePreview(fallbackDataUrl);
+        setFeedImageBase64(base64Payload);
+      } catch {
+        toast.error("Nao foi possivel processar a imagem selecionada.");
+      }
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   };
 
   const getFirstImageFile = (files?: FileList | null, items?: DataTransferItemList | null) => {
@@ -3272,14 +3712,14 @@ export default function Sessions() {
     event.preventDefault();
     setIsFeedImageDragActive(false);
     const file = getFirstImageFile(event.dataTransfer.files, event.dataTransfer.items);
-    if (file) processFeedImageFile(file);
+    if (file) void processFeedImageFile(file);
   };
 
   const handleFeedImagePaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
     const file = getFirstImageFile(undefined, event.clipboardData.items);
     if (!file) return;
     event.preventDefault();
-    processFeedImageFile(file);
+    void processFeedImageFile(file);
     toast.success("Imagem colada com sucesso.");
   };
 
@@ -3291,7 +3731,7 @@ export default function Sessions() {
       const file = getFirstImageFile(undefined, event.clipboardData?.items ?? null);
       if (!file) return;
       event.preventDefault();
-      processFeedImageFile(file);
+      void processFeedImageFile(file);
       toast.success("Imagem colada com sucesso.");
     };
 
@@ -3307,7 +3747,7 @@ export default function Sessions() {
       if (!file) return;
       event.preventDefault();
       setIsFeedImageDragActive(false);
-      processFeedImageFile(file);
+      void processFeedImageFile(file);
       toast.success("Imagem adicionada com sucesso.");
     };
 
@@ -3486,7 +3926,8 @@ export default function Sessions() {
       }).length ?? 0) / totalSessions * 100).toFixed(0)
     : "0";
   const requiresRankingConsentChoice = needsRankingConsentOnboarding && !rankingConsentTouched;
-  const shouldBlockSessionStart = needsPlayStyleOnboarding || needsRankingConsentOnboarding;
+  const shouldBlockSessionStart = needsPlayStyleOnboarding || needsRankingConsentOnboarding || needsLocationOnboarding;
+  const requiresLocationFields = !onboardingCountry.trim() || !onboardingCity.trim();
 
   return (
     <div className="relative p-3 sm:p-6 space-y-6 max-w-2xl mx-auto [&>*:not(:first-child)]:relative [&>*:not(:first-child)]:z-10">
@@ -3494,7 +3935,7 @@ export default function Sessions() {
       {moneyRainVisible && <MoneyRainOverlay onDone={() => setMoneyRainVisible(false)} />}
 
       {/* Header */}
-      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_28%),linear-gradient(135deg,_rgba(10,10,10,0.96),_rgba(20,22,34,0.94))] p-5 text-white shadow-2xl sm:p-6">
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_28%),linear-gradient(135deg,_rgba(10,10,10,0.96),_rgba(20,22,34,0.94))] p-5 text-white shadow-none sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Sessões</h1>
@@ -3570,7 +4011,7 @@ export default function Sessions() {
 
       {/* Active session */}
       {activeSession ? (
-        <Card className="relative z-10 border-cyan-400/25 bg-slate-950/82 shadow-[0_24px_56px_rgba(0,0,0,0.3)] backdrop-blur-sm">
+        <Card className="relative z-10 border-cyan-400/25 bg-slate-950/82 shadow-none backdrop-blur-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -3594,7 +4035,7 @@ export default function Sessions() {
           </CardContent>
         </Card>
       ) : optimisticSessionStartedAt ? (
-        <Card className="relative z-10 border-cyan-400/25 bg-slate-950/82 shadow-[0_24px_56px_rgba(0,0,0,0.3)] backdrop-blur-sm">
+        <Card className="relative z-10 border-cyan-400/25 bg-slate-950/82 shadow-none backdrop-blur-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -3687,7 +4128,7 @@ export default function Sessions() {
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) processFeedImageFile(file);
+                  if (file) void processFeedImageFile(file);
                 }}
               />
               <div className="mb-2 text-[11px] text-muted-foreground">
@@ -3735,7 +4176,15 @@ export default function Sessions() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showPlayStyleOnboarding} onOpenChange={setShowPlayStyleOnboarding}>
+      <Dialog
+        open={showPlayStyleOnboarding}
+        onOpenChange={(open) => {
+          if (!open) {
+            markOnboardingDismissedForCurrentCycle();
+          }
+          setShowPlayStyleOnboarding(open);
+        }}
+      >
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Configure seu perfil de jogo inicial</DialogTitle>
@@ -3744,6 +4193,11 @@ export default function Sessions() {
             <p className="text-sm text-muted-foreground">
               Essas respostas servem para ordenar plataformas, formatos e buy-ins antes de voce ter historico suficiente.
             </p>
+            {needsLocationOnboarding ? (
+              <div className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+                Estamos melhorando o ecossistema e seguranca de dados. Para continuar, preencha pais, cidade e endereco.
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <Label>Voce joga mais online ou presencial?</Label>
@@ -3865,6 +4319,29 @@ export default function Sessions() {
             </div>
 
             <div className="space-y-2">
+              <Label>Localizacao e seguranca de dados</Label>
+              <p className="text-xs text-muted-foreground">
+                Obrigatorio para acesso completo, compras futuras e mapa global da administracao.
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Input value={onboardingCountry} onChange={(e) => setOnboardingCountry(e.target.value)} placeholder="Pais (obrigatorio)" maxLength={120} />
+                <Input value={onboardingStateRegion} onChange={(e) => setOnboardingStateRegion(e.target.value)} placeholder="Estado/Regiao" maxLength={120} />
+                <Input value={onboardingCity} onChange={(e) => setOnboardingCity(e.target.value)} placeholder="Cidade (obrigatorio)" maxLength={120} />
+                <Input value={onboardingPostalCode} onChange={(e) => setOnboardingPostalCode(e.target.value)} placeholder="CEP" maxLength={20} />
+                <Input value={onboardingAddressLine} onChange={(e) => setOnboardingAddressLine(e.target.value)} placeholder="Endereco" maxLength={300} className="sm:col-span-2" />
+                <Input value={onboardingTaxDocument} onChange={(e) => setOnboardingTaxDocument(e.target.value)} placeholder="CPF (ou documento fiscal)" maxLength={24} className="sm:col-span-2" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handleUseCurrentLocation} className="gap-1">
+                  <MapPin className="h-4 w-4" /> Usar localizacao atual
+                </Button>
+                {onboardingLatE6 != null && onboardingLngE6 != null ? (
+                  <span className="text-xs text-muted-foreground">Coordenadas salvas: {(onboardingLatE6 / 1_000_000).toFixed(4)}, {(onboardingLngE6 / 1_000_000).toFixed(4)}</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label>Consentimento de ranking (obrigatorio)</Label>
               <p className="text-xs text-muted-foreground">
                 Ninguem entra automaticamente. Escolha onde seu desempenho pode aparecer.
@@ -3897,12 +4374,18 @@ export default function Sessions() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPlayStyleOnboarding(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                markOnboardingDismissedForCurrentCycle();
+                setShowPlayStyleOnboarding(false);
+              }}
+            >
               Fechar
             </Button>
             <Button
               onClick={handleSaveOnboarding}
-              disabled={saveOnboardingProfileMutation.isPending}
+              disabled={saveOnboardingProfileMutation.isPending || requiresLocationFields}
             >
               {saveOnboardingProfileMutation.isPending ? "Salvando..." : "Salvar"}
             </Button>
@@ -4093,33 +4576,41 @@ export default function Sessions() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">Instruções para não bugar a importação</p>
-              <p>1. Cole uma sessão por linha ou por bloco separado por linha em branco.</p>
-              <p>2. Inclua data e valores, ex.: 08/04/2026 | PokerStars | torneio | buy-in 11 | cash-out 27.</p>
-              <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
-              <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
-              <p>5. Você pode fixar a moeda por clique (Auto, BRL, USD, CAD, JPY, CNY, EUR).</p>
-              <p>6. Você pode fixar o tipo por clique (Auto, Online, Live).</p>
-              <p>7. A IA usa apenas casas/plataformas já cadastradas no app; se não existir, a importação avisa erro.</p>
-            </div>
+            <details className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium text-foreground">Dicas rápidas de importação</summary>
+              <div className="mt-2 space-y-1">
+                <p>1. Cole uma sessão por linha ou por bloco separado por linha em branco.</p>
+                <p>2. Inclua data e valores, ex.: 08/04/2026 | PokerStars | torneio | buy-in 11 | cash-out 27.</p>
+                <p>3. Se possível informe plataforma/local com "plataforma:" para aumentar precisão.</p>
+                <p>4. Clique em "Analisar" antes de importar para revisar avisos.</p>
+                <p>5. Tipo da sessão pode ficar em Auto (Online/Live).</p>
+                <p>6. A IA usa apenas casas/plataformas já cadastradas no app; se não existir, a importação avisa erro.</p>
+              </div>
+            </details>
 
-            <div className="space-y-1">
-              <Label>Moeda da importação</Label>
-              <Select value={importCurrencyMode} onValueChange={(v) => setImportCurrencyMode(v as any)}>
-                <SelectTrigger className="w-full sm:w-64">
-                  <SelectValue />
+            <div ref={importCurrencyFieldRef} className="space-y-1">
+              <Label className={importCurrencyError ? "text-red-500" : undefined}>Moeda da importação (obrigatório)</Label>
+              <Select
+                value={importCurrencyMode}
+                onValueChange={(v) => {
+                  setImportCurrencyMode(v as any);
+                  setImportCurrencyError(null);
+                }}
+              >
+                <SelectTrigger className={`w-full sm:w-64 ${importCurrencyError ? "border-red-500 ring-1 ring-red-500" : ""}`}>
+                  <CurrencyOptionLabel currency={importCurrencyMode} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Auto (detectar do texto)</SelectItem>
-                  <SelectItem value="BRL">BRL (R$)</SelectItem>
-                  <SelectItem value="USD">USD ($)</SelectItem>
-                  <SelectItem value="CAD">CAD (CA$)</SelectItem>
-                  <SelectItem value="JPY">JPY (¥)</SelectItem>
-                  <SelectItem value="CNY">CNY (CN¥)</SelectItem>
-                  <SelectItem value="EUR">EUR (EUR)</SelectItem>
+                  {CURRENCY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <CurrencyOptionLabel currency={option.value} />
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {importCurrencyError && (
+                <p className="text-xs font-medium text-red-500">{importCurrencyError}</p>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -4146,16 +4637,18 @@ export default function Sessions() {
               />
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="sticky bottom-2 z-10 -mx-1 rounded-lg border border-border/60 bg-background/95 px-3 py-2 backdrop-blur">
+              <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
                 disabled={importRawText.trim().length < 10 || importPreviewMutation.isPending}
                 onClick={() => {
+                  if (!ensureImportCurrencySelected()) return;
                   setImportResult(null);
                   importPreviewMutation.mutate({
                     rawText: importRawText,
-                    currencyMode: importCurrencyMode,
+                    currencyMode: importCurrencyMode as any,
                     typeMode: importTypeMode,
                   });
                 }}
@@ -4165,14 +4658,18 @@ export default function Sessions() {
               <Button
                 type="button"
                 disabled={!importPreviewMutation.data || importFromTextMutation.isPending || (importPreviewMutation.data as any)?.readyToImport === 0}
-                onClick={() => importFromTextMutation.mutate({
-                  rawText: importRawText,
-                  currencyMode: importCurrencyMode,
-                  typeMode: importTypeMode,
-                })}
+                onClick={() => {
+                  if (!ensureImportCurrencySelected()) return;
+                  importFromTextMutation.mutate({
+                    rawText: importRawText,
+                    currencyMode: importCurrencyMode as any,
+                    typeMode: importTypeMode,
+                  });
+                }}
               >
                 {importFromTextMutation.isPending ? "Importando..." : `Importar${importPreviewMutation.data ? ` (${(importPreviewMutation.data as any).readyToImport} ok)` : ""}`}
               </Button>
+              </div>
             </div>
 
             {/* Post-import failure report */}

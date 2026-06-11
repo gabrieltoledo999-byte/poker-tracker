@@ -165,12 +165,12 @@
 
 - [ ] Confirmar se o sistema de login e senha está implementado corretamente
 
-## Rebrand para The Rail
+## Rebrand para All in Edge
 
-- [ ] Atualizar nome do app para "The Rail" em todo o projeto
+- [ ] Atualizar nome do app para "All in Edge" em todo o projeto
 - [ ] Aplicar nova paleta de cores: fundo azul-escuro, roxo, ciano neon
-- [ ] Atualizar logo no header com a imagem do The Rail
-- [ ] Atualizar favicon para o logo do The Rail
+- [ ] Atualizar logo no header com a imagem do All in Edge
+- [ ] Atualizar favicon para o logo do All in Edge
 - [ ] Atualizar meta tags Open Graph com novo nome e logo
 
 ## Lista de Grind
@@ -309,7 +309,7 @@
 - [x] Mover seletor de cor de acento para o DashboardLayout (acessível em todas as abas)
 - [x] Botão de paleta de cores visível diretamente no layout (não escondido no dropdown) em todas as abas
 - [x] Aumentar logo na tela inicial (tela de login)
-- [x] Aumentar ainda mais o logo The Rail na sidebar (muito pequeno ainda)
+- [x] Aumentar ainda mais o logo All in Edge na sidebar (muito pequeno ainda)
 - [x] Adicionar botão de cor na topbar superior do conteúdo principal
 - [x] Aplicar efeito hover CSS no logo (scale + drop-shadow vermelho)
 - [x] Adicionar gráfico de evolução do bankroll no card Meu Desempenho da tela inicial

@@ -203,12 +203,28 @@ function inferHeroFromFlags(actions: ReplayActionInput[]): string {
 const DUPLICATE_HAND_WINDOW = 10;
 const DUPLICATE_SCAN_HAND_LIMIT = 20;
 const HISTORICAL_PROFILE_SYNC_MAX_HANDS = Number(process.env.HAND_REVIEW_SYNC_MAX_HANDS ?? 4000);
-const REPLAY_RECALC_IMPORT_DELAY_MS = 60 * 60 * 1000;
+const REPLAY_RECALC_IMPORT_DELAY_MS = Number(process.env.HAND_REVIEW_RECALC_IMPORT_DELAY_MS ?? 0);
 const HISTORICAL_PROFILE_CACHE_TTL_MS = Number(process.env.HAND_REVIEW_PROFILE_CACHE_TTL_MS ?? (5 * 60 * 1000));
 
 const replayRecalcTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const replayRecalcRunning = new Set<number>();
 const historicalProfileCache = new Map<number, { value: any; expiresAt: number }>();
+const replayMutationQueue = new Map<number, Promise<void>>();
+const REPLAY_HISTORY_RESET_SCOPE = "replay_history_reset";
+
+function runReplayMutationExclusive<T>(userId: number, operation: () => Promise<T>): Promise<T> {
+  const previousTail = replayMutationQueue.get(userId) ?? Promise.resolve();
+  const run = previousTail.then(operation);
+  const nextTail: Promise<void> = run.then(() => undefined, () => undefined);
+
+  replayMutationQueue.set(userId, nextTail);
+
+  return run.finally(() => {
+    if (replayMutationQueue.get(userId) === nextTail) {
+      replayMutationQueue.delete(userId);
+    }
+  });
+}
 
 function getHistoricalProfileFromCache(userId: number) {
   const cached = historicalProfileCache.get(userId);
@@ -240,6 +256,59 @@ function normalizeCards(value: string | undefined): string {
 
 function normalizeId(value: string | undefined): string {
   return String(value ?? "").trim();
+}
+
+function toEpochMs(value: unknown): number | null {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  const parsed = new Date(String(value));
+  const ms = parsed.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+type ReplayHistoryResetMarker = {
+  id: number;
+  createdAt: Date | null;
+};
+
+async function getLastReplayHistoryResetMarker(db: any, userId: number): Promise<ReplayHistoryResetMarker | null> {
+  const [row] = await db
+    .select({ id: dataAccessAuditLogs.id, createdAt: dataAccessAuditLogs.createdAt })
+    .from(dataAccessAuditLogs)
+    .where(
+      and(
+        eq(dataAccessAuditLogs.targetUserId, userId),
+        eq(dataAccessAuditLogs.accessScope, REPLAY_HISTORY_RESET_SCOPE),
+        eq(dataAccessAuditLogs.outcome, "allowed"),
+      ),
+    )
+    .orderBy(desc(dataAccessAuditLogs.id))
+    .limit(1);
+
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    createdAt: row.createdAt ?? null,
+  };
+}
+
+async function assertReplayHistoryStableDuringImport(
+  db: any,
+  userId: number,
+  startMarker: ReplayHistoryResetMarker | null,
+) {
+  const latestMarker = await getLastReplayHistoryResetMarker(db, userId);
+  const startId = Number(startMarker?.id ?? 0);
+  const latestId = Number(latestMarker?.id ?? 0);
+
+  if (latestId !== startId) {
+    throw new Error("REPLAY_HISTORY_CHANGED_DURING_IMPORT");
+  }
 }
 
 function getFirstAggressiveActionIndex(actions: ReplayActionInput[]): number {
@@ -616,8 +685,15 @@ async function reuseExistingReplayImport(
   totalCost: number,
   site: string,
   allowFieldAggregation: boolean,
+  assertStable?: () => Promise<void>,
 ) {
+  if (assertStable) {
+    await assertStable();
+  }
   await finalizeImportedReplay(db, userId, tournamentId, input, abiBucket, totalCost, site, allowFieldAggregation);
+  if (assertStable) {
+    await assertStable();
+  }
   return {
     tournamentId,
     handsImported: input.hands.length,
@@ -661,10 +737,15 @@ function isVoluntaryPreflopAction(action: { actionType?: string; isForced?: bool
   return type === "call" || type === "bet" || type === "raise" || type === "all_in";
 }
 
-function isStealBlockingPreflopAction(action: { actionType?: string; isForced?: boolean | null }): boolean {
-  if (action.isForced) return false;
+function isStealOpportunityPreservingPreflopAction(action: { actionType?: string; isForced?: boolean | null }): boolean {
+  if (action.isForced) return true;
   const type = normalizeActionType(action.actionType);
-  return type === "call" || type === "bet" || type === "raise" || type === "all_in" || type === "straddle" || type === "post_blind";
+  return type === "fold" || type === "check" || type === "muck" || type === "show" || type === "other";
+}
+
+function isStealAttemptPreflopAction(action: { actionType?: string }): boolean {
+  const type = normalizeActionType(action.actionType);
+  return type === "raise" || type === "all_in";
 }
 
 const CBET_ALL_IN_OUTLIER_MULTIPLIER = 10;
@@ -712,6 +793,7 @@ type LiveHistoricalStats = {
   allInAdjBb100: number;
   opportunities: {
     hands: number;
+    threeBet: number;
     cbetFlop: number;
     cbetTurn: number;
     foldToCbet: number;
@@ -839,6 +921,7 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
   let vpipHands = 0;
   let pfrHands = 0;
   let threeBetHands = 0;
+  let threeBetOpportunities = 0;
   let cbetOpportunities = 0;
   let cbetMade = 0;
   let cbetTurnOpportunities = 0;
@@ -879,9 +962,25 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     if (heroPreflopAggression) pfrHands += 1;
 
     const firstHeroRaiseIndex = preflop.findIndex((a) => isHeroAction(a) && isAggressiveAction({ actionType: a.actionType ?? undefined }));
-    if (firstHeroRaiseIndex >= 0) {
+    const heroFirstVoluntaryIdx = preflop.findIndex(
+      (a) => isHeroAction(a) && Number(a.isForced ?? 0) !== 1,
+    );
+    const facedPriorRaise = heroFirstVoluntaryIdx >= 0
+      && preflop.slice(0, heroFirstVoluntaryIdx).some(
+        (a) => !isHeroAction(a) && isAggressiveAction({ actionType: a.actionType ?? undefined }),
+      );
+    if (facedPriorRaise) {
+      threeBetOpportunities += 1;
+      const heroAct = preflop[heroFirstVoluntaryIdx];
+      if (heroAct && isAggressiveAction({ actionType: heroAct.actionType ?? undefined })) {
+        threeBetHands += 1;
+      }
+    } else if (firstHeroRaiseIndex >= 0) {
       const hadPriorRaise = preflop.slice(0, firstHeroRaiseIndex).some((a) => !isHeroAction(a) && isAggressiveAction({ actionType: a.actionType ?? undefined }));
-      if (hadPriorRaise) threeBetHands += 1;
+      if (hadPriorRaise) {
+        threeBetOpportunities += 1;
+        threeBetHands += 1;
+      }
     }
 
     const preflopAggressor = [...preflop].reverse().find((a) => Number(a.isForced ?? 0) !== 1 && isAggressiveAction({ actionType: a.actionType ?? undefined }));
@@ -970,12 +1069,16 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
       );
       if (firstHeroDecisionIndex >= 0) {
         const action = preflop[firstHeroDecisionIndex];
-        const hadPriorEntry = preflop
-          .slice(0, firstHeroDecisionIndex)
-          .some((a) => !isHeroAction(a) && isStealBlockingPreflopAction({ actionType: a.actionType ?? undefined, isForced: Number(a.isForced ?? 0) === 1 }));
-        if (!hadPriorEntry) {
+        const priorNonHeroActions = preflop.slice(0, firstHeroDecisionIndex).filter((a) => !isHeroAction(a));
+        const isCleanToHero = priorNonHeroActions.every(
+          (a) => isStealOpportunityPreservingPreflopAction({
+            actionType: a.actionType ?? undefined,
+            isForced: Number(a.isForced ?? 0) === 1,
+          }),
+        );
+        if (isCleanToHero) {
           stealOpportunities += 1;
-          if (action && isAggressiveAction({ actionType: action.actionType ?? undefined })) {
+          if (action && isStealAttemptPreflopAction({ actionType: action.actionType ?? undefined })) {
             stealAttemptCount += 1;
           }
         }
@@ -1093,7 +1196,7 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     hands: handsCount,
     vpip: toPct(vpipHands, handsCount),
     pfr: toPct(pfrHands, handsCount),
-    threeBet: toPct(threeBetHands, handsCount),
+    threeBet: toPct(threeBetHands, threeBetOpportunities),
     cbetFlop: toPct(cbetMade, cbetOpportunities),
     cbetTurn: toPct(cbetTurnMade, cbetTurnOpportunities),
     foldToCbet: toPct(foldToCbetCount, foldToCbetOpportunities),
@@ -1105,6 +1208,7 @@ async function computeLiveHistoricalStatsFromHands(db: any, userId: number): Pro
     allInAdjBb100: handsCount > 0 ? round2((allInAdjTotalBb / handsCount) * 100) : 0,
     opportunities: {
       hands: handsCount,
+      threeBet: threeBetOpportunities,
       cbetFlop: cbetOpportunities,
       cbetTurn: cbetTurnOpportunities,
       foldToCbet: foldToCbetOpportunities,
@@ -1153,6 +1257,7 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
   let vpipHands = 0;
   let pfrHands = 0;
   let threeBetHands = 0;
+  let threeBetOpportunities = 0;
   let cbetOpportunities = 0;
   let cbetMade = 0;
   let cbetTurnOpportunities = 0;
@@ -1231,11 +1336,27 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
     const firstHeroRaiseIndex = preflop.findIndex(
       (a) => normalizePlayerName(a.playerName) === heroName && isAggressiveAction(a),
     );
-    if (firstHeroRaiseIndex >= 0) {
+    const heroFirstVoluntaryPreIdx = preflop.findIndex(
+      (a) => normalizePlayerName(a.playerName) === heroName && !a.isForced,
+    );
+    const facedPriorRaiseGlobal = heroFirstVoluntaryPreIdx >= 0
+      && preflop.slice(0, heroFirstVoluntaryPreIdx).some(
+        (a) => normalizePlayerName(a.playerName) !== heroName && isAggressiveAction(a),
+      );
+    if (facedPriorRaiseGlobal) {
+      threeBetOpportunities += 1;
+      const heroAct = preflop[heroFirstVoluntaryPreIdx];
+      if (heroAct && isAggressiveAction(heroAct)) {
+        threeBetHands += 1;
+      }
+    } else if (firstHeroRaiseIndex >= 0) {
       const hadPriorRaise = preflop.slice(0, firstHeroRaiseIndex).some(
         (a) => normalizePlayerName(a.playerName) !== heroName && isAggressiveAction(a),
       );
-      if (hadPriorRaise) threeBetHands += 1;
+      if (hadPriorRaise) {
+        threeBetOpportunities += 1;
+        threeBetHands += 1;
+      }
     }
 
     const heroPosition = resolveHeroPositionWithFallback(
@@ -1346,12 +1467,13 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
       );
       if (firstHeroDecisionIndex >= 0) {
         const action = preflop[firstHeroDecisionIndex];
-        const hadPriorEntry = preflop
+        const priorNonHeroActions = preflop
           .slice(0, firstHeroDecisionIndex)
-          .some((a) => normalizePlayerName(a.playerName) !== heroName && isStealBlockingPreflopAction(a));
-        if (!hadPriorEntry) {
+          .filter((a) => normalizePlayerName(a.playerName) !== heroName);
+        const isCleanToHero = priorNonHeroActions.every((a) => isStealOpportunityPreservingPreflopAction(a));
+        if (isCleanToHero) {
           stealOpportunities += 1;
-          if (action && isAggressiveAction(action)) {
+          if (action && isStealAttemptPreflopAction(action)) {
             stealAttemptCount += 1;
           }
         }
@@ -1613,7 +1735,7 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
 
   const vpip = toPct(vpipHands, hands.length);
   const pfr = toPct(pfrHands, hands.length);
-  const threeBet = toPct(threeBetHands, hands.length);
+  const threeBet = toPct(threeBetHands, threeBetOpportunities);
   const cbetFlop = toPct(cbetMade, cbetOpportunities);
   const foldToCbet = toPct(foldToCbetCount, foldToCbetOpportunities);
   const bbDefense = toPct(bbDefenseCount, bbDefenseOpportunities);
@@ -1720,6 +1842,7 @@ export async function analyzeReplayTournament(input: ImportReplayInput) {
     },
     opportunities: {
       hands: hands.length,
+      threeBet: threeBetOpportunities,
       cbetFlop: cbetOpportunities,
       cbetTurn: cbetTurnOpportunities,
       cbetSuccess: cbetFlopSuccessOpportunities,
@@ -1851,8 +1974,8 @@ export async function getPlayerHistoricalProfile(userId: number) {
       stealAttemptAvg: sql<number>`COALESCE(ROUND(AVG(${playerTournamentStats.stealAttempt})), 0)`,
       aggressionFactorAvg: sql<number>`COALESCE(ROUND(AVG(${playerTournamentStats.aggressionFactor})), 0)`,
       cbetTurnAvg: sql<number>`COALESCE(ROUND(AVG(${playerTournamentStats.cbetTurn})), 0)`,
-      wtsdAvg: sql<number>`COALESCE(ROUND(AVG(${playerTournamentStats.wtsd})), 0)`,
-      wsdAvg: sql<number>`COALESCE(ROUND(AVG(${playerTournamentStats.wsd})), 0)`,
+      wtsdAvg: sql<number>`COALESCE(ROUND(SUM(${playerTournamentStats.wtsd} * ${playerTournamentStats.handsPlayed}) / NULLIF(SUM(${playerTournamentStats.handsPlayed}), 0)), 0)`,
+      wsdAvg: sql<number>`COALESCE(ROUND(SUM(${playerTournamentStats.wsd} * ${playerTournamentStats.handsPlayed}) / NULLIF(SUM(${playerTournamentStats.handsPlayed}), 0)), 0)`,
     })
     .from(playerTournamentStats)
     .where(eq(playerTournamentStats.userId, userId));
@@ -2143,7 +2266,13 @@ export async function getPlayerHistoricalProfile(userId: number) {
     bumpPositionMetric("rfi", position, priorToHero.length === 0 ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, priorToHero.length === 0 ? 1 : 0);
 
     const isStealPosition = position === "CO" || position === "BTN" || position === "SB";
-    bumpPositionMetric("attemptToSteal", position, (isStealPosition && priorToHero.length === 0) ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0, (isStealPosition && priorToHero.length === 0) ? 1 : 0);
+    const priorAllFoldsForSteal = priorToHero.every((a) => isFoldAction(a.actionType));
+    bumpPositionMetric(
+      "attemptToSteal",
+      position,
+      (isStealPosition && priorAllFoldsForSteal) ? (heroPreflop.some((a) => isAggressionAction(a.actionType)) ? 1 : 0) : 0,
+      (isStealPosition && priorAllFoldsForSteal) ? 1 : 0,
+    );
     bumpPositionMetric("bbDefense", position, position === "BB" && priorAggression ? (heroFirstPre && !isFoldAction(heroFirstPre.actionType) ? 1 : 0) : 0, position === "BB" && priorAggression ? 1 : 0);
 
     const flopActions = allActions.filter((a) => normalizeStreet(a.street ?? undefined) === "flop");
@@ -2379,13 +2508,33 @@ export async function getPlayerHistoricalProfile(userId: number) {
   const posSortedByGain = [...normalizedPositionStats].sort((a, b) => Number(b.netBb ?? 0) - Number(a.netBb ?? 0));
   const posSortedByLoss = [...normalizedPositionStats].sort((a, b) => Number(a.netBb ?? 0) - Number(b.netBb ?? 0));
 
-  const recentCosts = tournaments.slice(0, 5).map((t) => Number(t.totalCost ?? 0));
-  const previousCosts = tournaments.slice(5, 10).map((t) => Number(t.totalCost ?? 0));
+  const abiEligibleTournaments = tournaments.filter((t) => Number(t.totalCost ?? 0) > 0);
+  const recentCosts = abiEligibleTournaments.slice(0, 5).map((t) => Number(t.totalCost ?? 0));
+  const previousCosts = abiEligibleTournaments.slice(5, 10).map((t) => Number(t.totalCost ?? 0));
   const avgRecentAbi = recentCosts.length > 0 ? Math.round(recentCosts.reduce((a, b) => a + b, 0) / recentCosts.length) : null;
   const avgPrevAbi = previousCosts.length > 0 ? Math.round(previousCosts.reduce((a, b) => a + b, 0) / previousCosts.length) : null;
-  const abiAverageFromTournaments = tournaments.length > 0
-    ? Math.round(tournaments.reduce((acc, t) => acc + Number(t.totalCost ?? 0), 0) / tournaments.length)
+  const abiAverageFromTournaments = abiEligibleTournaments.length > 0
+    ? Math.round(abiEligibleTournaments.reduce((acc, t) => acc + Number(t.totalCost ?? 0), 0) / abiEligibleTournaments.length)
     : 0;
+  const aggregateAbiAverage = Number(aggregate?.averageAbi ?? 0);
+  const hasValidAggregateAbi = Number.isFinite(aggregateAbiAverage) && aggregateAbiAverage > 0;
+  const abiAverageMismatch =
+    hasValidAggregateAbi
+    && abiAverageFromTournaments > 0
+    && Math.abs(aggregateAbiAverage - abiAverageFromTournaments) > 1;
+  const abiAverageFinal = (aggregateOutOfSync || abiAverageMismatch || !hasValidAggregateAbi)
+    ? abiAverageFromTournaments
+    : aggregateAbiAverage;
+
+  if (abiAverageMismatch) {
+    console.log("[getPlayerHistoricalProfile] ABI mismatch detected. Scheduling background refresh...", {
+      aggregateAbiAverage,
+      abiAverageFromTournaments,
+      userId,
+    });
+    enqueueReplayStatsRecalculation(userId, { delayMs: 0, reason: "abi_rule_mismatch" });
+  }
+
   const currencyCounter = new Map<string, number>();
   for (const tournament of tournaments) {
     const currency = String(tournament.currency ?? "USD");
@@ -2442,9 +2591,9 @@ export async function getPlayerHistoricalProfile(userId: number) {
     summary: {
       totalTournaments,
       totalHands,
-      abiAverage: Number(aggregate?.averageAbi ?? abiAverageFromTournaments),
+      abiAverage: abiAverageFinal,
       abiAverageCurrency: hasMixedCurrencies ? "MIXED" : primaryCurrency,
-      abiAverageInMajorUnits: Number(aggregate?.averageAbi ?? abiAverageFromTournaments) / 100,
+      abiAverageInMajorUnits: abiAverageFinal / 100,
       avgPlacement: Number.isFinite(avgPlacement) ? avgPlacement : 0,
       bestPlacement,
       vpipAvg: finalMetrics.vpipAvg,
@@ -2461,6 +2610,7 @@ export async function getPlayerHistoricalProfile(userId: number) {
       allInAdjBb100Avg: Number(finalMetrics.allInAdjBb100Avg ?? 0),
       opportunities: {
         hands: Number(liveStats?.opportunities.hands ?? totalHands),
+        threeBet: Number((liveStats?.opportunities as any)?.threeBet ?? 0),
         cbetFlop: Number(liveStats?.opportunities.cbetFlop ?? 0),
         cbetTurn: Number(liveStats?.opportunities.cbetTurn ?? 0),
         foldToCbet: Number(liveStats?.opportunities.foldToCbet ?? 0),
@@ -2511,7 +2661,7 @@ async function getPlayerAverageAbi(userId: number): Promise<number> {
   const [row] = await db
     .select({ avgAbi: sql<number>`COALESCE(ROUND(AVG(${centralTournaments.totalCost})), 0)` })
     .from(centralTournaments)
-    .where(eq(centralTournaments.userId, userId));
+    .where(and(eq(centralTournaments.userId, userId), sql`${centralTournaments.totalCost} > 0`));
 
   return Number(row?.avgAbi ?? 0);
 }
@@ -2583,198 +2733,246 @@ export async function revokeConsent(userId: number) {
 }
 
 export async function importReplayToCentralMemory(userId: number, input: ImportReplayInput) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  return runReplayMutationExclusive(userId, async () => {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
 
-  const consent = await getActiveConsent(userId);
-  if (!consent || consent.allowDataStorage !== 1) {
-    throw new Error("CONSENT_REQUIRED");
-  }
-
-  const buyIn = Math.max(0, Math.round(input.tournament.buyIn ?? 0));
-  const fee = Math.max(0, Math.round(input.tournament.fee ?? 0));
-  const totalCost = buyIn + fee;
-  const abiBucket = getAbiBucket(totalCost);
-  const playerAbiSnapshot = await getPlayerAverageAbi(userId);
-  const allowFieldAggregation = consent.allowFieldAggregation === 1;
-
-  const dedupInput = buildInputDedupFingerprint(input);
-  const candidateTournaments = await db
-    .select({
-      id: centralTournaments.id,
-      site: centralTournaments.site,
-      totalHands: centralTournaments.totalHands,
-      externalTournamentId: centralTournaments.externalTournamentId,
-      rawSourceId: centralTournaments.rawSourceId,
-      importedAt: centralTournaments.importedAt,
-    })
-    .from(centralTournaments)
-    .where(and(eq(centralTournaments.userId, userId), eq(centralTournaments.site, input.tournament.site)))
-    .orderBy(desc(centralTournaments.importedAt))
-    .limit(60);
-
-  for (const candidate of candidateTournaments) {
-    const candidateExternalId = normalizeId(candidate.externalTournamentId ?? undefined);
-    const candidateRawSourceId = normalizeId(candidate.rawSourceId ?? undefined);
-
-    const hasExactTournamentIdMatch =
-      (dedupInput.externalTournamentId && dedupInput.externalTournamentId === candidateExternalId)
-      || (dedupInput.rawSourceId && dedupInput.rawSourceId === candidateRawSourceId);
-
-    if (!hasExactTournamentIdMatch) continue;
-
-    const stored = await buildStoredTournamentDedupFingerprint(db, candidate.id, dedupInput.heroName);
-    const inputSequence = dedupInput.handFingerprints.map((h) => h.signature);
-
-    const hasMinimumWindow =
-      inputSequence.length >= DUPLICATE_HAND_WINDOW && stored.handFingerprints.length >= DUPLICATE_HAND_WINDOW;
-    if (!hasMinimumWindow) continue;
-
-    const firstWindowMatches = inputSequence
-      .slice(0, DUPLICATE_HAND_WINDOW)
-      .every((signature, index) => signature === stored.handFingerprints[index]);
-
-    if (firstWindowMatches) {
-      return await reuseExistingReplayImport(db, userId, candidate.id, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
+    const consent = await getActiveConsent(userId);
+    if (!consent || consent.allowDataStorage !== 1) {
+      throw new Error("CONSENT_REQUIRED");
     }
-  }
 
-  let tournamentId: number | null = null;
+    const buyIn = Math.max(0, Math.round(input.tournament.buyIn ?? 0));
+    const fee = Math.max(0, Math.round(input.tournament.fee ?? 0));
+    const totalCost = buyIn + fee;
+    const abiBucket = getAbiBucket(totalCost);
+    const playerAbiSnapshot = await getPlayerAverageAbi(userId);
+    const allowFieldAggregation = consent.allowFieldAggregation === 1;
 
-  try {
-    const [tournamentInserted] = await db
-      .insert(centralTournaments)
-      .values({
-        externalTournamentId: input.tournament.externalTournamentId,
-        userId,
-        site: input.tournament.site,
-        format: input.tournament.format,
-        buyIn,
-        fee,
-        totalCost,
-        currency: input.tournament.currency,
-        abiValue: totalCost,
-        abiBucket,
-        playerAbiSnapshot,
-        importedAt: input.tournament.importedAt ?? new Date(),
-        totalHands: input.tournament.totalHands ?? input.hands.length,
-        finalPosition: input.tournament.finalPosition,
-        wasEliminated: input.tournament.wasEliminated ? 1 : 0,
-        rawSourceId: input.tournament.rawSourceId,
+    const dedupInput = buildInputDedupFingerprint(input);
+    const candidateTournaments = await db
+      .select({
+        id: centralTournaments.id,
+        site: centralTournaments.site,
+        totalHands: centralTournaments.totalHands,
+        externalTournamentId: centralTournaments.externalTournamentId,
+        rawSourceId: centralTournaments.rawSourceId,
+        importedAt: centralTournaments.importedAt,
       })
-      .$returningId();
+      .from(centralTournaments)
+      .where(and(eq(centralTournaments.userId, userId), eq(centralTournaments.site, input.tournament.site)))
+      .orderBy(desc(centralTournaments.importedAt))
+      .limit(60);
 
-    tournamentId = tournamentInserted.id;
+    const resetMarkerAtImportStart = await getLastReplayHistoryResetMarker(db, userId);
+    const lastResetAtMs = toEpochMs(resetMarkerAtImportStart?.createdAt ?? null);
 
-    const handIdByRef = new Map<string, number>();
-    for (const hand of input.hands) {
-      const [insertedHand] = await db
-        .insert(centralHands)
-        .values({
-          externalHandId: hand.externalHandId,
-          tournamentId,
+    for (const candidate of candidateTournaments) {
+      const candidateImportedAtMs = toEpochMs(candidate.importedAt);
+      if (lastResetAtMs !== null && candidateImportedAtMs !== null && candidateImportedAtMs <= lastResetAtMs) {
+        continue;
+      }
+
+      const candidateExternalId = normalizeId(candidate.externalTournamentId ?? undefined);
+      const candidateRawSourceId = normalizeId(candidate.rawSourceId ?? undefined);
+
+      const hasExactTournamentIdMatch =
+        (dedupInput.externalTournamentId && dedupInput.externalTournamentId === candidateExternalId)
+        || (dedupInput.rawSourceId && dedupInput.rawSourceId === candidateRawSourceId);
+
+      if (!hasExactTournamentIdMatch) continue;
+
+      const stored = await buildStoredTournamentDedupFingerprint(db, candidate.id, dedupInput.heroName);
+      const inputSequence = dedupInput.handFingerprints.map((h) => h.signature);
+
+      const hasMinimumWindow =
+        inputSequence.length >= DUPLICATE_HAND_WINDOW && stored.handFingerprints.length >= DUPLICATE_HAND_WINDOW;
+      if (!hasMinimumWindow) continue;
+
+      const firstWindowMatches = inputSequence
+        .slice(0, DUPLICATE_HAND_WINDOW)
+        .every((signature, index) => signature === stored.handFingerprints[index]);
+
+      if (firstWindowMatches) {
+        return await reuseExistingReplayImport(
+          db,
           userId,
-          handNumber: hand.handNumber,
-          datetimeOriginal: hand.datetimeOriginal,
-          buttonSeat: hand.buttonSeat,
-          heroSeat: hand.heroSeat,
-          heroPosition: hand.heroPosition,
-          smallBlind: hand.smallBlind ?? 0,
-          bigBlind: hand.bigBlind ?? 0,
-          ante: hand.ante ?? 0,
-          board: hand.board,
-          heroCards: hand.heroCards,
-          totalPot: hand.totalPot,
-          rake: hand.rake,
-          result: hand.result,
-          showdown: hand.showdown ? 1 : 0,
-          rawText: hand.rawText,
-          parsedJson: hand.parsedJson,
-          handContextJson: hand.handContextJson,
+          candidate.id,
+          input,
+          abiBucket,
+          totalCost,
+          input.tournament.site,
+          allowFieldAggregation,
+          () => assertReplayHistoryStableDuringImport(db, userId, resetMarkerAtImportStart),
+        );
+      }
+    }
+
+    let tournamentId: number | null = null;
+
+    try {
+      await assertReplayHistoryStableDuringImport(db, userId, resetMarkerAtImportStart);
+
+      const [tournamentInserted] = await db
+        .insert(centralTournaments)
+        .values({
+          externalTournamentId: input.tournament.externalTournamentId,
+          userId,
+          site: input.tournament.site,
+          format: input.tournament.format,
+          buyIn,
+          fee,
+          totalCost,
+          currency: input.tournament.currency,
+          abiValue: totalCost,
+          abiBucket,
+          playerAbiSnapshot,
+          importedAt: input.tournament.importedAt ?? new Date(),
+          totalHands: input.tournament.totalHands ?? input.hands.length,
+          finalPosition: input.tournament.finalPosition,
+          wasEliminated: input.tournament.wasEliminated ? 1 : 0,
+          rawSourceId: input.tournament.rawSourceId,
         })
         .$returningId();
 
-      handIdByRef.set(hand.handRef, insertedHand.id);
+      tournamentId = tournamentInserted.id;
+
+      await assertReplayHistoryStableDuringImport(db, userId, resetMarkerAtImportStart);
+
+      const handIdByRef = new Map<string, number>();
+      for (const hand of input.hands) {
+        const [insertedHand] = await db
+          .insert(centralHands)
+          .values({
+            externalHandId: hand.externalHandId,
+            tournamentId,
+            userId,
+            handNumber: hand.handNumber,
+            datetimeOriginal: hand.datetimeOriginal,
+            buttonSeat: hand.buttonSeat,
+            heroSeat: hand.heroSeat,
+            heroPosition: hand.heroPosition,
+            smallBlind: hand.smallBlind ?? 0,
+            bigBlind: hand.bigBlind ?? 0,
+            ante: hand.ante ?? 0,
+            board: hand.board,
+            heroCards: hand.heroCards,
+            totalPot: hand.totalPot,
+            rake: hand.rake,
+            result: hand.result,
+            showdown: hand.showdown ? 1 : 0,
+            rawText: hand.rawText,
+            parsedJson: hand.parsedJson,
+            handContextJson: hand.handContextJson,
+          })
+          .$returningId();
+
+        handIdByRef.set(hand.handRef, insertedHand.id);
+      }
+
+      for (const action of input.actions) {
+        const handId = handIdByRef.get(action.handRef);
+        if (!handId) continue;
+
+        await db.insert(centralHandActions).values({
+          handId,
+          tournamentId,
+          userId,
+          street: action.street,
+          actionOrder: action.actionOrder,
+          playerName: action.playerName,
+          seat: action.seat,
+          position: action.position,
+          actionType: action.actionType,
+          amount: action.amount,
+          toAmount: action.toAmount,
+          stackBefore: action.stackBefore,
+          stackAfter: action.stackAfter,
+          potBefore: action.potBefore,
+          potAfter: action.potAfter,
+          isAllIn: action.isAllIn ? 1 : 0,
+          isForced: action.isForced ? 1 : 0,
+          facingActionType: action.facingActionType,
+          facingSizeBb: action.facingSizeBb,
+          heroInHand: action.heroInHand ? 1 : 0,
+          showdownVisible: action.showdownVisible ? 1 : 0,
+          contextJson: action.contextJson,
+        });
+      }
+
+      for (const show of input.showdowns) {
+        const handId = handIdByRef.get(show.handRef);
+        if (!handId) continue;
+
+        await db.insert(showdownRecords).values({
+          handId,
+          tournamentId,
+          userId,
+          playerName: show.playerName,
+          seat: show.seat,
+          position: show.position,
+          holeCards: show.holeCards,
+          finalHandDescription: show.finalHandDescription,
+          wonPot: show.wonPot ? 1 : 0,
+          amountWon: show.amountWon,
+        });
+      }
+
+      await finalizeImportedReplay(db, userId, tournamentId, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
+
+      await assertReplayHistoryStableDuringImport(db, userId, resetMarkerAtImportStart);
+
+      return { tournamentId, handsImported: handIdByRef.size };
+    } catch (error) {
+      if (tournamentId) {
+        await deleteTournamentCascade(db, userId, tournamentId).catch(() => undefined);
+        await refreshUserAbiAggregates(userId).catch(() => undefined);
+      }
+      throw error;
     }
-
-    for (const action of input.actions) {
-      const handId = handIdByRef.get(action.handRef);
-      if (!handId) continue;
-
-      await db.insert(centralHandActions).values({
-        handId,
-        tournamentId,
-        userId,
-        street: action.street,
-        actionOrder: action.actionOrder,
-        playerName: action.playerName,
-        seat: action.seat,
-        position: action.position,
-        actionType: action.actionType,
-        amount: action.amount,
-        toAmount: action.toAmount,
-        stackBefore: action.stackBefore,
-        stackAfter: action.stackAfter,
-        potBefore: action.potBefore,
-        potAfter: action.potAfter,
-        isAllIn: action.isAllIn ? 1 : 0,
-        isForced: action.isForced ? 1 : 0,
-        facingActionType: action.facingActionType,
-        facingSizeBb: action.facingSizeBb,
-        heroInHand: action.heroInHand ? 1 : 0,
-        showdownVisible: action.showdownVisible ? 1 : 0,
-        contextJson: action.contextJson,
-      });
-    }
-
-    for (const show of input.showdowns) {
-      const handId = handIdByRef.get(show.handRef);
-      if (!handId) continue;
-
-      await db.insert(showdownRecords).values({
-        handId,
-        tournamentId,
-        userId,
-        playerName: show.playerName,
-        seat: show.seat,
-        position: show.position,
-        holeCards: show.holeCards,
-        finalHandDescription: show.finalHandDescription,
-        wonPot: show.wonPot ? 1 : 0,
-        amountWon: show.amountWon,
-      });
-    }
-
-    await finalizeImportedReplay(db, userId, tournamentId, input, abiBucket, totalCost, input.tournament.site, allowFieldAggregation);
-
-    return { tournamentId, handsImported: handIdByRef.size };
-  } catch (error) {
-    if (tournamentId) {
-      await deleteTournamentCascade(db, userId, tournamentId).catch(() => undefined);
-      await refreshUserAbiAggregates(userId).catch(() => undefined);
-    }
-    throw error;
-  }
+  });
 }
 
 export async function clearReplayHistoryForUser(userId: number) {
-  invalidateHistoricalProfileCache(userId);
+  return runReplayMutationExclusive(userId, async () => {
+    invalidateHistoricalProfileCache(userId);
 
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
 
-  await db.delete(centralHandActions).where(eq(centralHandActions.userId, userId));
-  await db.delete(showdownRecords).where(eq(showdownRecords.userId, userId));
-  await db.delete(centralHands).where(eq(centralHands.userId, userId));
-  await db.delete(playerTournamentStats).where(eq(playerTournamentStats.userId, userId));
-  await db.delete(playerPositionStats).where(eq(playerPositionStats.userId, userId));
-  await db.delete(playerStatsByAbi).where(eq(playerStatsByAbi.userId, userId));
-  await db.delete(playerStatsByPositionAndAbi).where(eq(playerStatsByPositionAndAbi.userId, userId));
-  await db.delete(playerAggregateStats).where(eq(playerAggregateStats.userId, userId));
-  await db.delete(playerLeakFlags).where(eq(playerLeakFlags.userId, userId));
-  await db.delete(centralTournaments).where(eq(centralTournaments.userId, userId));
+    await db.delete(centralHandActions).where(eq(centralHandActions.userId, userId));
+    await db.delete(showdownRecords).where(eq(showdownRecords.userId, userId));
+    await db.delete(centralHands).where(eq(centralHands.userId, userId));
+    await db.delete(playerTournamentStats).where(eq(playerTournamentStats.userId, userId));
+    await db.delete(playerPositionStats).where(eq(playerPositionStats.userId, userId));
+    await db.delete(playerStatsByAbi).where(eq(playerStatsByAbi.userId, userId));
+    await db.delete(playerStatsByPositionAndAbi).where(eq(playerStatsByPositionAndAbi.userId, userId));
+    await db.delete(playerAggregateStats).where(eq(playerAggregateStats.userId, userId));
+    await db.delete(playerLeakFlags).where(eq(playerLeakFlags.userId, userId));
+    await db.delete(centralTournaments).where(eq(centralTournaments.userId, userId));
 
-  return { success: true };
+    await db.insert(dataAccessAuditLogs).values({
+      actorUserId: userId,
+      targetUserId: userId,
+      actorRole: (await getUserRole(userId)) ?? "user",
+      accessScope: REPLAY_HISTORY_RESET_SCOPE,
+      accessMethod: "trpc",
+      reason: "manual_clear_replay_history",
+      outcome: "allowed",
+    });
+
+    const [remainingTournamentsRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(centralTournaments)
+      .where(eq(centralTournaments.userId, userId));
+
+    const remainingTournaments = Number(remainingTournamentsRow?.count ?? 0);
+    if (remainingTournaments > 0) {
+      throw new Error("CLEAR_REPLAY_HISTORY_INCOMPLETE");
+    }
+
+    return { success: true, remainingTournaments };
+  });
 }
 
 export function enqueueReplayStatsRecalculation(
@@ -3120,11 +3318,18 @@ export async function refreshUserAbiAggregates(userId: number) {
 
   if (tournaments.length === 0) return;
 
-  const costs = tournaments.map((t) => Number(t.totalCost ?? 0)).sort((a, b) => a - b);
-  const avgAbi = Math.round(costs.reduce((acc, value) => acc + value, 0) / costs.length);
-  const medianAbi = costs.length % 2 === 1
-    ? costs[Math.floor(costs.length / 2)]
-    : Math.round((costs[costs.length / 2 - 1] + costs[costs.length / 2]) / 2);
+  const costs = tournaments
+    .map((t) => Number(t.totalCost ?? 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  const avgAbi = costs.length > 0
+    ? Math.round(costs.reduce((acc, value) => acc + value, 0) / costs.length)
+    : 0;
+  const medianAbi = costs.length === 0
+    ? 0
+    : costs.length % 2 === 1
+      ? costs[Math.floor(costs.length / 2)]
+      : Math.round((costs[costs.length / 2 - 1] + costs[costs.length / 2]) / 2);
   const sampleHands = tournaments.reduce((acc, t) => acc + Number(t.totalHands ?? 0), 0);
 
   const finishPositions = tournaments
@@ -3281,7 +3486,9 @@ export async function getAbiDashboard(userId: number, lastN = 20) {
     .where(eq(centralTournaments.userId, userId))
     .orderBy(desc(centralTournaments.importedAt));
 
-  const last = all.slice(0, Math.max(1, Math.min(200, lastN)));
+  const abiEligible = all.filter((row) => Number(row.totalCost ?? 0) > 0);
+
+  const last = abiEligible.slice(0, Math.max(1, Math.min(200, lastN)));
   const avg = (rows: Array<{ totalCost: number | null }>) =>
     rows.length > 0 ? Math.round(rows.reduce((acc, r) => acc + Number(r.totalCost ?? 0), 0) / rows.length) : 0;
 
@@ -3303,8 +3510,8 @@ export async function getAbiDashboard(userId: number, lastN = 20) {
 
   return {
     abiLastN: avg(last),
-    abiPeriod: avg(all),
-    abiFull: aggregate[0]?.averageAbi ?? avg(all),
+    abiPeriod: avg(abiEligible),
+    abiFull: aggregate[0]?.averageAbi ?? avg(abiEligible),
     medianAbi: aggregate[0]?.medianAbi ?? 0,
     byAbi,
     byPositionAndAbi,

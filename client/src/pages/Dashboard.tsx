@@ -58,7 +58,7 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { Link } from "wouter";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 
 function formatCurrency(centavos: number): string {
@@ -120,7 +120,7 @@ function getAccessTierEmoji(league: UserLeague): string {
 }
 
 function getAccessTierLabel(league: UserLeague): string {
-  return league === "High Roller" ? "High Roller (interno)" : league;
+  return league;
 }
 
 function getLeagueFromLevel(levelInput: number): UserLeague {
@@ -130,8 +130,8 @@ function getLeagueFromLevel(levelInput: number): UserLeague {
   if (level === 2) return "Reg";
   if (level === 3) return "Mid Stakes";
   if (level <= 5) return "High Stakes";
-  if (level === 6) return "The Edge";
-  return "High Roller";
+  if (level === 6) return "High Roller";
+  return "The Edge";
 }
 
 function getLeagueLevel(league: UserLeague): number {
@@ -140,7 +140,7 @@ function getLeagueLevel(league: UserLeague): number {
   if (league === "Reg") return 2;
   if (league === "Mid Stakes") return 3;
   if (league === "High Stakes") return 4;
-  if (league === "The Edge") return 6;
+  if (league === "High Roller") return 6;
   return 7;
 }
 
@@ -161,8 +161,8 @@ function parseLeague(value: unknown): UserLeague | null {
   if (token === "reg" || token === "regular") return "Reg";
   if (token === "midstakes" || token === "mid stakes") return "Mid Stakes";
   if (token === "highstakes" || token === "high stakes") return "High Stakes";
-  if (token === "the edge" || token === "theedge" || token === "edge") return "The Edge";
-  if (token === "high roller" || token === "highroller" || token === "roller") return "High Roller";
+  if (token === "the edge" || token === "theedge" || token === "edge") return "High Roller";
+  if (token === "high roller" || token === "highroller" || token === "roller") return "The Edge";
 
   // Legacy league labels mapped into new poker tiers.
   if (token === "bronze" || token === "prata" || token === "silver") return "Recreativo";
@@ -170,7 +170,7 @@ function parseLeague(value: unknown): UserLeague | null {
   if (token === "platina" || token === "platinum") return "Reg";
   if (token === "esmeralda" || token === "emerald") return "Mid Stakes";
   if (token === "diamante" || token === "diamond") return "High Stakes";
-  if (token === "mestre" || token === "master" || token === "grao-mestre" || token === "grao mestre" || token === "grandmaster") return "The Edge";
+  if (token === "mestre" || token === "master" || token === "grao-mestre" || token === "grao mestre" || token === "grandmaster") return "High Roller";
 
   return null;
 }
@@ -179,6 +179,30 @@ function getTournamentAccessLimitByLeague(league: UserLeague): number {
   if (league === "Recreativo") return 1;
   if (league === "Grinder" || league === "Reg" || league === "Mid Stakes") return 5;
   return 10;
+}
+
+function matchesScope(session: any, scope: "online" | "live" | "all"): boolean {
+  const sessionType = session?.effectiveType ?? session?.type;
+  return scope === "all"
+    ? true
+    : sessionType === scope
+      || (scope === "online" && session?.hasOnlineTables)
+      || (scope === "live" && session?.hasLiveTables);
+}
+
+function calculateScopeRoiPct(allSessions: any[], scope: "online" | "live"): number {
+  let spent = 0;
+  let cashOut = 0;
+
+  for (const session of allSessions ?? []) {
+    if (!matchesScope(session, scope)) continue;
+    const sessionSpent = Number(session.totalTableBuyIn ?? session.buyIn ?? 0);
+    const sessionCashOut = Number(session.totalTableCashOut ?? session.cashOut ?? 0);
+    spent += sessionSpent;
+    cashOut += sessionCashOut;
+  }
+
+  return spent > 0 ? ((cashOut - spent) / spent) * 100 : 0;
 }
 
 function CustomTooltip({ active, payload, label }: any) {
@@ -321,7 +345,7 @@ export default function Dashboard() {
     negativeStrong: theme === "light" ? "#dc2626" : "#fca5a5",
   };
   const [chartPeriod, setChartPeriod] = useState<"online" | "live" | "all">("all");
-  const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("roi");
+  const [perfMetric, setPerfMetric] = useState<"roi" | "winrate" | "sessions" | "profit">("profit");
   const [showOnlineModal, setShowOnlineModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [expandedTournament, setExpandedTournament] = useState<string | null>(null);
@@ -351,7 +375,7 @@ export default function Dashboard() {
   });
   const [onlineInputValue, setOnlineInputValue] = useState("");
   const [liveInputValue, setLiveInputValue] = useState("");
-  const [monthlyCompareMode, setMonthlyCompareMode] = useState<"3m" | "6m" | "12m" | "yoy">("6m");
+  const [monthlyCompareMode, setMonthlyCompareMode] = useState<"3m" | "6m" | "12m" | "yoy">("yoy");
   const [handEdit, setHandEdit] = useState({
     kk: { hands: 0, wins: 0, losses: 0 },
     jj: { hands: 0, wins: 0, losses: 0 },
@@ -362,7 +386,10 @@ export default function Dashboard() {
   const { data: consolidated, isLoading: loadingConsolidated } = trpc.bankroll.getConsolidated.useQuery();
   const { data: stats, isLoading: loadingStats } = trpc.sessions.stats.useQuery({});
   const { data: recentTables } = trpc.sessions.recentTables.useQuery({ limit: 8 });
-  const { data: allSessions } = trpc.sessions.list.useQuery({});
+  const { data: allSessions } = trpc.sessions.list.useQuery({}, {
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
   const { data: tournamentStatsRaw } = trpc.sessions.statsByTournament.useQuery();
   const { data: handPatternStats } = trpc.sessions.handPatternStats.useQuery();
   const { data: history, isLoading: loadingHistory } = trpc.bankroll.history.useQuery(undefined);
@@ -529,9 +556,9 @@ export default function Dashboard() {
     if (!chartData.length) return [0, 100];
     const allValues: number[] = [];
     chartData.forEach((d) => {
-      if (chartPeriod === "all" || chartPeriod === "online") allValues.push(d.online);
-      if (chartPeriod === "all" || chartPeriod === "live") allValues.push(d.live);
       if (chartPeriod === "all") allValues.push(d.total);
+      if (chartPeriod === "online") allValues.push(d.online);
+      if (chartPeriod === "live") allValues.push(d.live);
     });
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
@@ -571,33 +598,24 @@ export default function Dashboard() {
     return [...result].sort((a, b) => playTypeOrder.indexOf(a.type as "online" | "live") - playTypeOrder.indexOf(b.type as "online" | "live"));
   }, [consolidated, playTypeOrder]);
 
-  const perfData = useMemo(() => {
-    if (!venueStats) return [];
-    const mapped = venueStats
-      .filter((v: any) => (v.tables ?? v.sessions) > 0)
-      .map((v: any) => ({
-        venueId: v.venueId,
-        name: v.venueName.length > 13 ? v.venueName.substring(0, 13) + "…" : v.venueName,
-        fullName: v.venueName,
-        roi: (v.totalBuyIn ?? 0) > 0 ? parseFloat(((v.totalProfit / v.totalBuyIn) * 100).toFixed(1)) : 0,
-        winrate: v.winRate,
-        itmCount: v.winningTables ?? 0,
-        sessions: v.sessions,
-        tables: v.tables ?? v.sessions,
-        profit: v.totalProfit / 100,
-        color: v.totalProfit >= 0 ? "#10b981" : "#ef4444",
-      }));
-    return sortVenues(mapped, (venue) => venue.venueId).slice(0, 8);
-  }, [sortVenues, venueStats]);
+  const recentPrimaryVenueId = useMemo<number | null>(() => {
+    const first = (recentTables as any[] | undefined)?.find((t: any) => typeof t?.venueId === "number");
+    return typeof first?.venueId === "number" ? first.venueId : null;
+  }, [recentTables]);
 
   const consolidatedTotal = consolidated?.total.current || 0;
-  const consolidatedProfit = consolidated?.total.profit || 0;
-  const roiInvestment = stats?.totalBuyIn ?? 0;
-  const roiProfit = stats?.totalProfit ?? 0;
-  const consolidatedPct = roiInvestment > 0 ? (roiProfit / roiInvestment) * 100 : 0;
-  const hasRoiData = roiInvestment > 0;
   const hasAnyBalance = consolidatedTotal > 0;
-  const totalPlayedSessions = Array.isArray(allSessions) ? allSessions.length : ((stats as any)?.totalSessions ?? 0);
+  const scopedSessions = useMemo(() => {
+    const list = (allSessions ?? []) as any[];
+    if (!user?.id) return list;
+    const me = Number(user.id);
+    return list.filter((session) => {
+      const ownerId = Number((session as any)?.userId ?? me);
+      return ownerId === me;
+    });
+  }, [allSessions, user?.id]);
+
+  const totalPlayedSessions = scopedSessions.length > 0 ? scopedSessions.length : ((stats as any)?.totalSessions ?? 0);
   const totalPlayedTables = consolidated?.total.tables ?? 0;
   const abiOnlineAvg = prefs?.abiOnlineAvgBuyIn ?? 0;
   const abiLiveAvg = prefs?.abiLiveAvgBuyIn ?? 0;
@@ -609,7 +627,7 @@ export default function Dashboard() {
   const abiOnlineAvgUsd = usdRate > 0 ? Math.round(abiOnlineAvgBrl / usdRate) : 0;
   const abiLiveAvgUsd = usdRate > 0 ? Math.round(abiLiveAvgBrl / usdRate) : 0;
   const primaryTypeShare = ((prefs?.typeRanking ?? [])[0]?.share ?? 0) * 100;
-  const topVenueId = (prefs?.venueRanking ?? [])[0]?.value ?? prefs?.preferredVenueIds?.[0] ?? null;
+  const topVenueId = recentPrimaryVenueId ?? (prefs?.venueRanking ?? [])[0]?.value ?? prefs?.preferredVenueIds?.[0] ?? null;
   const topFormatKey = (prefs?.gameFormatRanking ?? [])[0]?.value ?? prefs?.preferredGameFormats?.[0] ?? null;
   const topFormatLabel = topFormatKey
     ? (GAME_FORMAT_LABELS[String(topFormatKey)] ?? String(topFormatKey).replaceAll("_", " "))
@@ -629,7 +647,7 @@ export default function Dashboard() {
     current: consolidated?.[type].current || 0,
     profit: consolidated?.[type].profit || 0,
     tables: consolidated?.[type].tables || 0,
-    sessions: (allSessions as any[] | undefined)?.filter((session) => session?.type === type).length ?? 0,
+    sessions: scopedSessions.filter((session) => session?.type === type).length,
     onEdit: type === "online" ? () => setShowOnlineModal(true) : () => setShowLiveModal(true),
   }));
 
@@ -644,7 +662,7 @@ export default function Dashboard() {
     const playedVenues = personalized.filter((venue: any) => (venue.stats?.tables ?? venue.stats?.sessions ?? 0) > 0);
     const source = playedVenues.length > 0 ? playedVenues : personalized;
 
-    return [...source].sort((a: any, b: any) => {
+    const ordered = [...source].sort((a: any, b: any) => {
       const aTables = a.stats?.tables ?? a.stats?.sessions ?? 0;
       const bTables = b.stats?.tables ?? b.stats?.sessions ?? 0;
       if (bTables !== aTables) return bTables - aTables;
@@ -654,39 +672,52 @@ export default function Dashboard() {
 
       return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
     });
-  }, [consolidated, playTypeOrder, sortVenues, venueStats]);
 
-  const userLeague = useMemo<UserLeague>(() => {
-    const role = String((user as any)?.role ?? "").trim().toLowerCase();
-    if (role === "admin" || role === "developer" || role === "system_ai_service") {
-      return "High Roller";
-    }
+    if (recentPrimaryVenueId == null) return ordered;
 
-    const numericLevel = Number((user as any)?.leagueLevel ?? (user as any)?.ligaNivel ?? (user as any)?.rankLevel);
-    if (Number.isFinite(numericLevel) && numericLevel >= 0) {
-      return getLeagueFromLevel(numericLevel);
-    }
+    return [...ordered].sort((a: any, b: any) => {
+      if (a.id === recentPrimaryVenueId && b.id !== recentPrimaryVenueId) return -1;
+      if (b.id === recentPrimaryVenueId && a.id !== recentPrimaryVenueId) return 1;
+      return 0;
+    });
+  }, [consolidated, playTypeOrder, recentPrimaryVenueId, sortVenues, venueStats]);
 
-    const explicitLeague = parseLeague((user as any)?.league)
-      ?? parseLeague((user as any)?.liga)
-      ?? parseLeague((user as any)?.leagueTier)
-      ?? parseLeague((user as any)?.rankLeague);
-    if (explicitLeague) return explicitLeague;
+  const perfData = useMemo(() => {
+    // Keep performance chart strictly aligned with the prioritized venues list.
+    const scoped = prioritizedVenues.filter((venue: any) => {
+      const tables = Number(venue?.stats?.tables ?? venue?.stats?.sessions ?? 0);
+      if (tables <= 0) return false;
+      if (chartPeriod === "all") return true;
+      return venue?.type === chartPeriod;
+    });
 
-    const starsFromUser = Number((user as any)?.starsLevel);
-    if (Number.isFinite(starsFromUser)) {
-      const normalizedStars = Math.max(0, Math.min(5, Math.round(starsFromUser)));
-      if (normalizedStars <= 0) return "Recreativo";
-      if (normalizedStars === 1) return "Grinder";
-      if (normalizedStars === 2) return "Reg";
-      if (normalizedStars === 3) return "Mid Stakes";
-      if (normalizedStars === 4) return "High Stakes";
-      return "The Edge";
-    }
+    return scoped.slice(0, 8).map((venue: any) => {
+      const statsVenue = venue?.stats ?? {};
+      const totalProfit = Number(statsVenue?.totalProfit ?? 0);
+      const totalBuyIn = Number(statsVenue?.totalBuyIn ?? 0);
+      const tables = Number(statsVenue?.tables ?? statsVenue?.sessions ?? 0);
+      const sessions = Number(statsVenue?.sessions ?? tables);
+      const roi = totalBuyIn > 0 ? parseFloat(((totalProfit / totalBuyIn) * 100).toFixed(1)) : 0;
+      const winrate = Number(statsVenue?.winRate ?? 0);
+      const itmCount = Number(statsVenue?.winningTables ?? 0);
+      const fullName = String(venue?.name ?? "Plataforma");
 
-    // Default while legacy users are migrated to numeric league levels.
-    return "Reg";
-  }, [user]);
+      return {
+        venueId: String(venue?.id ?? "unknown"),
+        name: fullName.length > 13 ? fullName.substring(0, 13) + "…" : fullName,
+        fullName,
+        roi,
+        winrate,
+        itmCount,
+        sessions,
+        tables,
+        profit: totalProfit / 100,
+        color: totalProfit >= 0 ? "#10b981" : "#ef4444",
+      };
+    });
+  }, [prioritizedVenues, chartPeriod]);
+
+  const userLeague = useMemo<UserLeague>(() => "The Edge", []);
 
   const userLeagueLevel = useMemo(() => getLeagueLevel(userLeague), [userLeague]);
   const userLeagueLabel = useMemo(() => getAccessTierLabel(userLeague), [userLeague]);
@@ -723,28 +754,38 @@ export default function Dashboard() {
     : availableTournamentHistory;
 
   const monthlyComparison = useMemo(() => {
-    const monthlyProfit = new Map<string, number>();
+    const monthlySummary = new Map<string, { profit: number; spent: number; cashOut: number }>();
 
-    for (const session of (allSessions ?? []) as any[]) {
+    for (const session of scopedSessions) {
+      if (!matchesScope(session, chartPeriod)) continue;
+
       const rawDate = session.sessionDate ?? session.startedAt ?? session.createdAt;
       const date = new Date(rawDate);
       if (Number.isNaN(date.getTime())) continue;
 
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      const sessionProfit = typeof session.totalTableProfit === "number"
-        ? session.totalTableProfit
-        : (session.cashOut ?? 0) - (session.buyIn ?? 0);
+      // Use the table-level totals whenever available because they include buy-in, add-on and rebuy.
+      const sessionBuyIn = Number(session.totalTableBuyIn ?? session.buyIn ?? 0);
+      const sessionCashOut = Number(session.totalTableCashOut ?? session.cashOut ?? 0);
+      // Financial model: lucro liquido = faturamento - investimento.
+      const sessionProfit = sessionCashOut - sessionBuyIn;
 
-      monthlyProfit.set(monthKey, (monthlyProfit.get(monthKey) ?? 0) + sessionProfit);
+      const current = monthlySummary.get(monthKey) ?? { profit: 0, spent: 0, cashOut: 0 };
+      current.profit += sessionProfit;
+      current.spent += sessionBuyIn;
+      current.cashOut += sessionCashOut;
+      monthlySummary.set(monthKey, current);
     }
 
-    const entries = Array.from(monthlyProfit.entries())
-      .map(([key, profit]) => {
+    const entries = Array.from(monthlySummary.entries())
+      .map(([key, values]) => {
         const [year, month] = key.split("-").map((value) => Number(value));
         const date = new Date(year, month - 1, 1);
         return {
           key,
-          profit,
+          profit: values.profit,
+          spent: values.spent,
+          cashOut: values.cashOut,
           date,
           label: date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", ""),
         };
@@ -764,20 +805,62 @@ export default function Dashboard() {
     const previousYearProfit = entries
       .filter((entry) => entry.date.getFullYear() === previousYear)
       .reduce((acc, entry) => acc + entry.profit, 0);
-
+    const currentYearSpent = entries
+      .filter((entry) => entry.date.getFullYear() === currentYear)
+      .reduce((acc, entry) => acc + entry.spent, 0);
+    const previousYearSpent = entries
+      .filter((entry) => entry.date.getFullYear() === previousYear)
+      .reduce((acc, entry) => acc + entry.spent, 0);
     const modeMonths = monthlyCompareMode === "3m" ? 3 : monthlyCompareMode === "6m" ? 6 : 12;
     const recent = entries.slice(-modeMonths);
 
     const currentProfit = monthlyCompareMode === "yoy"
       ? currentYearProfit
-      : (monthlyProfit.get(currentKey) ?? 0);
+      : (monthlySummary.get(currentKey)?.profit ?? 0);
     const previousProfit = monthlyCompareMode === "yoy"
       ? previousYearProfit
-      : (monthlyProfit.get(previousMonthKey) ?? 0);
+      : (monthlySummary.get(previousMonthKey)?.profit ?? 0);
+    const currentSpent = monthlyCompareMode === "yoy"
+      ? currentYearSpent
+      : (monthlySummary.get(currentKey)?.spent ?? 0);
+    const previousSpent = monthlyCompareMode === "yoy"
+      ? previousYearSpent
+      : (monthlySummary.get(previousMonthKey)?.spent ?? 0);
+    const currentCashOut = monthlyCompareMode === "yoy"
+      ? entries
+          .filter((entry) => entry.date.getFullYear() === currentYear)
+          .reduce((acc, entry) => acc + entry.cashOut, 0)
+      : (monthlySummary.get(currentKey)?.cashOut ?? 0);
+    const previousCashOut = monthlyCompareMode === "yoy"
+      ? entries
+          .filter((entry) => entry.date.getFullYear() === previousYear)
+          .reduce((acc, entry) => acc + entry.cashOut, 0)
+      : (monthlySummary.get(previousMonthKey)?.cashOut ?? 0);
+
+    const yearlyRows = [
+      {
+        year: currentYear,
+        spent: currentYearSpent,
+        cashOut: currentCashOut,
+        profit: currentYearProfit,
+      },
+      {
+        year: previousYear,
+        spent: previousYearSpent,
+        cashOut: previousCashOut,
+        profit: previousYearProfit,
+      },
+    ];
     const delta = currentProfit - previousProfit;
     const deltaPct = previousProfit !== 0
       ? (delta / Math.abs(previousProfit)) * 100
       : currentProfit !== 0
+        ? 100
+        : 0;
+    const deltaSpent = currentSpent - previousSpent;
+    const deltaSpentPct = previousSpent !== 0
+      ? (deltaSpent / Math.abs(previousSpent)) * 100
+      : currentSpent !== 0
         ? 100
         : 0;
 
@@ -788,22 +871,109 @@ export default function Dashboard() {
       ? String(previousYear)
       : previousMonthDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
-    const maxAbs = Math.max(1, ...recent.map((entry) => Math.abs(entry.profit)));
+    // Keep a single visual scale so spent, cash-out and profit bars are directly comparable.
+    const maxComparisonValue = Math.max(
+      1,
+      ...recent.map((entry) => Math.max(entry.spent, entry.cashOut, Math.abs(entry.profit))),
+    );
 
     return {
       mode: monthlyCompareMode,
+      scope: chartPeriod,
       currentLabel,
       previousLabel,
       currentProfit,
       previousProfit,
+      currentSpent,
+      previousSpent,
+      currentCashOut,
+      previousCashOut,
       delta,
       deltaPct,
+      deltaSpent,
+      deltaSpentPct,
+      yearlyRows,
       recent: recent.map((entry) => ({
         ...entry,
-        widthPct: (Math.abs(entry.profit) / maxAbs) * 100,
+        widthPctSpent: (entry.spent / maxComparisonValue) * 100,
+        widthPctCashOut: (entry.cashOut / maxComparisonValue) * 100,
+        widthPctProfit: (Math.abs(entry.profit) / maxComparisonValue) * 100,
       })),
     };
-  }, [allSessions, monthlyCompareMode]);
+  }, [scopedSessions, monthlyCompareMode, chartPeriod]);
+
+  const annualScopeSummary = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    let spent = 0;
+    let cashOut = 0;
+    let profit = 0;
+
+    for (const session of scopedSessions) {
+      if (!matchesScope(session, chartPeriod)) continue;
+
+      const rawDate = session.sessionDate ?? session.startedAt ?? session.createdAt;
+      const date = new Date(rawDate);
+      if (Number.isNaN(date.getTime()) || date.getFullYear() !== currentYear) continue;
+
+      const sessionSpent = Number(session.totalTableBuyIn ?? session.buyIn ?? 0);
+      const sessionCashOut = Number(session.totalTableCashOut ?? session.cashOut ?? 0);
+      spent += sessionSpent;
+      cashOut += sessionCashOut;
+      profit += sessionCashOut - sessionSpent;
+    }
+
+    return { spent, cashOut, profit };
+  }, [scopedSessions, chartPeriod]);
+
+  const annualScopePct = annualScopeSummary.spent > 0
+    ? (annualScopeSummary.profit / annualScopeSummary.spent) * 100
+    : 0;
+  const hasAnnualScopeRoi = annualScopeSummary.spent > 0;
+
+  const lifetimeScopeSummary = useMemo(() => {
+    let spent = 0;
+    let cashOut = 0;
+    let profit = 0;
+
+    for (const session of scopedSessions) {
+      if (!matchesScope(session, chartPeriod)) continue;
+
+      const sessionSpent = Number(session.totalTableBuyIn ?? session.buyIn ?? 0);
+      const sessionCashOut = Number(session.totalTableCashOut ?? session.cashOut ?? 0);
+      spent += sessionSpent;
+      cashOut += sessionCashOut;
+      profit += sessionCashOut - sessionSpent;
+    }
+
+    return { spent, cashOut, profit };
+  }, [scopedSessions, chartPeriod]);
+
+  const financialOverview = useMemo(() => {
+    let invested = 0;
+    let revenue = 0;
+    let profit = 0;
+
+    for (const session of scopedSessions) {
+      const sessionInvested = Number(session.totalTableBuyIn ?? session.buyIn ?? 0);
+      const sessionRevenue = Number(session.totalTableCashOut ?? session.cashOut ?? 0);
+      invested += sessionInvested;
+      revenue += sessionRevenue;
+      profit += sessionRevenue - sessionInvested;
+    }
+
+    return {
+      invested,
+      revenue,
+      profit,
+    };
+  }, [scopedSessions]);
+
+  const scopeRoiPct = useMemo(() => {
+    return {
+      online: calculateScopeRoiPct(scopedSessions as any[], "online"),
+      live: calculateScopeRoiPct(scopedSessions as any[], "live"),
+    };
+  }, [scopedSessions]);
 
   const topVenueName = prioritizedVenues.find((venue: any) => venue.id === topVenueId)?.name ?? null;
 
@@ -823,6 +993,212 @@ export default function Dashboard() {
       { code: "CNY", ...FX_RATE_META.CNY, rate: fxRates.CNY?.rate ?? 0 },
     ].filter((r) => r.rate > 0);
   }, [fxRates]);
+
+  const isBankrollPreview = false;
+
+  if (isBankrollPreview) {
+    const previewRateItems = rateItems.length > 0 ? rateItems : [
+      { code: "USD", ...FX_RATE_META.USD, rate: 5.0189 },
+      { code: "EUR", ...FX_RATE_META.EUR, rate: 5.8371 },
+      { code: "JPY", ...FX_RATE_META.JPY, rate: 0.031393 },
+      { code: "CNY", ...FX_RATE_META.CNY, rate: 0.7404 },
+      { code: "CAD", ...FX_RATE_META.CAD, rate: 3.6270 },
+    ];
+
+    const previewChart = (chartData.length > 0 ? chartData : [
+      { date: "01/06", total: 22400, online: 16200, live: 6200 },
+      { date: "08/06", total: 23850, online: 17100, live: 6750 },
+      { date: "15/06", total: 25230, online: 18300, live: 6930 },
+      { date: "22/06", total: 27520, online: 19720, live: 7800 },
+    ]).slice(-8);
+
+    const previewTopVenues = (prioritizedVenues.length > 0 ? prioritizedVenues : [
+      { name: "GG Poker", stats: { totalProfit: 912000, tables: 132, sessions: 132 } },
+      { name: "PP Poker", stats: { totalProfit: 734000, tables: 98, sessions: 98 } },
+      { name: "WPT Global", stats: { totalProfit: 468000, tables: 61, sessions: 61 } },
+      { name: "Suprema Poker", stats: { totalProfit: 320000, tables: 44, sessions: 44 } },
+    ]).slice(0, 4);
+
+    const previewMiniStats = [
+      { label: "ABI Online", value: "R$ 88,10", tone: "text-cyan-300", chip: "Online" },
+      { label: "ABI Live", value: "R$ 120,50", tone: "text-violet-300", chip: "Live" },
+      { label: "Sessions", value: "1.284", tone: "text-emerald-300", chip: "+14 hoje" },
+      { label: "ROI", value: "+52.2%", tone: "text-amber-300", chip: "Stack" },
+    ];
+
+    const previewVenueRows = previewTopVenues.map((venue: any, index: number) => ({
+      name: String(venue?.name ?? "Plataforma"),
+      profit: Number(venue?.stats?.totalProfit ?? 0),
+      color: VENUE_COLORS[index % VENUE_COLORS.length],
+    }));
+
+    const totalCurrent = consolidated?.total.current ?? 2752125;
+    const onlineCurrent = consolidated?.online.current ?? 2073683;
+    const liveCurrent = consolidated?.live.current ?? 715388;
+
+    return (
+      <div className="min-h-screen overflow-hidden bg-[#050716] text-white">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_25%,rgba(126,58,255,0.34),transparent_35%),radial-gradient(circle_at_85%_35%,rgba(0,180,255,0.14),transparent_35%),linear-gradient(180deg,#050716_0%,#070a18_100%)]" />
+        <div className="relative h-screen overflow-hidden">
+          <div
+            className="origin-top-left"
+            style={{ width: 1440, height: 900, transform: "scale(0.56)" }}
+          >
+          {previewRateItems.length > 0 && (
+            <div className="fx-ticker border-b border-white/10 bg-black/20">
+              <div className="fx-track">
+                {[...previewRateItems, ...previewRateItems, ...previewRateItems, ...previewRateItems].map((item, i) => (
+                  <div key={`${item.code}-${i}`} className="fx-item">
+                    <img className="fx-flag" src={item.flagUrl} alt={`${item.label} flag`} />
+                    <span className="fx-code">{item.code}</span>
+                    <span className="fx-label">{item.label}</span>
+                    <span className="fx-value">R$ {item.rate.toFixed(4)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-[172px_minmax(0,1fr)] gap-0 overflow-hidden bg-[#060816] text-slate-100">
+            <aside className="border-r border-white/10 bg-[#070b18]/95 px-4 py-4">
+              <img className="mb-4 w-28" src="/all-in-edge-logo-horizontal.webp" alt="All-in-Edge" />
+              <div className="space-y-2">
+                {[
+                  "Bankroll",
+                  "Sessões",
+                  "Ranking",
+                  "Locais",
+                  "GTO",
+                  "Revisor",
+                  "Comunidade",
+                ].map((item, idx) => (
+                  <div
+                    key={item}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${idx === 0 ? "bg-violet-500/15 text-white ring-1 ring-violet-400/20" : "text-slate-300/80"}`}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </aside>
+
+            <main className="overflow-hidden px-4 py-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight">Bankroll</h1>
+                  <p className="text-sm text-slate-300/75">Visão consolidada do seu stack</p>
+                </div>
+                <button className="rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-violet-600/30">
+                  Nova Sessão
+                </button>
+              </div>
+
+              <div className="grid h-[calc(100%-4.5rem)] gap-4 overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-b from-[#0a1024] to-[#060915] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
+                <div className="grid grid-cols-[1.18fr_0.92fr] gap-4 overflow-hidden">
+                  <section className="overflow-hidden rounded-[22px] border border-cyan-400/10 bg-[radial-gradient(circle_at_24%_28%,rgba(39,236,255,0.12),transparent_28%),radial-gradient(circle_at_78%_20%,rgba(111,73,255,0.14),transparent_18%),linear-gradient(180deg,#070b18_0%,#050814_100%)] p-4">
+                    <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-slate-300/60">
+                      <span>Bankroll</span>
+                      <span className="text-emerald-400">+52.2%</span>
+                    </div>
+                    <div className="mt-2 text-[40px] font-black tracking-tight text-white">
+                      {formatCurrency(totalCurrent)}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-emerald-400">+R$ 9.640,00</div>
+
+                    <div className="mt-4 grid grid-cols-4 gap-2">
+                      {previewMiniStats.map((item) => (
+                        <div key={item.label} className="rounded-2xl border border-white/8 bg-white/4 p-3">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-300/55">{item.chip}</div>
+                          <div className={`mt-2 text-lg font-black ${item.tone}`}>{item.value}</div>
+                          <div className="mt-1 text-[11px] text-slate-300/65">{item.label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 h-[164px] overflow-hidden rounded-2xl border border-white/8 bg-black/15 p-3">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={previewChart as any[]}>
+                          <defs>
+                            <linearGradient id="previewBankrollFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#34d399" stopOpacity={0.35} />
+                              <stop offset="45%" stopColor="#22d3ee" stopOpacity={0.12} />
+                              <stop offset="95%" stopColor="#34d399" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid stroke="rgba(148,163,184,0.16)" strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                          <YAxis hide domain={["dataMin - 1000", "dataMax + 1000"]} />
+                          <Area type="monotone" dataKey="total" stroke="#34d399" strokeWidth={3} fill="url(#previewBankrollFill)" />
+                          <Area type="monotone" dataKey="online" stroke="#22d3ee" strokeWidth={2} fillOpacity={0} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </section>
+
+                  <section className="space-y-3 overflow-hidden">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-[18px] border border-white/10 bg-[#0d1326] p-4">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300/80">Online</div>
+                        <div className="mt-1 text-2xl font-black text-white">{formatCurrency(onlineCurrent)}</div>
+                        <div className="text-sm text-slate-300/65">1325 mesas</div>
+                      </div>
+                      <div className="rounded-[18px] border border-white/10 bg-[#0d1326] p-4">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-300/80">Live</div>
+                        <div className="mt-1 text-2xl font-black text-white">{formatCurrency(liveCurrent)}</div>
+                        <div className="text-sm text-slate-300/65">78 mesas</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[18px] border border-white/10 bg-[#0d1326] p-4">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-300/60">Performance</div>
+                      <div className="mt-3 space-y-2">
+                        {[
+                          { k: "ROI", v: "+52.2%", w: "78%", c: "bg-emerald-400" },
+                          { k: "Winrate", v: "61.3%", w: "61%", c: "bg-cyan-400" },
+                          { k: "Sessions", v: "1.284", w: "88%", c: "bg-violet-400" },
+                        ].map((row) => (
+                          <div key={row.k} className="rounded-xl border border-white/6 bg-white/3 p-3">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-300/80">{row.k}</span>
+                              <strong className="text-white">{row.v}</strong>
+                            </div>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
+                              <div className={`h-full rounded-full ${row.c}`} style={{ width: row.w }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[18px] border border-white/10 bg-[#0d1326] p-4">
+                      <div className="text-sm font-bold text-white">Plataformas Prioritárias</div>
+                      <div className="mt-3 space-y-2">
+                        {previewVenueRows.map((venue) => (
+                          <div key={venue.name} className="rounded-xl border border-white/6 bg-white/3 px-3 py-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="inline-flex items-center gap-2 text-slate-100">
+                                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: venue.color }} />
+                                {venue.name}
+                              </span>
+                              <span className="font-semibold text-emerald-400">+{formatCurrencyCompact(venue.profit)}</span>
+                            </div>
+                            <div className="mt-2 h-1.5 rounded-full bg-white/8">
+                              <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-violet-400" style={{ width: `${Math.min(100, 35 + Math.abs(venue.profit) / 12000)}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </main>
+          </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isInitialLoading) {
     return (
@@ -1198,24 +1574,68 @@ export default function Dashboard() {
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(21,128,61,0.09),transparent_50%)] dark:bg-[radial-gradient(circle_at_50%_10%,rgba(16,185,129,0.12),transparent_48%)]" />
 
             {(() => {
-              const heroPlotData = chartData.map((point, index) => ({ index, value: point.total }));
+              const heroMode = chartPeriod;
+              const heroPlotData = chartData.map((point, index) => ({
+                index,
+                value: heroMode === "online" ? point.online : heroMode === "live" ? point.live : point.total,
+              }));
               const firstValue = heroPlotData.length > 0 ? heroPlotData[0].value : 0;
               const lastValue = heroPlotData.length > 0 ? heroPlotData[heroPlotData.length - 1].value : 0;
               const isPositive = lastValue >= firstValue;
-              const onlineShare = donutData.find((d) => d.type === "online")?.pct ?? 0;
-              const liveShare = donutData.find((d) => d.type === "live")?.pct ?? 0;
+              const selectedCurrent = heroMode === "online"
+                ? Number(consolidated?.online.current ?? 0)
+                : heroMode === "live"
+                  ? Number(consolidated?.live.current ?? 0)
+                  : Number(consolidated?.total.current ?? 0);
+              const selectedProfit = Number(lifetimeScopeSummary.profit ?? 0);
+              const selectedRoiBuyIn = Number(lifetimeScopeSummary.spent ?? 0);
+              const selectedRoiProfit = Number(lifetimeScopeSummary.profit ?? 0);
+              const selectedPct = selectedRoiBuyIn > 0 ? (selectedRoiProfit / selectedRoiBuyIn) * 100 : 0;
+              const onlineRoi = scopeRoiPct.online;
+              const liveRoi = scopeRoiPct.live;
 
               return (
                 <>
-                  <div className="pointer-events-none absolute right-4 top-4 z-20 flex items-center gap-2 text-[11px]">
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-700/25 dark:border-emerald-400/35 bg-white/90 dark:bg-black/55 px-2.5 py-1 text-emerald-700 dark:text-emerald-200">
+                  <div className="absolute right-4 top-4 z-20 flex flex-wrap items-center gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setChartPeriod("all")}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors ${
+                        heroMode === "all"
+                          ? "border-emerald-700/35 dark:border-emerald-400/45 bg-emerald-100/80 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200"
+                          : "border-emerald-700/20 dark:border-emerald-400/20 bg-white/85 dark:bg-black/50 text-emerald-700/80 dark:text-emerald-200/80 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/15"
+                      }`}
+                      aria-pressed={heroMode === "all"}
+                    >
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-700 dark:bg-emerald-400" />
-                      Online {onlineShare}%
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-violet-700/25 dark:border-violet-400/35 bg-white/90 dark:bg-black/55 px-2.5 py-1 text-violet-700 dark:text-violet-200">
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartPeriod("online")}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors ${
+                        heroMode === "online"
+                          ? "border-emerald-700/35 dark:border-emerald-400/45 bg-emerald-100/80 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200"
+                          : "border-emerald-700/20 dark:border-emerald-400/20 bg-white/85 dark:bg-black/50 text-emerald-700/80 dark:text-emerald-200/80 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/15"
+                      }`}
+                      aria-pressed={heroMode === "online"}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-700 dark:bg-emerald-400" />
+                      Online ROI {formatPercent(onlineRoi)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartPeriod("live")}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors ${
+                        heroMode === "live"
+                          ? "border-violet-700/35 dark:border-violet-400/45 bg-violet-100/80 dark:bg-violet-500/20 text-violet-800 dark:text-violet-200"
+                          : "border-violet-700/20 dark:border-violet-400/20 bg-white/85 dark:bg-black/50 text-violet-700/80 dark:text-violet-200/80 hover:bg-violet-100/70 dark:hover:bg-violet-500/15"
+                      }`}
+                      aria-pressed={heroMode === "live"}
+                    >
                       <span className="h-1.5 w-1.5 rounded-full bg-violet-700 dark:bg-violet-400" />
-                      Live {liveShare}%
-                    </div>
+                      Live ROI {formatPercent(liveRoi)}
+                    </button>
                   </div>
 
                   <div className="pointer-events-none absolute inset-x-3 bottom-3 top-[58%] md:top-[52%] rounded-2xl z-0" style={{ backgroundColor: chartColors.backgroundColor }}>
@@ -1252,15 +1672,15 @@ export default function Dashboard() {
 
                   <div className="relative z-10 flex h-full min-h-[290px] flex-col items-center justify-start pt-8 text-center md:pt-10">
                     <div className="text-4xl md:text-5xl xl:text-6xl font-bold tracking-tight md:tracking-[-1px] bg-gradient-to-r from-slate-900 via-violet-800 to-cyan-700 dark:from-emerald-300 dark:via-cyan-300 dark:to-purple-300 bg-clip-text text-transparent dark:drop-shadow-[0_0_18px_rgba(16,185,129,0.35)]">
-                      {formatCurrencyCompact(consolidatedTotal)}
+                      {formatCurrencyCompact(selectedCurrent)}
                     </div>
 
                     <div className="mt-2 text-3xl md:text-4xl font-extrabold leading-none text-green-700 dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(16,185,129,0.28)]">
-                      {formatPercent(consolidatedPct)}
+                      {formatPercent(selectedPct)}
                     </div>
 
-                    <div className={`mt-2 text-xl md:text-2xl font-semibold ${roiProfit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
-                      {roiProfit >= 0 ? "+" : ""}{formatCurrencyCompact(roiProfit)}
+                    <div className={`mt-2 text-xl md:text-2xl font-semibold ${selectedProfit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
+                      {selectedProfit >= 0 ? "+" : ""}{formatCurrencyCompact(selectedProfit)}
                     </div>
                   </div>
                 </>
@@ -1281,6 +1701,11 @@ export default function Dashboard() {
                       ? `${abiOnlineSample} mesas`
                       : "Sem amostra de mesas online"}
                   </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Total em R$ geral acumulado: <span className={`font-semibold ${financialOverview.profit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
+                    {financialOverview.profit >= 0 ? "+" : ""}{formatCurrency(financialOverview.profit)}
+                  </span>
+                </p>
                 </div>
                 <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
                   <p className="text-xs text-muted-foreground mb-1">ABI Médio Live</p>
@@ -1293,6 +1718,9 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                <p className="mb-2 text-[11px] text-muted-foreground">
+                  Escopo da análise: <span className="font-semibold text-foreground">{monthlyComparison.scope === "all" ? "Todos" : monthlyComparison.scope === "online" ? "Online" : "Live"}</span>
+                </p>
                 <div className="mb-3 flex flex-wrap gap-1.5">
                   {([
                     { key: "3m", label: "3M" },
@@ -1315,52 +1743,137 @@ export default function Dashboard() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs text-muted-foreground">
-                      {monthlyCompareMode === "yoy" ? "Lucro do ano" : "Lucro do mês"}
+                      {monthlyCompareMode === "yoy" ? "Valor investido no ano" : "Valor investido no mês"}
                     </p>
-                    <p className={`text-lg font-semibold ${monthlyComparison.currentProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                      {monthlyComparison.currentProfit >= 0 ? "+" : ""}{formatCurrency(monthlyComparison.currentProfit)}
+                    <p className="text-lg font-semibold text-amber-700 dark:text-amber-300">
+                      {formatCurrency(monthlyComparison.currentSpent)}
                     </p>
                     <p className="text-[11px] text-muted-foreground capitalize">{monthlyComparison.currentLabel}</p>
                   </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {monthlyCompareMode === "yoy" ? "Faturamento no ano" : "Faturamento no mês"}
+                    </p>
+                    <p className="text-lg font-semibold text-cyan-700 dark:text-cyan-300">
+                      {formatCurrency(monthlyComparison.currentCashOut)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Soma dos cash-outs do período</p>
+                  </div>
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">
-                      {monthlyCompareMode === "yoy" ? "Vs ano anterior" : "Vs mês anterior"}
+                      {monthlyCompareMode === "yoy" ? "Lucro líquido no ano" : "Lucro líquido no mês"}
                     </p>
-                    <p className={`text-sm font-semibold ${monthlyComparison.delta >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                      {monthlyComparison.delta >= 0 ? "+" : ""}{formatCurrency(monthlyComparison.delta)}
+                    <p className={`text-sm font-semibold ${monthlyComparison.currentProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                      {monthlyComparison.currentProfit >= 0 ? "+" : ""}{formatCurrency(monthlyComparison.currentProfit)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Lucro = Faturamento - Investido
                     </p>
                     <p className={`text-[11px] ${monthlyComparison.deltaPct >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
-                      {monthlyComparison.deltaPct >= 0 ? "+" : ""}{monthlyComparison.deltaPct.toFixed(1)}%
+                      {monthlyCompareMode === "yoy" ? "Vs ano anterior" : "Vs mês anterior"}: {monthlyComparison.delta >= 0 ? "+" : ""}{formatCurrency(monthlyComparison.delta)} ({monthlyComparison.deltaPct >= 0 ? "+" : ""}{monthlyComparison.deltaPct.toFixed(1)}%)
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                  <div className="rounded-lg border border-border/50 bg-background/40 px-2 py-1.5">
-                    <p className="text-[10px] text-muted-foreground">{monthlyCompareMode === "yoy" ? "Ano atual" : "Mês atual"}</p>
-                    <p className="text-xs font-medium capitalize">{monthlyComparison.currentLabel}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/50 bg-background/40 px-2 py-1.5">
-                    <p className="text-[10px] text-muted-foreground">{monthlyCompareMode === "yoy" ? "Ano anterior" : "Mês anterior"}</p>
-                    <p className="text-xs font-medium capitalize">{monthlyComparison.previousLabel}</p>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-1.5">
-                  {monthlyComparison.recent.map((month) => (
-                    <div key={month.key} className="flex items-center gap-2">
-                      <span className="w-12 text-[10px] uppercase text-muted-foreground">{month.label}</span>
-                      <div className="h-2 flex-1 rounded-sm bg-background/60">
-                        <div
-                          className={`h-2 rounded-sm ${month.profit >= 0 ? "bg-emerald-500/80" : "bg-red-500/80"}`}
-                          style={{ width: `${Math.max(6, month.widthPct)}%` }}
-                        />
+                {monthlyCompareMode === "yoy" ? (
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {monthlyComparison.yearlyRows.map((yearItem) => (
+                      <div key={yearItem.year} className="rounded-lg border border-border/50 bg-background/30 px-3 py-2">
+                        <p className="text-[10px] uppercase text-muted-foreground">{yearItem.year}</p>
+                        <div className="mt-1 space-y-1">
+                          <p className="text-[11px] text-muted-foreground">Gasto: <span className="font-medium text-amber-700 dark:text-amber-300">{formatCurrency(yearItem.spent)}</span></p>
+                          <p className="text-[11px] text-muted-foreground">Faturamento: <span className="font-medium text-cyan-700 dark:text-cyan-300">{formatCurrency(yearItem.cashOut)}</span></p>
+                          <p className="text-[11px] text-muted-foreground">Lucro: <span className={`font-medium ${yearItem.profit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>{yearItem.profit >= 0 ? "+" : ""}{formatCurrency(yearItem.profit)}</span></p>
+                        </div>
                       </div>
-                      <span className={`w-24 text-right text-[10px] font-medium ${month.profit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
-                        {month.profit >= 0 ? "+" : ""}{formatCurrency(month.profit)}
-                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                      <div className="rounded-lg border border-border/50 bg-background/40 px-2 py-1.5">
+                        <p className="text-[10px] text-muted-foreground">Mês atual</p>
+                        <p className="text-xs font-medium capitalize">{monthlyComparison.currentLabel}</p>
+                      </div>
+                      <div className="rounded-lg border border-border/50 bg-background/40 px-2 py-1.5">
+                        <p className="text-[10px] text-muted-foreground">Mês anterior</p>
+                        <p className="text-xs font-medium capitalize">{monthlyComparison.previousLabel}</p>
+                      </div>
                     </div>
-                  ))}
+
+                    <div className="mt-3 space-y-1.5">
+                      {monthlyComparison.recent.map((month) => (
+                        <div key={month.key} className="rounded-lg border border-border/50 bg-background/30 px-2 py-1.5">
+                          <div className="mb-1 flex items-center justify-between">
+                            <span className="text-[10px] uppercase text-muted-foreground">{month.label}</span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="w-10 text-[10px] text-muted-foreground">Gasto</span>
+                              <div className="h-2 flex-1 rounded-sm bg-background/60">
+                                <div
+                                  className="h-2 rounded-sm bg-amber-500/80"
+                                  style={{ width: `${Math.max(6, month.widthPctSpent)}%` }}
+                                />
+                              </div>
+                              <span className="w-24 text-right text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                                {formatCurrency(month.spent)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-10 text-[10px] text-muted-foreground">Fat.</span>
+                              <div className="h-2 flex-1 rounded-sm bg-background/60">
+                                <div
+                                  className="h-2 rounded-sm bg-cyan-500/80"
+                                  style={{ width: `${Math.max(6, month.widthPctCashOut)}%` }}
+                                />
+                              </div>
+                              <span className="w-24 text-right text-[10px] font-medium text-cyan-700 dark:text-cyan-300">
+                                {formatCurrency(month.cashOut)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-10 text-[10px] text-muted-foreground">Lucro</span>
+                              <div className="h-2 flex-1 rounded-sm bg-background/60">
+                                <div
+                                  className={`h-2 rounded-sm ${month.profit >= 0 ? "bg-emerald-500/80" : "bg-red-500/80"}`}
+                                  style={{ width: `${Math.max(6, month.widthPctProfit)}%` }}
+                                />
+                              </div>
+                              <span className={`w-24 text-right text-[10px] font-medium ${month.profit >= 0 ? "text-green-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
+                                {month.profit >= 0 ? "+" : ""}{formatCurrency(month.profit)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="mb-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">Análise Global</p>
+                    <p className="text-[11px] text-muted-foreground">Todas as suas sessões carregadas no sistema</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Lucro = Faturamento - Investido</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <div className="rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground">Valor investido</p>
+                    <p className="text-lg font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(financialOverview.invested)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground">Faturamento</p>
+                    <p className="text-lg font-semibold text-cyan-700 dark:text-cyan-300">{formatCurrency(financialOverview.revenue)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground">Lucro líquido</p>
+                    <p className={`text-lg font-semibold ${financialOverview.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                      {financialOverview.profit >= 0 ? "+" : ""}{formatCurrency(financialOverview.profit)}
+                    </p>
+                  </div>
                 </div>
               </div>
                 <div className="mb-4 rounded-xl border border-cyan-500/20 bg-slate-100/95 dark:bg-slate-950/40 px-3 py-2">
@@ -1478,22 +1991,34 @@ export default function Dashboard() {
                               );
                             }}
                           />
-                          <Line type="linear" dataKey="total" stroke={theme === "light" ? "#15803d" : "var(--primary)"} strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} name="Total" />
-                          <Line type="linear" dataKey="online" stroke={theme === "light" ? "#0369a1" : "#06b6d4"} strokeWidth={1.75} dot={false} strokeDasharray="4 2" name="Online" />
-                          <Line type="linear" dataKey="live" stroke={theme === "light" ? "#92400e" : "#f59e0b"} strokeWidth={1.75} dot={false} strokeDasharray="3 3" name="Live" />
+                          {chartPeriod === "all" && (
+                            <Line type="linear" dataKey="total" stroke={theme === "light" ? "#15803d" : "var(--primary)"} strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} name="Total" />
+                          )}
+                          {chartPeriod === "online" && (
+                            <Line type="linear" dataKey="online" stroke={theme === "light" ? "#0369a1" : "#06b6d4"} strokeWidth={1.75} dot={false} strokeDasharray="4 2" name="Online" />
+                          )}
+                          {chartPeriod === "live" && (
+                            <Line type="linear" dataKey="live" stroke={theme === "light" ? "#92400e" : "#f59e0b"} strokeWidth={1.75} dot={false} strokeDasharray="3 3" name="Live" />
+                          )}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <span className="h-2 w-4 rounded-full inline-block" style={{ background: "var(--primary)" }} /> Total
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-cyan-400" /> Online
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-amber-400" /> Live
-                      </span>
+                      {chartPeriod === "all" && (
+                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span className="h-2 w-4 rounded-full inline-block" style={{ background: "var(--primary)" }} /> Total
+                        </span>
+                      )}
+                      {chartPeriod === "online" && (
+                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-cyan-400" /> Online
+                        </span>
+                      )}
+                      {chartPeriod === "live" && (
+                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span className="h-0.5 w-4 inline-block border-t-2 border-dashed border-amber-400" /> Live
+                        </span>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -1553,10 +2078,10 @@ export default function Dashboard() {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-sm font-semibold">Evolução do Bankroll</CardTitle>
-                  {hasRoiData && (
-                    <Badge variant={consolidatedPct >= 0 ? "default" : "destructive"} className="text-xs gap-1">
-                      {consolidatedPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      {formatPercent(consolidatedPct)}
+                  {hasAnnualScopeRoi && (
+                    <Badge variant={annualScopePct >= 0 ? "default" : "destructive"} className="text-xs gap-1">
+                      {annualScopePct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      {formatPercent(annualScopePct)}
                     </Badge>
                   )}
                 </div>
@@ -1596,10 +2121,10 @@ export default function Dashboard() {
                         tickFormatter={(v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)} />
                       <ReferenceLine y={0} stroke={chartColors.gridLine} strokeDasharray="4 4" />
                       <RechartsTooltip content={<CustomTooltip />} />
-                      {(chartPeriod === "all" || chartPeriod === "online") && (
+                      {chartPeriod === "online" && (
                         <Area type="linear" dataKey="online" name="Online" stroke={theme === "light" ? "#0369a1" : "#06b6d4"} strokeWidth={2} fill="url(#gradOnline)" dot={false} activeDot={{ r: 4 }} />
                       )}
-                      {(chartPeriod === "all" || chartPeriod === "live") && (
+                      {chartPeriod === "live" && (
                         <Area type="linear" dataKey="live" name="Live" stroke={theme === "light" ? "#92400e" : "#f59e0b"} strokeWidth={2} fill="url(#gradLive)" dot={false} activeDot={{ r: 4 }} />
                       )}
                       {chartPeriod === "all" && (
@@ -1834,142 +2359,6 @@ export default function Dashboard() {
                   <Link href="/venues">
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs"><Plus className="h-3.5 w-3.5" /> Adicionar Plataforma</Button>
                   </Link>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-violet-500/20 card-gradient-violet transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-xl dark:hover:shadow-purple-500/20 hover:border-purple-500/60">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Trophy className="h-4 w-4 text-amber-500" /> Análise por Torneio
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">Aba de favoritos e histórico por maiores resultados.</p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="outline" className="text-[10px]">N{userLeagueLevel} · {userLeagueCompact} {userLeagueEmoji}</Badge>
-                  <Badge variant="outline" className="text-[10px]">Limite {tournamentAccessLimit} torneios</Badge>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 pt-1">
-                <Button
-                  size="sm"
-                  variant={activeTournamentTab === "favoritos" ? "default" : "ghost"}
-                  className="h-7 px-2 text-[11px]"
-                  onClick={() => setActiveTournamentTab("favoritos")}
-                >
-                  Favoritos
-                </Button>
-                <Button
-                  size="sm"
-                  variant={activeTournamentTab === "historico" ? "default" : "ghost"}
-                  className="h-7 px-2 text-[11px]"
-                  onClick={() => setActiveTournamentTab("historico")}
-                >
-                  Histórico
-                </Button>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Níveis: N0 Recreativo 🃏 · N1 Grinder ♣️ · N2 Reg ♠️ · N3 Mid Stakes ♦️ · N4-5 High Stakes ♥️ · N6 The Edge 🂡 · N7 High Roller 💰.
-              </p>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-2">
-              {visibleTournaments.length > 0 ? (
-                visibleTournaments.map((tournament: any, index: number) => {
-                  const expanded = expandedTournament === tournament.name;
-                  const hasSimilar = (tournament as any).similarNames?.length > 0;
-                  const isFavoriteTournament = favoriteTournamentNames.includes(String(tournament.name));
-                  return (
-                    <div key={tournament.name} className="rounded-lg border border-border/40 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedTournament(expanded ? null : tournament.name)}
-                        className="w-full flex items-center justify-between px-3 py-3 text-left hover:bg-muted/20 transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            {activeTournamentTab === "historico" && (
-                              <span className="shrink-0 text-[10px] text-muted-foreground">#{index + 1}</span>
-                            )}
-                            <p className="text-sm font-semibold truncate">{tournament.name}</p>
-                            {hasSimilar && (
-                              <span title={`Nome parecido com: ${(tournament as any).similarNames.join(", ")}`} className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                                ~similar
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">
-                            {tournament.tables} mesa{tournament.tables === 1 ? "" : "s"} · {tournament.sessions} sessõ{tournament.sessions === 1 ? "e" : "es"}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <button
-                            type="button"
-                            title={isFavoriteTournament ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              const next = isFavoriteTournament
-                                ? favoriteTournamentNames.filter((name) => name !== tournament.name)
-                                : [...favoriteTournamentNames, tournament.name];
-                              saveFavoriteTournamentNames(next);
-                            }}
-                            className="rounded p-1 hover:bg-muted/40"
-                          >
-                            <Star className={`h-4 w-4 ${isFavoriteTournament ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-yellow-400"}`} />
-                          </button>
-                          <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                            {tournament.profit >= 0 ? "+" : ""}{formatCurrencyCompact(tournament.profit)}
-                          </p>
-                          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                        </div>
-                      </button>
-                      {expanded && (
-                        <>
-                          {hasSimilar && (
-                            <div className="px-3 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-400">
-                              ⚠️ Nome parecido com: <span className="font-semibold">{(tournament as any).similarNames.join(", ")}</span>. Confirme se são o mesmo torneio.
-                            </div>
-                          )}
-                          <div className="grid grid-cols-4 gap-2 border-t border-border/40 bg-muted/10 p-3 text-center">
-                            <div className="rounded-md bg-background/40 px-2 py-2">
-                              <p className="text-[10px] text-muted-foreground">Média/mesa</p>
-                              <p className={`text-xs font-semibold ${(tournament as any).avgProfit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                                {formatCurrencyCompact((tournament as any).avgProfit)}
-                              </p>
-                            </div>
-                            <div className="rounded-md bg-background/40 px-2 py-2">
-                              <p className="text-[10px] text-muted-foreground">ITM</p>
-                              <p className="text-xs font-semibold text-cyan-400">{(tournament as any).itmRate ?? 0}%</p>
-                            </div>
-                            <div className="rounded-md bg-background/40 px-2 py-2">
-                              <p className="text-[10px] text-muted-foreground">Troféus</p>
-                              <p className="text-xs font-semibold text-amber-400">{(tournament as any).trophies ?? 0} 🏆</p>
-                            </div>
-                            <div className="rounded-md bg-background/40 px-2 py-2">
-                              <p className="text-[10px] text-muted-foreground">Saldo</p>
-                              <p className={`text-xs font-semibold ${tournament.profit >= 0 ? "text-green-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                                {formatCurrencyCompact(tournament.profit)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="border-t border-border/40 px-3 py-2 flex items-center justify-between bg-background/30">
-                            <p className="text-[11px] text-muted-foreground">Pronto para revisar e analisar este torneio no app.</p>
-                            <Link href="/hand-reviewer">
-                              <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]">Analisar</Button>
-                            </Link>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-6 text-sm text-muted-foreground">
-                  {activeTournamentTab === "favoritos"
-                    ? "Nenhum favorito salvo no limite do seu nível de acesso. Marque torneios com a estrela."
-                    : "Nenhum torneio nomeado ainda."}
                 </div>
               )}
             </CardContent>

@@ -1,6 +1,7 @@
-import SocialHubNav from "@/components/SocialHubNav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { OnlinePresenceDot, OnlinePresenceLabel } from "@/components/OnlinePresence";
+import { buildProfilePath } from "@/lib/socialProfile";
 import { trpc } from "@/lib/trpc";
 import { Flame, MessageCircle, Sparkles, Users, Globe, ArrowRight, BellRing } from "lucide-react";
 import { useLocation } from "wouter";
@@ -46,10 +47,15 @@ export default function Social() {
       refetchOnWindowFocus: true,
     }
   );
+  const { data: conversations = [] } = trpc.chat.conversations.useQuery(undefined, {
+    refetchInterval: 15000,
+    staleTime: 8000,
+  });
 
   const trendingPost = posts.find((post) => (post.likeCount ?? 0) > 0 || (post.commentCount ?? 0) > 0) ?? posts[0];
   const recentPosts = posts.slice(0, 5);
-  const activeNow = (unreadChat?.count ?? 0) + incomingRequests.length;
+  const onlineUsers = conversations.filter((conversation) => conversation.isOnline).map((conversation) => conversation.friend);
+  const activeNow = onlineUsers.length;
 
   return (
     <div className="social-page space-y-4 pb-2">
@@ -65,13 +71,11 @@ export default function Social() {
           <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-4 py-2 text-sm font-medium backdrop-blur">
             <Flame className="h-4 w-4 text-primary" />
             {activeNow > 0
-              ? `${activeNow} novidades agora`
+              ? `${activeNow} jogadores online`
               : "Comunidade ativa"}
           </div>
         </div>
       </div>
-
-      <SocialHubNav />
 
       <div className="app-scrollbar flex gap-2 overflow-x-auto px-1 pb-1">
         <Button type="button" variant="outline" className="h-11 rounded-full" onClick={() => setLocation("/feed")}> 
@@ -137,6 +141,36 @@ export default function Social() {
         </section>
 
         <aside className="space-y-3">
+          <div className="social-shell p-4">
+            <p className="mb-2 text-sm font-semibold">Online agora</p>
+            {onlineUsers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Sem amigos online no momento.</p>
+            ) : (
+              <div className="space-y-2">
+                {onlineUsers.slice(0, 5).map((friend) => (
+                  <button
+                    key={`social-online-${friend.id}`}
+                    type="button"
+                    className="social-muted-panel flex w-full items-center gap-2 p-2 text-left"
+                    onClick={() => setLocation(buildProfilePath({ id: friend.id, name: friend.name }))}
+                  >
+                    <div className="relative">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={friend.avatarUrl ?? undefined} />
+                        <AvatarFallback>{getInitials(friend.name)}</AvatarFallback>
+                      </Avatar>
+                      <OnlinePresenceDot className="absolute -bottom-1 -right-1" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold">{friend.name ?? "Jogador"}</p>
+                      <OnlinePresenceLabel text="online" className="px-2 py-0.5 text-[10px]" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="social-shell p-4">
             <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
               <BellRing className="h-4 w-4 text-primary" />

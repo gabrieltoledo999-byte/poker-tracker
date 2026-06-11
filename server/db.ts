@@ -1,10 +1,11 @@
 import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, sessions, bankrollSettings, venues, InsertSession, Session, BankrollSettings, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters, userBlocks, messages, Message, messageReactions } from "../drizzle/schema";
+import { InsertUser, users, sessions, bankrollSettings, gtoMatrixPreferences, venues, InsertSession, Session, BankrollSettings, GtoMatrixPreferences, Venue, InsertVenue, fundTransactions, FundTransaction, InsertFundTransaction, venueBalanceHistory, VenueBalanceHistory, InsertVenueBalanceHistory, activeSessions, ActiveSession, InsertActiveSession, sessionTables, SessionTable, InsertSessionTable, handPatternCounters, userBlocks, messages, Message, messageReactions, appPresenceSessions, appPresenceDaily, handReviewFavorites } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAllRates } from "./currency";
 import { authCompatUserSelect } from "./userCompat";
 import { shouldReplaceAvatar } from "./avatarPersistence";
+import { isValidCpf, normalizeCpf } from "./cpf";
 
 const SYSTEM_ADMIN_EMAILS = new Set(["admin@therailapp.company"]);
 
@@ -730,6 +731,39 @@ export async function getSessionById(id: number, userId: number): Promise<Sessio
 // Game format type
 type GameFormat = "cash_game" | "tournament" | "turbo" | "hyper_turbo" | "sit_and_go" | "spin_and_go" | "bounty" | "satellite" | "freeroll" | "home_game";
 
+export function getCanonicalPlatformForTableOrSession(input: {
+  tableVenueId?: number | null;
+  sessionVenueId?: number | null;
+  tableUpdatedAt?: Date | null;
+  sessionUpdatedAt?: Date | null;
+}): {
+  venueId: number | null;
+  source: "table" | "session" | "none";
+  updatedAt: number;
+} {
+  const tableVenueId = typeof input.tableVenueId === "number" && Number.isFinite(input.tableVenueId)
+    ? Number(input.tableVenueId)
+    : null;
+  const sessionVenueId = typeof input.sessionVenueId === "number" && Number.isFinite(input.sessionVenueId)
+    ? Number(input.sessionVenueId)
+    : null;
+
+  const tableUpdatedAt = input.tableUpdatedAt instanceof Date ? input.tableUpdatedAt.getTime() : 0;
+  const sessionUpdatedAt = input.sessionUpdatedAt instanceof Date ? input.sessionUpdatedAt.getTime() : 0;
+
+  // table-level mapping is the source of truth whenever present
+  if (tableVenueId !== null) {
+    return { venueId: tableVenueId, source: "table", updatedAt: tableUpdatedAt };
+  }
+
+  // legacy fallback for sessions without tables
+  if (sessionVenueId !== null) {
+    return { venueId: sessionVenueId, source: "session", updatedAt: sessionUpdatedAt };
+  }
+
+  return { venueId: null, source: "none", updatedAt: Math.max(tableUpdatedAt, sessionUpdatedAt) };
+}
+
 export async function getUserSessions(
   userId: number,
   filters?: {
@@ -802,6 +836,7 @@ export async function getUserSessions(
   const tableRows = await db
     .select({
       sessionId: sessionTables.sessionId,
+      tableId: sessionTables.id,
       type: sessionTables.type,
       buyIn: sessionTables.buyIn,
       cashOut: sessionTables.cashOut,
@@ -811,6 +846,8 @@ export async function getUserSessions(
       tournamentName: sessionTables.tournamentName,
       finalPosition: sessionTables.finalPosition,
       fieldSize: sessionTables.fieldSize,
+      startedAt: sessionTables.startedAt,
+      updatedAt: sessionTables.updatedAt,
     })
     .from(sessionTables)
     .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IN (${sql.join(sessionIds.map((id) => sql`${id}`), sql`,`)})`));
@@ -833,6 +870,7 @@ export async function getUserSessions(
     venueIds: Set<number>;
     gameFormats: Set<string>;
     primaryTournamentName: string | null;
+    primaryTournamentAt: number;
     tournamentNames: Set<string>;
     bestFinalPosition: number | null;
     maxFieldSize: number | null;
@@ -855,6 +893,7 @@ export async function getUserSessions(
         venueIds: new Set<number>(),
         gameFormats: new Set<string>(),
         primaryTournamentName: null,
+        primaryTournamentAt: 0,
         tournamentNames: new Set<string>(),
         bestFinalPosition: null,
         maxFieldSize: null,
@@ -880,7 +919,13 @@ export async function getUserSessions(
     if (row.type === "online") agg.hasOnlineTables = true;
     if (row.type === "live") agg.hasLiveTables = true;
     if (row.tournamentName && row.tournamentName.trim()) {
-      if (!agg.primaryTournamentName) agg.primaryTournamentName = row.tournamentName.trim();
+      const startedAt = row.startedAt instanceof Date ? row.startedAt.getTime() : 0;
+      const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.getTime() : 0;
+      const recency = Math.max(startedAt, updatedAt, Number(row.tableId ?? 0));
+      if (!agg.primaryTournamentName || recency >= agg.primaryTournamentAt) {
+        agg.primaryTournamentName = row.tournamentName.trim();
+        agg.primaryTournamentAt = recency;
+      }
       agg.tournamentNames.add(row.tournamentName.trim().toLowerCase());
     }
     if (typeof row.finalPosition === "number" && row.finalPosition > 0) {
@@ -907,6 +952,8 @@ export async function getUserSessions(
 
     return {
       ...s,
+      tournamentName: agg?.primaryTournamentName ?? s.tournamentName ?? null,
+      finalPosition: agg?.bestFinalPosition ?? s.finalPosition ?? null,
       tableCount: agg?.tableCount ?? 0,
       totalTableBuyIn: totalBuyIn,
       totalTableCashOut: totalCashOut,
@@ -1491,6 +1538,7 @@ export async function getConversationList(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return runWithMessagesTableRetry(db, async () => {
+    const onlineWindowMinutes = 2;
     // Get all messages involving this user, ordered newest first
     const allMessages = await db
       .select()
@@ -1520,12 +1568,20 @@ export async function getConversationList(userId: number) {
     if (friendIds.length === 0) return [];
 
     const friendUsers = await db
-      .select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl, inviteCode: users.inviteCode })
+      .select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl, inviteCode: users.inviteCode, lastSignedIn: users.lastSignedIn })
       .from(users)
       .where(inArray(users.id, friendIds));
 
     return friendUsers.map((friend) => ({
-      friend,
+      friend: {
+        id: friend.id,
+        name: friend.name,
+        avatarUrl: friend.avatarUrl,
+        inviteCode: friend.inviteCode,
+      },
+      isOnline: friend.lastSignedIn
+        ? (Date.now() - new Date(friend.lastSignedIn).getTime()) <= onlineWindowMinutes * 60 * 1000
+        : false,
       lastMessage: seen.get(friend.id)!,
       unreadCount: unreadByFriend.get(friend.id) ?? 0,
     })).sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime());
@@ -1601,6 +1657,61 @@ export async function upsertBankrollSettings(userId: number, initialOnline: numb
   
   return settings;
 }
+
+  export type GtoMatrixPreferencesInput = {
+    barOrientation: "diagonal" | "horizontal" | "vertical";
+    barPosition: "normal" | "reverse";
+    raiseColor: string;
+    callColor: string;
+    foldColor: string;
+    allinColor: string;
+  };
+
+  export async function getGtoMatrixPreferences(userId: number): Promise<GtoMatrixPreferences | null> {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const [prefs] = await db.select().from(gtoMatrixPreferences)
+      .where(eq(gtoMatrixPreferences.userId, userId));
+
+    return prefs || null;
+  }
+
+  export async function upsertGtoMatrixPreferences(
+    userId: number,
+    input: GtoMatrixPreferencesInput,
+  ): Promise<GtoMatrixPreferences> {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    await db.insert(gtoMatrixPreferences)
+      .values({
+        userId,
+        barOrientation: input.barOrientation,
+        barPosition: input.barPosition,
+        raiseColor: input.raiseColor,
+        callColor: input.callColor,
+        foldColor: input.foldColor,
+        allinColor: input.allinColor,
+      })
+      .onDuplicateKeyUpdate({
+        set: {
+          barOrientation: input.barOrientation,
+          barPosition: input.barPosition,
+          raiseColor: input.raiseColor,
+          callColor: input.callColor,
+          foldColor: input.foldColor,
+          allinColor: input.allinColor,
+          updatedAt: new Date(),
+        },
+      });
+
+    const [prefs] = await db.select().from(gtoMatrixPreferences)
+      .where(eq(gtoMatrixPreferences.userId, userId));
+
+    if (!prefs) throw new Error("Failed to persist matrix preferences");
+    return prefs;
+  }
 
 // Get statistics grouped by game format
 export async function getStatsByGameFormat(userId: number) {
@@ -2059,6 +2170,7 @@ export async function getStatsByVenue(userId: number) {
     .select({
       id: sessionTables.id,
       sessionId: sessionTables.sessionId,
+      activeSessionId: sessionTables.activeSessionId,
       venueId: sessionTables.venueId,
       currency: sessionTables.currency,
       buyIn: sessionTables.buyIn,
@@ -2067,14 +2179,36 @@ export async function getStatsByVenue(userId: number) {
       endedAt: sessionTables.endedAt,
     })
     .from(sessionTables)
-    .innerJoin(
-      sessions,
+    .where(
       and(
-        eq(sessionTables.sessionId, sessions.id),
-        eq(sessions.userId, userId),
+        eq(sessionTables.userId, userId),
+        sql`${sessionTables.venueId} IS NOT NULL`,
+        sql`(${sessionTables.sessionId} IS NOT NULL OR ${sessionTables.activeSessionId} IS NOT NULL)`
       )
-    )
-    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.venueId} IS NOT NULL`));
+    );
+
+  // Legacy sessions (without session_tables) still need to count for venue performance.
+  const legacyRows = await db
+    .select({
+      id: sessions.id,
+      venueId: sessions.venueId,
+      currency: sessions.currency,
+      buyIn: sessions.buyIn,
+      cashOut: sessions.cashOut,
+      startedAt: sessions.sessionDate,
+      durationMinutes: sessions.durationMinutes,
+    })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        sql`${sessions.venueId} IS NOT NULL`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${sessionTables} st
+          WHERE st.sessionId = ${sessions.id} AND st.userId = ${userId}
+        )`
+      )
+    );
 
   const rates = await getAllRates().catch(() => null);
   const toBrl = (amount: number, currency: string): number => {
@@ -2101,10 +2235,14 @@ export async function getStatsByVenue(userId: number) {
     avgHourlyRate: number;
   }> = {};
 
-  const sessionsByVenue = new Map<number, Set<number>>();
+  const sessionsByVenue = new Map<number, Set<string>>();
   for (const t of tables) {
-    if (!t.venueId) continue;
-    const venueId = Number(t.venueId);
+    const canonical = getCanonicalPlatformForTableOrSession({
+      tableVenueId: t.venueId,
+      tableUpdatedAt: t.endedAt ?? t.startedAt,
+    });
+    if (!canonical.venueId) continue;
+    const venueId = canonical.venueId;
     const venue = venueMap.get(venueId);
     if (!venue) continue;
 
@@ -2140,8 +2278,52 @@ export async function getStatsByVenue(userId: number) {
     venueStats[venueId].totalDuration += durationMin;
     if (cashOutBrl > 0) venueStats[venueId].winningTables += 1;
 
+    if (!sessionsByVenue.has(venueId)) sessionsByVenue.set(venueId, new Set<string>());
+    if (t.sessionId) sessionsByVenue.get(venueId)!.add(`s:${Number(t.sessionId)}`);
+    if (t.activeSessionId) sessionsByVenue.get(venueId)!.add(`a:${Number(t.activeSessionId)}`);
+  }
+
+  for (const s of legacyRows) {
+    const canonical = getCanonicalPlatformForTableOrSession({
+      sessionVenueId: s.venueId,
+      sessionUpdatedAt: s.startedAt,
+    });
+    if (!canonical.venueId) continue;
+    const venueId = canonical.venueId;
+    const venue = venueMap.get(venueId);
+    if (!venue) continue;
+
+    if (!venueStats[venueId]) {
+      venueStats[venueId] = {
+        venueId: venue.id,
+        venueName: venue.name,
+        venueType: venue.type,
+        logoUrl: venue.logoUrl,
+        sessions: 0,
+        tables: 0,
+        totalBuyIn: 0,
+        totalCashOut: 0,
+        totalProfit: 0,
+        winningTables: 0,
+        winRate: 0,
+        totalDuration: 0,
+        avgHourlyRate: 0,
+      };
+    }
+
+    const buyInBrl = toBrl(s.buyIn ?? 0, s.currency);
+    const cashOutBrl = toBrl(s.cashOut ?? 0, s.currency);
+    const profit = cashOutBrl - buyInBrl;
+
+    venueStats[venueId].tables += 1;
+    venueStats[venueId].totalBuyIn += buyInBrl;
+    venueStats[venueId].totalCashOut += cashOutBrl;
+    venueStats[venueId].totalProfit += profit;
+    venueStats[venueId].totalDuration += Math.max(1, Number(s.durationMinutes ?? 0));
+    if (cashOutBrl > 0) venueStats[venueId].winningTables += 1;
+
     if (!sessionsByVenue.has(venueId)) sessionsByVenue.set(venueId, new Set<number>());
-    if (t.sessionId) sessionsByVenue.get(venueId)!.add(Number(t.sessionId));
+    sessionsByVenue.get(venueId)!.add(Number(s.id));
   }
 
   // Calculate rates
@@ -2333,6 +2515,172 @@ export async function deleteOrphanTablesForUser(userId: number): Promise<number>
   return (result as any)?.affectedRows ?? 0;
 }
 
+export async function resetUserAccountData(userId: number): Promise<{
+  userId: number;
+  deleted: Record<string, number>;
+  userUpdated: boolean;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.transaction(async (tx) => {
+    const deleted: Record<string, number> = {};
+
+    const executeDelete = async (key: string, statement: any) => {
+      const [result] = await tx.execute(statement) as any;
+      deleted[key] = Number((result as any)?.affectedRows ?? 0);
+    };
+
+    await executeDelete(
+      "postReactionsByAuthoredPosts",
+      sql`DELETE pr
+          FROM post_reactions pr
+          INNER JOIN posts p ON p.id = pr.postId
+          WHERE p.userId = ${userId}`,
+    );
+    await executeDelete(
+      "postCommentsByAuthoredPosts",
+      sql`DELETE pc
+          FROM post_comments pc
+          INNER JOIN posts p ON p.id = pc.postId
+          WHERE p.userId = ${userId}`,
+    );
+    await executeDelete(
+      "postLikesByAuthoredPosts",
+      sql`DELETE pl
+          FROM post_likes pl
+          INNER JOIN posts p ON p.id = pl.postId
+          WHERE p.userId = ${userId}`,
+    );
+
+    await executeDelete("postLikesByUser", sql`DELETE FROM post_likes WHERE userId = ${userId}`);
+    await executeDelete("postCommentsByUser", sql`DELETE FROM post_comments WHERE userId = ${userId}`);
+    await executeDelete("postReactionsByUser", sql`DELETE FROM post_reactions WHERE userId = ${userId}`);
+    await executeDelete("posts", sql`DELETE FROM posts WHERE userId = ${userId}`);
+
+    await executeDelete("messageReactionsByUser", sql`DELETE FROM message_reactions WHERE userId = ${userId}`);
+    await executeDelete(
+      "messageReactionsByMessages",
+      sql`DELETE mr
+          FROM message_reactions mr
+          INNER JOIN messages m ON m.id = mr.messageId
+          WHERE m.senderId = ${userId} OR m.receiverId = ${userId}`,
+    );
+    await executeDelete("messages", sql`DELETE FROM messages WHERE senderId = ${userId} OR receiverId = ${userId}`);
+
+    await executeDelete("friendRequests", sql`DELETE FROM friend_requests WHERE requesterId = ${userId} OR receiverId = ${userId}`);
+    await executeDelete("friendships", sql`DELETE FROM friendships WHERE userId = ${userId} OR friendId = ${userId}`);
+    await executeDelete("userBlocks", sql`DELETE FROM user_blocks WHERE userId = ${userId} OR blockedUserId = ${userId}`);
+
+    await executeDelete("invitesByInviter", sql`DELETE FROM invites WHERE inviterId = ${userId}`);
+    await executeDelete("invitesByInvitee", sql`DELETE FROM invites WHERE inviteeId = ${userId}`);
+
+    await executeDelete("sessionTables", sql`DELETE FROM session_tables WHERE userId = ${userId}`);
+    await executeDelete("activeSessions", sql`DELETE FROM active_sessions WHERE userId = ${userId}`);
+    await executeDelete("venueBalanceHistory", sql`DELETE FROM venue_balance_history WHERE userId = ${userId}`);
+    await executeDelete("sessions", sql`DELETE FROM sessions WHERE userId = ${userId}`);
+
+    await executeDelete("fundTransactions", sql`DELETE FROM fund_transactions WHERE userId = ${userId}`);
+    await executeDelete("bankrollSettings", sql`DELETE FROM bankroll_settings WHERE userId = ${userId}`);
+    await executeDelete("handPatternCounters", sql`DELETE FROM hand_pattern_counters WHERE userId = ${userId}`);
+    await executeDelete("clubs", sql`DELETE FROM clubs WHERE userId = ${userId}`);
+    await executeDelete("venues", sql`DELETE FROM venues WHERE userId = ${userId}`);
+
+    await executeDelete("centralHandActions", sql`DELETE FROM central_hand_actions WHERE userId = ${userId}`);
+    await executeDelete("showdownRecords", sql`DELETE FROM showdown_records WHERE userId = ${userId}`);
+    await executeDelete("centralHands", sql`DELETE FROM central_hands WHERE userId = ${userId}`);
+    await executeDelete("playerTournamentStats", sql`DELETE FROM player_tournament_stats WHERE userId = ${userId}`);
+    await executeDelete("playerPositionStats", sql`DELETE FROM player_position_stats WHERE userId = ${userId}`);
+    await executeDelete("playerStatsByAbi", sql`DELETE FROM player_stats_by_abi WHERE userId = ${userId}`);
+    await executeDelete("playerStatsByPositionAndAbi", sql`DELETE FROM player_stats_by_position_and_abi WHERE userId = ${userId}`);
+    await executeDelete("playerAggregateStats", sql`DELETE FROM player_aggregate_stats WHERE userId = ${userId}`);
+    await executeDelete("playerLeakFlags", sql`DELETE FROM player_leak_flags WHERE userId = ${userId}`);
+    await executeDelete("playerAbiStatsCache", sql`DELETE FROM player_abi_stats_cache WHERE userId = ${userId}`);
+    await executeDelete("centralTournaments", sql`DELETE FROM central_tournaments WHERE userId = ${userId}`);
+
+    await executeDelete(
+      "dataAccessAuditLogs",
+      sql`DELETE FROM data_access_audit_logs WHERE actorUserId = ${userId} OR targetUserId = ${userId}`,
+    );
+
+    const [updateResult] = await tx.execute(
+      sql`UPDATE users
+          SET
+            preferredPlayType = NULL,
+            preferredPlatforms = NULL,
+            preferredFormats = NULL,
+            preferredBuyIns = NULL,
+            preferredBuyInsOnline = NULL,
+            preferredBuyInsLive = NULL,
+            playsMultiPlatform = 0,
+            showInGlobalRanking = 0,
+            showInFriendsRanking = 0,
+            country = NULL,
+            stateRegion = NULL,
+            city = NULL,
+            addressLine = NULL,
+            postalCode = NULL,
+            taxDocument = NULL,
+            locationLatE6 = NULL,
+            locationLngE6 = NULL,
+            locationConsentAt = NULL,
+            rankingConsentAnsweredAt = NULL,
+            playStyleAnsweredAt = NULL,
+            onboardingCompletedAt = NULL,
+            updatedAt = NOW()
+          WHERE id = ${userId}`,
+    ) as any;
+
+    return {
+      userId,
+      deleted,
+      userUpdated: Number((updateResult as any)?.affectedRows ?? 0) > 0,
+    };
+  });
+}
+
+export async function deleteUserAccountCompletely(userId: number): Promise<{
+  userId: number;
+  deleted: Record<string, number>;
+  userDeleted: boolean;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [targetRows] = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!targetRows) {
+    throw new Error("USER_NOT_FOUND");
+  }
+
+  const summary = await resetUserAccountData(userId);
+  const deleted = { ...summary.deleted };
+
+  const normalizedEmail = String(targetRows.email ?? "").trim().toLowerCase();
+  if (normalizedEmail) {
+    const [inviteByEmailResult] = await db.execute(
+      sql`DELETE FROM invites WHERE LOWER(COALESCE(inviteeEmail, '')) = ${normalizedEmail}`,
+    ) as any;
+    deleted.invitesByInviteeEmail = Number((inviteByEmailResult as any)?.affectedRows ?? 0);
+  } else {
+    deleted.invitesByInviteeEmail = 0;
+  }
+
+  const [deleteUserResult] = await db.execute(
+    sql`DELETE FROM users WHERE id = ${userId}`,
+  ) as any;
+
+  return {
+    userId,
+    deleted,
+    userDeleted: Number((deleteUserResult as any)?.affectedRows ?? 0) > 0,
+  };
+}
+
 // ============== INVITE QUERIES ==============
 
 import { invites, Invite, InsertInvite } from "../drizzle/schema";
@@ -2514,6 +2862,14 @@ export type UserOnboardingProfileInput = {
   playsMultiPlatform?: boolean;
   showInGlobalRanking?: boolean;
   showInFriendsRanking?: boolean;
+  country?: string;
+  stateRegion?: string;
+  city?: string;
+  addressLine?: string;
+  postalCode?: string;
+  taxDocument?: string;
+  locationLatE6?: number | null;
+  locationLngE6?: number | null;
 };
 
 export async function updateUserOnboardingProfile(
@@ -2522,13 +2878,19 @@ export async function updateUserOnboardingProfile(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const cpfOptionalEmails = new Set(["gu.antunez@gmail.com"]);
 
   const [current] = await db
     .select({
+      email: users.email,
       showInGlobalRanking: users.showInGlobalRanking,
       showInFriendsRanking: users.showInFriendsRanking,
       rankingConsentAnsweredAt: users.rankingConsentAnsweredAt,
       playsMultiPlatform: users.playsMultiPlatform,
+      country: users.country,
+      city: users.city,
+      taxDocument: users.taxDocument,
+      locationConsentAt: users.locationConsentAt,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -2547,6 +2909,39 @@ export async function updateUserOnboardingProfile(
 
   const fallbackOnline = input.preferredPlayType === "online" ? preferredBuyIns : [];
   const fallbackLive = input.preferredPlayType === "live" ? preferredBuyIns : [];
+  const country = String(input.country ?? "").trim().slice(0, 120);
+  const stateRegion = String(input.stateRegion ?? "").trim().slice(0, 120);
+  const city = String(input.city ?? "").trim().slice(0, 120);
+  const addressLine = String(input.addressLine ?? "").trim().slice(0, 300);
+  const postalCode = String(input.postalCode ?? "").trim().slice(0, 20);
+  const incomingTaxDocument = input.taxDocument === undefined
+    ? String(current?.taxDocument ?? "").trim()
+    : String(input.taxDocument ?? "").trim();
+  let normalizedTaxDocument: string | null = null;
+  if (incomingTaxDocument) {
+    const candidate = normalizeCpf(incomingTaxDocument);
+    if (!isValidCpf(candidate)) {
+      throw new Error("CPF_INVALID");
+    }
+
+    const existingCpfRows = await db
+      .select({ id: users.id, taxDocument: users.taxDocument })
+      .from(users)
+      .where(and(ne(users.id, userId), sql`${users.taxDocument} is not null`));
+
+    const cpfTaken = existingCpfRows.some((row) => normalizeCpf(String(row.taxDocument || "")) === candidate);
+    if (cpfTaken) {
+      throw new Error("CPF_ALREADY_EXISTS");
+    }
+
+    normalizedTaxDocument = candidate;
+  }
+  const normalizedEmail = String(current?.email ?? "").trim().toLowerCase();
+  const canSkipTaxDocumentRequirement = cpfOptionalEmails.has(normalizedEmail);
+  if (!normalizedTaxDocument && !canSkipTaxDocumentRequirement) {
+    throw new Error("CPF_REQUIRED");
+  }
+  const hasLocationPayload = Boolean(country && city);
 
   await db
     .update(users)
@@ -2562,11 +2957,23 @@ export async function updateUserOnboardingProfile(
         : (input.playsMultiPlatform ? 1 : 0),
       showInGlobalRanking: showInGlobalRanking ? 1 : 0,
       showInFriendsRanking: showInFriendsRanking ? 1 : 0,
+      country: country || null,
+      stateRegion: stateRegion || null,
+      city: city || null,
+      addressLine: addressLine || null,
+      postalCode: postalCode || null,
+      taxDocument: normalizedTaxDocument,
+      locationLatE6: input.locationLatE6 ?? null,
+      locationLngE6: input.locationLngE6 ?? null,
+      locationConsentAt: hasLocationPayload
+        ? new Date()
+        : (current?.locationConsentAt ?? null),
       rankingConsentAnsweredAt: rankingConsentTouched
         ? new Date()
         : (current?.rankingConsentAnsweredAt ?? null),
       playStyleAnsweredAt: new Date(),
       onboardingCompletedAt: new Date(),
+      onboardingReviewedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(users.id, userId));
@@ -2595,9 +3002,19 @@ export async function getUserOnboardingProfile(userId: number) {
       playsMultiPlatform: users.playsMultiPlatform,
       showInGlobalRanking: users.showInGlobalRanking,
       showInFriendsRanking: users.showInFriendsRanking,
+      country: users.country,
+      stateRegion: users.stateRegion,
+      city: users.city,
+      addressLine: users.addressLine,
+      postalCode: users.postalCode,
+      taxDocument: users.taxDocument,
+      locationLatE6: users.locationLatE6,
+      locationLngE6: users.locationLngE6,
+      locationConsentAt: users.locationConsentAt,
       rankingConsentAnsweredAt: users.rankingConsentAnsweredAt,
       playStyleAnsweredAt: users.playStyleAnsweredAt,
       onboardingCompletedAt: users.onboardingCompletedAt,
+      onboardingReviewedAt: users.onboardingReviewedAt,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -2621,9 +3038,19 @@ export async function getUserOnboardingProfile(userId: number) {
     playsMultiPlatform: user.playsMultiPlatform === 1,
     showInGlobalRanking: user.showInGlobalRanking === 1,
     showInFriendsRanking: user.showInFriendsRanking === 1,
+    country: user.country ?? "",
+    stateRegion: user.stateRegion ?? "",
+    city: user.city ?? "",
+    addressLine: user.addressLine ?? "",
+    postalCode: user.postalCode ?? "",
+    taxDocument: user.taxDocument ?? "",
+    locationLatE6: user.locationLatE6 ?? null,
+    locationLngE6: user.locationLngE6 ?? null,
+    locationConsentAt: user.locationConsentAt,
     rankingConsentAnsweredAt: user.rankingConsentAnsweredAt,
     playStyleAnsweredAt: user.playStyleAnsweredAt,
     onboardingCompletedAt: user.onboardingCompletedAt,
+    onboardingReviewedAt: user.onboardingReviewedAt,
   };
 }
 
@@ -3398,6 +3825,40 @@ export async function deletePost(postId: number, userId: number): Promise<boolea
   return (result as any).affectedRows > 0;
 }
 
+export async function updatePost(postId: number, userId: number, content: string): Promise<Post | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [current] = await db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.id, postId), eq(posts.userId, userId)))
+    .limit(1);
+
+  if (!current) return null;
+
+  const trimmedContent = content.trim();
+  if (!trimmedContent && !current.imageUrl) {
+    throw new Error("Informe um texto para o post.");
+  }
+
+  await db
+    .update(posts)
+    .set({
+      content: trimmedContent,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(posts.id, postId), eq(posts.userId, userId)));
+
+  const [updated] = await db
+    .select()
+    .from(posts)
+    .where(eq(posts.id, postId))
+    .limit(1);
+
+  return updated ?? null;
+}
+
 export async function toggleLike(postId: number, userId: number): Promise<{ liked: boolean }> {
   const db = await getDb();
   if (!db) return { liked: false };
@@ -3745,10 +4206,12 @@ export async function getUserPreferences(userId: number) {
     .filter((id): id is number => typeof id === "number");
 
   // Use individual played tables as source of truth for preferences.
-  const recentTables = await db
+  const tableRows = await db
     .select({
       sessionId: sessionTables.sessionId,
+      activeSessionId: sessionTables.activeSessionId,
       startedAt: sessionTables.startedAt,
+      updatedAt: sessionTables.updatedAt,
       type: sessionTables.type,
       gameFormat: sessionTables.gameFormat,
       buyIn: sessionTables.buyIn,
@@ -3758,9 +4221,53 @@ export async function getUserPreferences(userId: number) {
       currency: sessionTables.currency,
     })
     .from(sessionTables)
-    .where(and(eq(sessionTables.userId, userId), sql`${sessionTables.sessionId} IS NOT NULL`))
-    .orderBy(desc(sessionTables.startedAt))
+    .where(
+      and(
+        eq(sessionTables.userId, userId),
+        sql`(${sessionTables.sessionId} IS NOT NULL OR ${sessionTables.activeSessionId} IS NOT NULL)`
+      )
+    )
+    .orderBy(desc(sessionTables.updatedAt), desc(sessionTables.startedAt), desc(sessionTables.id))
     .limit(200);
+
+  // Include legacy sessions without tables so platform edits there influence priorities.
+  const legacyRows = await db
+    .select({
+      sessionId: sessions.id,
+      startedAt: sessions.sessionDate,
+      updatedAt: sessions.updatedAt,
+      type: sessions.type,
+      gameFormat: sessions.gameFormat,
+      buyIn: sessions.buyIn,
+      venueId: sessions.venueId,
+      gameType: sessions.gameType,
+      initialBuyIn: sessions.originalBuyIn,
+      currency: sessions.currency,
+    })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${sessionTables} st
+          WHERE st.sessionId = ${sessions.id} AND st.userId = ${userId}
+        )`
+      )
+    )
+    .orderBy(desc(sessions.updatedAt), desc(sessions.sessionDate), desc(sessions.id))
+    .limit(200);
+
+  const recentTables = [...tableRows, ...legacyRows]
+    .sort((a, b) => {
+      const aUpdated = a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0;
+      const bUpdated = b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0;
+      if (bUpdated !== aUpdated) return bUpdated - aUpdated;
+
+      const aStarted = a.startedAt instanceof Date ? a.startedAt.getTime() : 0;
+      const bStarted = b.startedAt instanceof Date ? b.startedAt.getTime() : 0;
+      return bStarted - aStarted;
+    })
+    .slice(0, 200);
 
   // ABI baselines from the last up to 100 tables per type.
   const onlineAbiTables = recentTables.filter((t) => t.type === "online").slice(0, 100);
@@ -3852,65 +4359,36 @@ export async function getUserPreferences(userId: number) {
   const gameTypeCount: Record<string, number> = {};
   const currencyCount: Record<string, number> = {};
 
-  for (const s of recentTables) {
+  for (const [index, s] of recentTables.entries()) {
+    // Latest edits must override stale onboarding/default behavior.
+    const recencyWeight = Math.max(1, recentTables.length - index);
+
     // Session type (online/live)
-    typeCount[s.type] = (typeCount[s.type] || 0) + 1;
+    typeCount[s.type] = (typeCount[s.type] || 0) + recencyWeight;
     // Game format
-    if (s.gameFormat) gameFormatCount[s.gameFormat] = (gameFormatCount[s.gameFormat] || 0) + 1;
+    if (s.gameFormat) gameFormatCount[s.gameFormat] = (gameFormatCount[s.gameFormat] || 0) + recencyWeight;
     // Venue
-    if (s.venueId) venueCount[s.venueId] = (venueCount[s.venueId] || 0) + 1;
+    const canonicalPlatform = getCanonicalPlatformForTableOrSession({ tableVenueId: s.venueId });
+    if (canonicalPlatform.venueId) {
+      venueCount[canonicalPlatform.venueId] = (venueCount[canonicalPlatform.venueId] || 0) + recencyWeight;
+    }
     // Buy-in (keep exact cents so recurrent stakes like $0.50 stay precise)
     if (s.buyIn > 0) {
-      buyInCount[s.buyIn] = (buyInCount[s.buyIn] || 0) + 1;
+      buyInCount[s.buyIn] = (buyInCount[s.buyIn] || 0) + recencyWeight;
       if (s.type === "online") {
-        buyInCountOnline[s.buyIn] = (buyInCountOnline[s.buyIn] || 0) + 1;
+        buyInCountOnline[s.buyIn] = (buyInCountOnline[s.buyIn] || 0) + recencyWeight;
       }
       if (s.type === "live") {
-        buyInCountLive[s.buyIn] = (buyInCountLive[s.buyIn] || 0) + 1;
+        buyInCountLive[s.buyIn] = (buyInCountLive[s.buyIn] || 0) + recencyWeight;
       }
     }
     // Game type (NL Hold'em, PLO, etc.)
-    if (s.gameType) gameTypeCount[s.gameType] = (gameTypeCount[s.gameType] || 0) + 1;
+    if (s.gameType) gameTypeCount[s.gameType] = (gameTypeCount[s.gameType] || 0) + recencyWeight;
     // Currency
-    if (s.currency) currencyCount[s.currency] = (currencyCount[s.currency] || 0) + 1;
+    if (s.currency) currencyCount[s.currency] = (currencyCount[s.currency] || 0) + recencyWeight;
   }
 
-  // Bootstrap early intelligence with onboarding answer when history is still small.
-  if (onboardingType) {
-    typeCount[onboardingType] = (typeCount[onboardingType] || 0) + 3;
-  }
-  for (const format of onboardingFormats) {
-    if (SUPPORTED_GAME_FORMATS.has(format)) {
-      gameFormatCount[format] = (gameFormatCount[format] || 0) + 3;
-    }
-  }
-  for (const venueId of onboardingVenueIds) {
-    venueCount[venueId] = (venueCount[venueId] || 0) + 3;
-  }
-  const boostedBuyIns = [
-    ...onboardingBuyIns,
-    ...onboardingBuyInsOnline,
-    ...onboardingBuyInsLive,
-  ];
-  for (const buyIn of boostedBuyIns) {
-    buyInCount[buyIn] = (buyInCount[buyIn] || 0) + 2;
-  }
-  for (const buyIn of onboardingBuyInsOnline) {
-    buyInCountOnline[buyIn] = (buyInCountOnline[buyIn] || 0) + 2;
-  }
-  for (const buyIn of onboardingBuyInsLive) {
-    buyInCountLive[buyIn] = (buyInCountLive[buyIn] || 0) + 2;
-  }
-  if (onboardingType === "online") {
-    for (const buyIn of onboardingBuyIns) {
-      buyInCountOnline[buyIn] = (buyInCountOnline[buyIn] || 0) + 1;
-    }
-  }
-  if (onboardingType === "live") {
-    for (const buyIn of onboardingBuyIns) {
-      buyInCountLive[buyIn] = (buyInCountLive[buyIn] || 0) + 1;
-    }
-  }
+  // Onboarding defaults should only seed empty history; once tables exist, edited reality wins.
 
   // Sort by frequency descending
   const typeRanking = buildRanking(typeCount, (key) => key, (a, b) => String(a).localeCompare(String(b)));
@@ -3947,13 +4425,14 @@ export async function getUserPreferences(userId: number) {
     currency: string | null;
   }> = [];
   for (const s of recentTables) {
-    const key = `${s.type}|${s.gameFormat}|${s.venueId}|${s.buyIn}`;
+    const canonicalPlatform = getCanonicalPlatformForTableOrSession({ tableVenueId: s.venueId });
+    const key = `${s.type}|${s.gameFormat}|${canonicalPlatform.venueId}|${s.buyIn}`;
     if (!seen.has(key)) {
       seen.add(key);
       recentCombos.push({
         type: s.type,
         gameFormat: s.gameFormat,
-        venueId: s.venueId ?? null,
+        venueId: canonicalPlatform.venueId,
         buyIn: s.buyIn,
         gameType: s.gameType ?? null,
         currency: s.currency ?? null,
@@ -3962,9 +4441,10 @@ export async function getUserPreferences(userId: number) {
     }
   }
 
-  const uniqueSessionIds = new Set<number>();
+  const uniqueSessionIds = new Set<string>();
   for (const t of recentTables) {
-    if (t.sessionId) uniqueSessionIds.add(Number(t.sessionId));
+    if (t.sessionId) uniqueSessionIds.add(`s:${Number(t.sessionId)}`);
+    else if (t.activeSessionId) uniqueSessionIds.add(`a:${Number(t.activeSessionId)}`);
   }
 
   return {
@@ -4081,6 +4561,11 @@ export async function updateSessionTable(
   }
   await db.update(sessionTables).set(updatePayload).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
   const [row] = await db.select().from(sessionTables).where(eq(sessionTables.id, id)).limit(1);
+
+  if (row?.sessionId) {
+    await syncFinalizedSessionSnapshotFromTables(Number(row.sessionId), userId);
+  }
+
   return row ?? null;
 }
 
@@ -4088,7 +4573,19 @@ export async function updateSessionTable(
 export async function removeSessionTable(id: number, userId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
+
+  const [current] = await db
+    .select({ sessionId: sessionTables.sessionId })
+    .from(sessionTables)
+    .where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)))
+    .limit(1);
+
   await db.delete(sessionTables).where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)));
+
+  if (current?.sessionId) {
+    await syncFinalizedSessionSnapshotFromTables(Number(current.sessionId), userId);
+  }
+
   return true;
 }
 
@@ -4103,6 +4600,54 @@ export async function getActiveSessionTables(activeSessionId: number, userId: nu
     .orderBy(sessionTables.createdAt);
 }
 
+/**
+ * Force-overwrite ALL session_tables linked to a given session with the provided mapping fields.
+ * This is a single bulk UPDATE (no per-row sync, no "dominant" reconciliation) so the values are
+ * guaranteed to match what the user just edited. Used by sessions.update to make the edit the
+ * absolute source of truth, eliminating any chance of legacy/old values surviving.
+ */
+export async function forceOverwriteSessionMapping(
+  sessionId: number,
+  userId: number,
+  mapping: {
+    venueId?: number | null;
+    type?: "online" | "live";
+    gameFormat?: string;
+    currency?: string;
+    tournamentName?: string | null;
+  }
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const payload: any = { updatedAt: new Date() };
+  if (mapping.venueId !== undefined) payload.venueId = mapping.venueId;
+  if (mapping.type !== undefined) payload.type = mapping.type;
+  if (mapping.gameFormat !== undefined) payload.gameFormat = mapping.gameFormat;
+  if (mapping.currency !== undefined) payload.currency = mapping.currency;
+  if (mapping.tournamentName !== undefined) payload.tournamentName = mapping.tournamentName;
+
+  if (Object.keys(payload).length === 1) return 0; // only updatedAt, nothing to change
+
+  const result = await db
+    .update(sessionTables)
+    .set(payload)
+    .where(and(eq(sessionTables.sessionId, sessionId), eq(sessionTables.userId, userId)));
+
+  return (result?.[0] as any)?.affectedRows ?? 0;
+}
+
+/**
+ * Hard-delete the bankroll_history_cache rows for a user. Forces the cache layer to recompute
+ * from scratch on the next read — eliminates any chance of stale snapshots showing old platform.
+ */
+export async function wipeBankrollHistoryCache(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { bankrollHistoryCache } = await import("../drizzle/schema");
+  await db.delete(bankrollHistoryCache).where(eq(bankrollHistoryCache.userId, userId));
+}
+
 /** Get all tables for a finalized session. */
 export async function getSessionTables(sessionId: number, userId: number): Promise<SessionTable[]> {
   const db = await getDb();
@@ -4112,6 +4657,124 @@ export async function getSessionTables(sessionId: number, userId: number): Promi
     .from(sessionTables)
     .where(and(eq(sessionTables.sessionId, sessionId), eq(sessionTables.userId, userId)))
     .orderBy(sessionTables.createdAt);
+}
+
+/** Get a single table by id for the current user. */
+export async function getSessionTableById(id: number, userId: number): Promise<SessionTable | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select()
+    .from(sessionTables)
+    .where(and(eq(sessionTables.id, id), eq(sessionTables.userId, userId)))
+    .limit(1);
+  return row ?? null;
+}
+
+async function syncFinalizedSessionSnapshotFromTables(sessionId: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const rows = await db
+    .select({
+      tableId: sessionTables.id,
+      type: sessionTables.type,
+      gameFormat: sessionTables.gameFormat,
+      venueId: sessionTables.venueId,
+      tournamentName: sessionTables.tournamentName,
+      finalPosition: sessionTables.finalPosition,
+      fieldSize: sessionTables.fieldSize,
+      startedAt: sessionTables.startedAt,
+      updatedAt: sessionTables.updatedAt,
+    })
+    .from(sessionTables)
+    .where(and(eq(sessionTables.sessionId, sessionId), eq(sessionTables.userId, userId)));
+
+  if (rows.length === 0) return;
+
+  const typeCount = new Map<string, { count: number; recency: number }>();
+  const formatCount = new Map<string, { count: number; recency: number }>();
+  const venueCount = new Map<number, { count: number; recency: number }>();
+  const tournamentCount = new Map<string, { label: string; count: number; recency: number }>();
+  let bestFinalPosition: number | null = null;
+  let maxFieldSize: number | null = null;
+
+  for (const row of rows) {
+    const startedAt = row.startedAt instanceof Date ? row.startedAt.getTime() : 0;
+    const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.getTime() : 0;
+    const recency = Math.max(startedAt, updatedAt, Number(row.tableId ?? 0));
+
+    const typeEntry = typeCount.get(row.type) ?? { count: 0, recency: 0 };
+    typeEntry.count += 1;
+    typeEntry.recency = Math.max(typeEntry.recency, recency);
+    typeCount.set(row.type, typeEntry);
+
+    const formatEntry = formatCount.get(row.gameFormat) ?? { count: 0, recency: 0 };
+    formatEntry.count += 1;
+    formatEntry.recency = Math.max(formatEntry.recency, recency);
+    formatCount.set(row.gameFormat, formatEntry);
+
+    if (typeof row.venueId === "number") {
+      const venueEntry = venueCount.get(row.venueId) ?? { count: 0, recency: 0 };
+      venueEntry.count += 1;
+      venueEntry.recency = Math.max(venueEntry.recency, recency);
+      venueCount.set(row.venueId, venueEntry);
+    }
+
+    const tournament = String(row.tournamentName ?? "").trim();
+    if (tournament) {
+      const key = tournament.toLowerCase();
+      const current = tournamentCount.get(key);
+      if (current) {
+        current.count += 1;
+        current.recency = Math.max(current.recency, recency);
+      } else {
+        tournamentCount.set(key, { label: tournament, count: 1, recency });
+      }
+    }
+
+    if (typeof row.finalPosition === "number" && row.finalPosition > 0) {
+      bestFinalPosition = bestFinalPosition === null ? row.finalPosition : Math.min(bestFinalPosition, row.finalPosition);
+    }
+
+    if (typeof row.fieldSize === "number" && row.fieldSize > 0) {
+      maxFieldSize = maxFieldSize === null ? row.fieldSize : Math.max(maxFieldSize, row.fieldSize);
+    }
+  }
+
+  const dominantType = Array.from(typeCount.entries())
+    .sort((a, b) => (b[1].count - a[1].count) || (b[1].recency - a[1].recency))[0]?.[0];
+  const dominantFormat = Array.from(formatCount.entries())
+    .sort((a, b) => (b[1].count - a[1].count) || (b[1].recency - a[1].recency))[0]?.[0];
+  const dominantVenueId = Array.from(venueCount.entries())
+    .sort((a, b) => (b[1].count - a[1].count) || (b[1].recency - a[1].recency))[0]?.[0];
+  const dominantTournament = Array.from(tournamentCount.values())
+    .sort((a, b) => (b.count - a.count) || (b.recency - a.recency))[0]?.label;
+
+  const updatePayload: Partial<InsertSession> = {};
+  if (dominantType === "online" || dominantType === "live") {
+    updatePayload.type = dominantType;
+  }
+  if (dominantFormat) {
+    updatePayload.gameFormat = dominantFormat as any;
+  }
+  if (dominantVenueId !== undefined) {
+    updatePayload.venueId = Number(dominantVenueId);
+  }
+  if (dominantTournament) {
+    updatePayload.tournamentName = dominantTournament;
+  }
+  if (bestFinalPosition !== null) {
+    updatePayload.finalPosition = bestFinalPosition;
+  }
+  if (maxFieldSize !== null) {
+    updatePayload.fieldSize = maxFieldSize;
+  }
+
+  await db
+    .update(sessions)
+    .set({ ...updatePayload, updatedAt: new Date() })
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)));
 }
 
 /**
@@ -4250,5 +4913,309 @@ export async function discardActiveSession(userId: number, activeSessionId: numb
   await db.delete(sessionTables).where(eq(sessionTables.activeSessionId, activeSessionId));
   await db.delete(activeSessions).where(and(eq(activeSessions.id, activeSessionId), eq(activeSessions.userId, userId)));
   return true;
+}
+
+const APP_PRESENCE_IDLE_GRACE_MINUTES = 5;
+
+function getPresenceEffectiveEnd(lastSeenAt: Date | null | undefined, endedAt: Date | null | undefined, now = new Date()) {
+  if (endedAt instanceof Date) return endedAt;
+  if (!(lastSeenAt instanceof Date) || Number.isNaN(lastSeenAt.getTime())) return now;
+
+  const capped = new Date(lastSeenAt.getTime() + APP_PRESENCE_IDLE_GRACE_MINUTES * 60_000);
+  return capped.getTime() < now.getTime() ? capped : now;
+}
+
+export async function upsertAppPresenceHeartbeat(userId: number, sessionKey: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const normalizedSessionKey = String(sessionKey || "").trim().slice(0, 64);
+  if (!normalizedSessionKey) throw new Error("INVALID_SESSION_KEY");
+
+  const now = new Date();
+  const accessDate = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+
+  const [existingSession] = await db
+    .select()
+    .from(appPresenceSessions)
+    .where(eq(appPresenceSessions.sessionKey, normalizedSessionKey))
+    .limit(1);
+
+  if (!existingSession) {
+    await db.insert(appPresenceSessions).values({
+      userId,
+      sessionKey: normalizedSessionKey,
+      startedAt: now,
+      lastSeenAt: now,
+      endedAt: null,
+    });
+  } else if (Number(existingSession.userId) === Number(userId)) {
+    await db
+      .update(appPresenceSessions)
+      .set({ lastSeenAt: now, endedAt: null })
+      .where(eq(appPresenceSessions.id, existingSession.id));
+  } else {
+    throw new Error("SESSION_KEY_CONFLICT");
+  }
+
+  const [dailyRow] = await db
+    .select()
+    .from(appPresenceDaily)
+    .where(and(eq(appPresenceDaily.userId, userId), eq(appPresenceDaily.accessDate, accessDate)))
+    .limit(1);
+
+  if (!dailyRow) {
+    await db.insert(appPresenceDaily).values({
+      userId,
+      accessDate,
+      firstSeenAt: now,
+      lastSeenAt: now,
+    });
+    return;
+  }
+
+  await db
+    .update(appPresenceDaily)
+    .set({ lastSeenAt: now })
+    .where(eq(appPresenceDaily.id, dailyRow.id));
+}
+
+export async function closeAppPresenceSession(userId: number, sessionKey: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const normalizedSessionKey = String(sessionKey || "").trim().slice(0, 64);
+  if (!normalizedSessionKey) return;
+
+  const now = new Date();
+  await db
+    .update(appPresenceSessions)
+    .set({ lastSeenAt: now, endedAt: now })
+    .where(and(eq(appPresenceSessions.userId, userId), eq(appPresenceSessions.sessionKey, normalizedSessionKey)));
+}
+
+export async function getAdminUserPresenceSummary(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  let presenceTablesAvailable = true;
+
+  try {
+    const [rows] = await db.execute(sql`
+      SELECT 1 AS ok
+      FROM information_schema.tables
+      WHERE table_schema = DATABASE()
+        AND table_name IN ('app_presence_sessions', 'app_presence_daily')
+      GROUP BY table_name
+      HAVING COUNT(*) = 2
+      LIMIT 1
+    `) as any;
+    presenceTablesAvailable = Array.isArray(rows) && rows.length > 0;
+  } catch {
+    presenceTablesAvailable = false;
+  }
+
+  if (!presenceTablesAvailable) {
+    return {
+      userId,
+      idleGraceMinutes: APP_PRESENCE_IDLE_GRACE_MINUTES,
+      totalSessions: 0,
+      totalAccessDays: 0,
+      totalMinutes: 0,
+      lastAccessAt: null,
+      recentSessions: [],
+      accessDays: [],
+    };
+  }
+
+  let sessionRows: any[] = [];
+  let dayRows: any[] = [];
+
+  try {
+    const [rows] = await db.execute(sql`
+      SELECT id, startedAt, lastSeenAt, endedAt
+      FROM app_presence_sessions
+      WHERE userId = ${userId}
+      ORDER BY startedAt DESC
+      LIMIT 200
+    `) as any;
+    sessionRows = Array.isArray(rows) ? rows : [];
+  } catch {
+    sessionRows = [];
+  }
+
+  try {
+    const [rows] = await db.execute(sql`
+      SELECT accessDate, firstSeenAt, lastSeenAt
+      FROM app_presence_daily
+      WHERE userId = ${userId}
+      ORDER BY accessDate DESC
+      LIMIT 120
+    `) as any;
+    dayRows = Array.isArray(rows) ? rows : [];
+  } catch {
+    dayRows = [];
+  }
+
+  const now = new Date();
+  const recentSessions = sessionRows.map((row) => {
+    const startedAt = row.startedAt ? new Date(row.startedAt) : null;
+    const lastSeenAt = row.lastSeenAt ? new Date(row.lastSeenAt) : null;
+    const endedAt = row.endedAt ? new Date(row.endedAt) : null;
+    const effectiveEnd = getPresenceEffectiveEnd(lastSeenAt, endedAt, now);
+    const durationMinutes = startedAt instanceof Date && Number.isFinite(startedAt.getTime())
+      ? Math.max(0, Math.round((effectiveEnd.getTime() - startedAt.getTime()) / 60_000))
+      : 0;
+
+    return {
+      id: Number(row.id),
+      startedAt,
+      lastSeenAt,
+      endedAt,
+      durationMinutes,
+    };
+  });
+
+  const accessDays = dayRows.map((row) => ({
+    accessDate: String(row.accessDate),
+    firstSeenAt: row.firstSeenAt ? new Date(row.firstSeenAt) : null,
+    lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt) : null,
+  }));
+
+  return {
+    totalMinutes: recentSessions.reduce((sum, row) => sum + Number(row.durationMinutes ?? 0), 0),
+    totalSessions: recentSessions.length,
+    totalAccessDays: accessDays.length,
+    lastAccessAt: accessDays[0]?.lastSeenAt ?? recentSessions[0]?.lastSeenAt ?? null,
+    recentSessions: recentSessions.slice(0, 10),
+    accessDays: accessDays.slice(0, 30),
+    idleGraceMinutes: APP_PRESENCE_IDLE_GRACE_MINUTES,
+  };
+}
+
+const HAND_REVIEW_FAVORITES_LIMIT = 10;
+
+type HandReviewFavoriteDto = {
+  id: string;
+  createdAt: number;
+  label: string;
+  handCount: number;
+  rawInput: string;
+  parserSelection: "AUTO" | "POKERSTARS" | "GG";
+};
+
+function mapHandReviewFavoriteRow(row: any): HandReviewFavoriteDto {
+  const created = row?.createdAt instanceof Date
+    ? row.createdAt.getTime()
+    : Number(new Date(row?.createdAt ?? Date.now()).getTime());
+
+  const parser = String(row?.parserSelection ?? "AUTO").toUpperCase();
+  const parserSelection: "AUTO" | "POKERSTARS" | "GG" =
+    parser === "POKERSTARS" || parser === "GG" ? parser : "AUTO";
+
+  return {
+    id: String(row?.id ?? ""),
+    createdAt: Number.isFinite(created) ? created : Date.now(),
+    label: String(row?.label ?? ""),
+    handCount: Number(row?.handCount ?? 0),
+    rawInput: String(row?.rawInput ?? ""),
+    parserSelection,
+  };
+}
+
+async function trimHandReviewFavoritesToLimit(db: any, userId: number) {
+  const rows = await db
+    .select({ id: handReviewFavorites.id })
+    .from(handReviewFavorites)
+    .where(eq(handReviewFavorites.userId, userId))
+    .orderBy(desc(handReviewFavorites.createdAt), desc(handReviewFavorites.id));
+
+  if (rows.length <= HAND_REVIEW_FAVORITES_LIMIT) return;
+
+  const overflowIds = rows.slice(HAND_REVIEW_FAVORITES_LIMIT).map((row: any) => Number(row.id)).filter(Number.isFinite);
+  if (overflowIds.length === 0) return;
+
+  await db
+    .delete(handReviewFavorites)
+    .where(and(eq(handReviewFavorites.userId, userId), inArray(handReviewFavorites.id, overflowIds)));
+}
+
+export async function listHandReviewFavoritesForUser(userId: number): Promise<HandReviewFavoriteDto[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select()
+    .from(handReviewFavorites)
+    .where(eq(handReviewFavorites.userId, userId))
+    .orderBy(desc(handReviewFavorites.createdAt), desc(handReviewFavorites.id))
+    .limit(HAND_REVIEW_FAVORITES_LIMIT);
+
+  return rows.map(mapHandReviewFavoriteRow);
+}
+
+export async function createHandReviewFavoriteForUser(
+  userId: number,
+  input: { rawInput: string; parserSelection: "AUTO" | "POKERSTARS" | "GG"; handCount: number; label: string; createdAtMs?: number },
+): Promise<HandReviewFavoriteDto> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const normalizedLabel = String(input.label || "").trim().slice(0, 191) || "Favorito";
+  const createdAt = Number.isFinite(Number(input.createdAtMs))
+    ? new Date(Number(input.createdAtMs))
+    : new Date();
+
+  const [inserted] = await db.insert(handReviewFavorites).values({
+    userId,
+    label: normalizedLabel,
+    handCount: Math.max(0, Number(input.handCount || 0)),
+    rawInput: String(input.rawInput || ""),
+    parserSelection: input.parserSelection,
+    createdAt,
+  }).$returningId();
+
+  await trimHandReviewFavoritesToLimit(db, userId);
+
+  const [row] = await db
+    .select()
+    .from(handReviewFavorites)
+    .where(and(eq(handReviewFavorites.userId, userId), eq(handReviewFavorites.id, Number(inserted.id))))
+    .limit(1);
+
+  if (!row) throw new Error("FAVORITE_NOT_FOUND_AFTER_INSERT");
+  return mapHandReviewFavoriteRow(row);
+}
+
+export async function renameHandReviewFavoriteForUser(userId: number, id: number, label: string): Promise<HandReviewFavoriteDto | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const safeLabel = String(label || "").trim().slice(0, 191);
+  if (!safeLabel) return null;
+
+  await db
+    .update(handReviewFavorites)
+    .set({ label: safeLabel, updatedAt: new Date() })
+    .where(and(eq(handReviewFavorites.userId, userId), eq(handReviewFavorites.id, id)));
+
+  const [row] = await db
+    .select()
+    .from(handReviewFavorites)
+    .where(and(eq(handReviewFavorites.userId, userId), eq(handReviewFavorites.id, id)))
+    .limit(1);
+
+  return row ? mapHandReviewFavoriteRow(row) : null;
+}
+
+export async function deleteHandReviewFavoriteForUser(userId: number, id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .delete(handReviewFavorites)
+    .where(and(eq(handReviewFavorites.userId, userId), eq(handReviewFavorites.id, id)));
+
+  return ((result as any)?.[0]?.affectedRows ?? 0) > 0;
 }
 

@@ -309,7 +309,7 @@ export async function markCacheJobCompleted(
   jobId: number,
   actualDurationMs: number
 ): Promise<void> {
-  await db
+  await (await getDb())
     .update(cacheRecalcQueue)
     .set({
       status: "completed",
@@ -326,7 +326,7 @@ export async function markCacheJobFailed(
   jobId: number,
   errorMessage: string
 ): Promise<void> {
-  const job = await db
+  const job = await (await getDb())
     .select()
     .from(cacheRecalcQueue)
     .where(eq(cacheRecalcQueue.id, jobId))

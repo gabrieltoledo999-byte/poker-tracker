@@ -127,7 +127,7 @@ describe("auth helpers", () => {
       (getDb as any).mockResolvedValue(mockDb);
 
       await expect(
-        loginUser({ email: "notfound@test.com", password: "123456" })
+        loginUser({ identifier: "notfound@test.com", password: "123456" })
       ).rejects.toThrow("INVALID_CREDENTIALS");
     });
 
@@ -150,7 +150,7 @@ describe("auth helpers", () => {
       (getDb as any).mockResolvedValue(mockDb);
 
       await expect(
-        loginUser({ email: "test@test.com", password: "wrongPassword" })
+        loginUser({ identifier: "test@test.com", password: "wrongPassword" })
       ).rejects.toThrow("INVALID_CREDENTIALS");
     });
 
@@ -173,7 +173,7 @@ describe("auth helpers", () => {
       };
       (getDb as any).mockResolvedValue(mockDb);
 
-      const result = await loginUser({ email: "test@test.com", password: "correctPassword" });
+      const result = await loginUser({ identifier: "test@test.com", password: "correctPassword" });
       expect(result.user).toBeDefined();
       expect(result.token).toBe("mock-jwt-token");
     });

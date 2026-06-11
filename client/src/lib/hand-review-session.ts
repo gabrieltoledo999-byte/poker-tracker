@@ -78,6 +78,133 @@ export function saveHandReviewSession(rawInput: string, parserSelection: ParserS
   return id;
 }
 
+// ─── Favorite Tournaments ──────────────────────────────────────────────────────
+
+const FAVORITES_KEY_PREFIX = "hand-review-favorites:";
+const FAVORITES_LIMIT = 10;
+
+export interface FavoriteTournament {
+  id: string;
+  createdAt: number;
+  label: string;
+  handCount: number;
+  rawInput: string;
+  parserSelection: ParserSelection;
+}
+
+function getFavoritesKey(userId: string | number | undefined): string {
+  return userId ? `${FAVORITES_KEY_PREFIX}${userId}` : `${FAVORITES_KEY_PREFIX}guest`;
+}
+
+function safeReadFavoritesByKey(key: string): FavoriteTournament[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as FavoriteTournament[];
+  } catch {
+    return [];
+  }
+}
+
+export function listFavoriteTournaments(userId: string | number | undefined): FavoriteTournament[] {
+  if (typeof window === "undefined") return [];
+  return safeReadFavoritesByKey(getFavoritesKey(userId));
+}
+
+export function recoverGuestFavoritesForUser(userId: string | number | undefined): FavoriteTournament[] {
+  if (typeof window === "undefined") return [];
+  if (!userId) return listFavoriteTournaments(undefined);
+
+  const userKey = getFavoritesKey(userId);
+  const userFavorites = safeReadFavoritesByKey(userKey);
+  if (userFavorites.length > 0) return userFavorites;
+
+  const guestFavorites = safeReadFavoritesByKey(getFavoritesKey(undefined));
+  if (guestFavorites.length === 0) return [];
+
+  const normalized = [...guestFavorites]
+    .sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))
+    .slice(-FAVORITES_LIMIT);
+
+  try {
+    window.localStorage.setItem(userKey, JSON.stringify(normalized));
+    return normalized;
+  } catch {
+    return guestFavorites;
+  }
+}
+
+export function saveFavoriteTournament(
+  userId: string | number | undefined,
+  rawInput: string,
+  parserSelection: ParserSelection,
+  handCount: number,
+  label: string,
+): FavoriteTournament | null {
+  if (typeof window === "undefined") return null;
+  const existing = listFavoriteTournaments(userId);
+  // If already at limit, remove the oldest
+  const trimmed = existing.length >= FAVORITES_LIMIT
+    ? existing.sort((a, b) => a.createdAt - b.createdAt).slice(existing.length - FAVORITES_LIMIT + 1)
+    : existing;
+  const entry: FavoriteTournament = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: Date.now(),
+    label,
+    handCount,
+    rawInput,
+    parserSelection,
+  };
+  try {
+    window.localStorage.setItem(getFavoritesKey(userId), JSON.stringify([...trimmed, entry]));
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+export function deleteFavoriteTournament(userId: string | number | undefined, id: string): void {
+  if (typeof window === "undefined") return;
+  const existing = listFavoriteTournaments(userId);
+  try {
+    window.localStorage.setItem(
+      getFavoritesKey(userId),
+      JSON.stringify(existing.filter((f) => f.id !== id)),
+    );
+  } catch {
+    // no-op
+  }
+}
+
+export function renameFavoriteTournament(
+  userId: string | number | undefined,
+  id: string,
+  label: string,
+): FavoriteTournament | null {
+  if (typeof window === "undefined") return null;
+
+  const safeLabel = label.trim();
+  if (!safeLabel) return null;
+
+  const existing = listFavoriteTournaments(userId);
+  const updated = existing.map((favorite) => (
+    favorite.id === id
+      ? { ...favorite, label: safeLabel }
+      : favorite
+  ));
+  const renamed = updated.find((favorite) => favorite.id === id) ?? null;
+
+  try {
+    window.localStorage.setItem(getFavoritesKey(userId), JSON.stringify(updated));
+    return renamed;
+  } catch {
+    return null;
+  }
+}
+
 export function loadHandReviewSession(id: string): HandReviewSession | null {
   if (!id || typeof window === "undefined") return null;
 

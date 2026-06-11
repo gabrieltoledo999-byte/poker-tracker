@@ -55,3 +55,18 @@ export function getSessionCookieOptions(
     secure,
   };
 }
+
+export function getSessionCookieClearOptions(
+  req: Request
+): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
+  const isProduction = process.env.NODE_ENV === "production";
+  const secure = isProduction ? true : isSecureRequest(req);
+  const sameSite: CookieOptions["sameSite"] = "lax";
+
+  return {
+    httpOnly: true,
+    path: "/",
+    sameSite,
+    secure,
+  };
+}

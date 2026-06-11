@@ -106,8 +106,12 @@ export function PokerTableReplay(props: {
   displayUnit: DisplayUnit;
   bigBlind: number;
   className?: string;
+  layoutMode?: "default" | "landing";
 }) {
   const [transientChipStep, setTransientChipStep] = useState<number | null>(null);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [logoReady, setLogoReady] = useState(false);
+  const isLandingLayout = props.layoutMode === "landing";
 
   const occupied = [...(props.step.seats || [])].sort((a, b) => a.seat - b.seat);
   const layout = getSeatLayout(props.maxPlayers);
@@ -178,10 +182,15 @@ export function PokerTableReplay(props: {
     return () => clearTimeout(timeout);
   }, [showChipTravel, props.step.stepIndex]);
 
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setSceneReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   const shouldRenderTransientChip = showChipTravel && transientChipStep === props.step.stepIndex;
   const dealerIndex = rotatedSeats.findIndex(seat => seat.isButton);
   const dealerSeatPoint = dealerIndex >= 0 ? layout[dealerIndex % layout.length] : null;
-  const dealerTop = dealerSeatPoint ? `${parseFloat(dealerSeatPoint.top) + (50 - parseFloat(dealerSeatPoint.top)) * 0.27}%` : "50%";
+  const dealerTop = dealerSeatPoint ? `${parseFloat(dealerSeatPoint.top) + (50 - parseFloat(dealerSeatPoint.top)) * 0.27 + (isLandingLayout ? 4 : 0)}%` : "50%";
   const dealerIsHero = dealerIndex >= 0 && rotatedSeats[dealerIndex]?.isHero;
   const dealerLeft = dealerSeatPoint ? `${parseFloat(dealerSeatPoint.left) + (50 - parseFloat(dealerSeatPoint.left)) * 0.27 - (dealerIsHero ? 9 : 0)}%` : "50%";
   const isStreetTransition = Boolean(props.previousStep && props.previousStep.street !== props.step.street);
@@ -192,43 +201,56 @@ export function PokerTableReplay(props: {
   const previousSeatsByCurrentLayout = previousHeroIndex >= 0
     ? [...previousRotatedSeats.slice(previousHeroIndex), ...previousRotatedSeats.slice(0, previousHeroIndex)]
     : previousRotatedSeats;
+  const tableShadowClass = isLandingLayout ? "top-[56.5%]" : "top-[52.5%]";
+  const tableSurfaceClass = isLandingLayout ? "top-[47.5%] sm:top-[51.5%]" : "top-[44%] sm:top-[48.8%]";
+  const logoTopClass = isLandingLayout ? "top-[53.5%]" : "top-1/2";
+  const boardTopClass = isLandingLayout ? "top-[50.5%]" : "top-[46.5%]";
+  const potTopClass = isLandingLayout ? "top-[59%]" : "top-[54.5%]";
+  const contentPaddingClass = isLandingLayout ? "pb-24 sm:pb-24" : "pb-16 sm:pb-20";
 
   return (
     <section className={`relative h-full overflow-hidden rounded-3xl border border-white/12 bg-[radial-gradient(circle_at_20%_10%,rgba(139,92,246,0.15),transparent_34%),radial-gradient(circle_at_82%_85%,rgba(6,182,212,0.14),transparent_38%),linear-gradient(180deg,#0b1020_0%,#070b17_100%)] shadow-[0_22px_55px_rgba(2,6,23,0.5)] ${props.className ?? ""}`}>
       <div className="absolute inset-0 rounded-3xl bg-[linear-gradient(145deg,rgba(255,255,255,0.05),transparent_30%,transparent_70%,rgba(255,255,255,0.03))]" />
-      <div className="relative h-full w-full pb-16 sm:pb-20">
+      <div className={`relative h-full w-full transition-opacity duration-300 ${sceneReady ? "opacity-100" : "opacity-0"} ${contentPaddingClass}`}>
         {/* Drop shadow */}
-        <div className="pointer-events-none absolute left-1/2 top-[52.5%] h-[76%] w-[92%] -translate-x-1/2 -translate-y-1/2 rounded-[999px] bg-black/65 blur-[30px]" />
+        <div className={`pointer-events-none absolute left-1/2 ${tableShadowClass} h-[76%] w-[92%] -translate-x-1/2 -translate-y-1/2 rounded-[999px] bg-black/65 blur-[30px]`} />
         {/* Outer rail - dark navy */}
         <div
-          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[94%] sm:h-[80%] w-[99%] sm:w-[96%] rounded-[999px] bg-[radial-gradient(ellipse_at_50%_18%,#2e3460_0%,#1c2050_18%,#131636_38%,#0c0e22_58%,#070915_80%,#040610_100%)] shadow-[0_28px_48px_rgba(0,0,0,0.85),inset_0_4px_16px_rgba(120,130,255,0.18),inset_0_-14px_24px_rgba(0,0,0,0.70)]"
+          className={`absolute left-1/2 ${tableSurfaceClass} h-[94%] sm:h-[80%] w-[99%] sm:w-[96%] rounded-[999px] bg-[radial-gradient(ellipse_at_50%_18%,#2e3460_0%,#1c2050_18%,#131636_38%,#0c0e22_58%,#070915_80%,#040610_100%)] shadow-[0_28px_48px_rgba(0,0,0,0.85),inset_0_4px_16px_rgba(120,130,255,0.18),inset_0_-14px_24px_rgba(0,0,0,0.70)]`}
           style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
         {/* Padded bumper - very dark with indigo accent border */}
         <div
-          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[88%] sm:h-[74%] w-[93%] sm:w-[90%] rounded-[999px] border-[3px] border-indigo-500/30 bg-[radial-gradient(ellipse_at_50%_20%,#181c34_0%,#0f1224_30%,#090c1c_60%,#050810_100%)] shadow-[inset_0_6px_18px_rgba(99,102,241,0.10),inset_0_-18px_30px_rgba(0,0,0,0.90),inset_0_0_30px_rgba(0,0,0,0.50)]"
+          className={`absolute left-1/2 ${tableSurfaceClass} h-[88%] sm:h-[74%] w-[93%] sm:w-[90%] rounded-[999px] border-[3px] border-indigo-500/30 bg-[radial-gradient(ellipse_at_50%_20%,#181c34_0%,#0f1224_30%,#090c1c_60%,#050810_100%)] shadow-[inset_0_6px_18px_rgba(99,102,241,0.10),inset_0_-18px_30px_rgba(0,0,0,0.90),inset_0_0_30px_rgba(0,0,0,0.50)]`}
           style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
         {/* Felt surface */}
         <div
-          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[84%] sm:h-[70%] w-[90%] sm:w-[87%] rounded-[999px] border border-cyan-200/18 bg-[radial-gradient(circle_at_50%_42%,#1f5578_0%,#18476f_33%,#15395c_62%,#26204e_100%)] shadow-[inset_0_2px_5px_rgba(255,255,255,0.12),inset_0_-20px_26px_rgba(0,0,0,0.26)]"
+          className={`absolute left-1/2 ${tableSurfaceClass} h-[84%] sm:h-[70%] w-[90%] sm:w-[87%] rounded-[999px] border border-cyan-200/18 bg-[radial-gradient(circle_at_50%_42%,#1f5578_0%,#18476f_33%,#15395c_62%,#26204e_100%)] shadow-[inset_0_2px_5px_rgba(255,255,255,0.12),inset_0_-20px_26px_rgba(0,0,0,0.26)]`}
           style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
         {/* Felt top highlight */}
         <div
-          className="absolute left-1/2 top-[44%] sm:top-[48.8%] h-[78%] sm:h-[64%] w-[86%] sm:w-[82%] rounded-[999px] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0)_28%)]"
+          className={`absolute left-1/2 ${tableSurfaceClass} h-[78%] sm:h-[64%] w-[86%] sm:w-[82%] rounded-[999px] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0)_28%)]`}
           style={{ transform: "translate(-50%, -50%) perspective(1400px) rotateX(28deg)" }}
         />
 
-        <div className="pointer-events-none absolute left-1/2 top-1/2 z-[6] -translate-x-1/2 -translate-y-1/2 opacity-28">
-          <img src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png" alt="The Rail" className="h-auto w-[260px] sm:w-[420px] max-w-[82vw] sm:max-w-[80vw] object-contain" />
+        <div className={`pointer-events-none absolute left-1/2 ${logoTopClass} z-[6] -translate-x-1/2 -translate-y-1/2 ${logoReady ? "opacity-55" : "opacity-0"} transition-opacity duration-500`}>
+          <img
+            src="/all-in-edge-logo-horizontal.webp"
+            alt="All in Edge"
+            decoding="async"
+            onLoad={() => setLogoReady(true)}
+            onError={() => setLogoReady(true)}
+            className="h-auto w-[260px] sm:w-[420px] max-w-[82vw] sm:max-w-[80vw] object-contain"
+          />
         </div>
 
         {/* Center area: board + single pot display (single source of truth) */}
-        <div className="absolute left-1/2 top-[46.5%] z-10 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+        <div className={`absolute left-1/2 ${boardTopClass} z-10 -translate-x-1/2 -translate-y-1/2 pointer-events-none`}>
           <BoardCards cards={props.step.board} />
         </div>
-        <div className="absolute left-1/2 top-[54.5%] z-[46] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+        <div className={`absolute left-1/2 ${potTopClass} z-[46] -translate-x-1/2 -translate-y-1/2 pointer-events-none`}>
           <PotDisplay pot={props.step.pot} street={props.step.street} displayUnit={props.displayUnit} bigBlind={props.bigBlind} />
         </div>
 

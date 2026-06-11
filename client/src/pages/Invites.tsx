@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import SocialHubNav from "@/components/SocialHubNav";
 import { trpc } from "@/lib/trpc";
 import { Link2, MessageCircle, Search, ShieldBan, UserMinus, UserPlus, UserCheck, Clock3, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -133,7 +132,6 @@ export default function Invites() {
   if (loadingFriends || loadingIncomingRequests || loadingOutgoingRequests) {
     return (
       <div className="social-page space-y-4">
-        <SocialHubNav />
         <Skeleton className="h-24 w-full rounded-[1.75rem]" />
         <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
           <Skeleton className="h-[32rem] rounded-[1.75rem]" />
@@ -145,8 +143,6 @@ export default function Invites() {
 
   return (
     <div className="social-page space-y-4">
-      <SocialHubNav />
-
       <div className="social-shell flex flex-wrap items-center justify-between gap-4 p-5 md:p-6">
         <div>
           <h1 className="text-2xl font-bold">Pessoas</h1>

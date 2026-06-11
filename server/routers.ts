@@ -1,13 +1,13 @@
 import { COOKIE_NAME, LEGACY_COOKIE_NAMES } from "@shared/const";
 import { TRPCError } from "@trpc/server";
-import { getSessionCookieOptions } from "./_core/cookies";
+import { getSessionCookieClearOptions, getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
 import { eq, sql } from "drizzle-orm";
-import { users } from "../drizzle/schema";
+import { users, gtoBaseadoScenarios, gtoBaseadoHands } from "../drizzle/schema";
 import { getDb } from "./db";
-import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest, removeFriendship, blockUser, resetFriendshipNetworkForUser, resetFriendshipNetworkGlobally, sendMessage, getConversation, getConversationList, markConversationRead, getUnreadCount, toggleMessageReaction } from "./db";
+import { getLeaderboard, getFriends, searchUsersToAdd, getPublicFeed, createPost, deletePost, updatePost, toggleLike, getPostComments, createComment, deleteComment, togglePostReaction, sendFriendRequest, sendFriendRequestByNickname, getIncomingFriendRequests, getOutgoingFriendRequests, respondToFriendRequest, cancelFriendRequest, removeFriendship, blockUser, resetFriendshipNetworkForUser, resetFriendshipNetworkGlobally, sendMessage, getConversation, getConversationList, markConversationRead, getUnreadCount, toggleMessageReaction } from "./db";
 import { z } from "zod";
 import {
   createSession,
@@ -20,6 +20,8 @@ import {
   getStatsByGameFormat,
   getBankrollSettings,
   upsertBankrollSettings,
+  getGtoMatrixPreferences,
+  upsertGtoMatrixPreferences,
   getBankrollHistory,
   createVenue,
   updateVenue,
@@ -57,6 +59,7 @@ import {
   finalizeActiveSession,
   discardActiveSession,
   getSessionTables,
+  getSessionTableById,
   getRecentPlayedTables,
   getHandPatternStats,
   getGlobalHandPatternStats,
@@ -64,11 +67,23 @@ import {
   updateHandPatternManualStats,
   getStatsByTournament,
   deleteOrphanTablesForUser,
+  resetUserAccountData,
+  deleteUserAccountCompletely,
   getDistinctTournamentNames,
+  getCanonicalPlatformForTableOrSession,
+  forceOverwriteSessionMapping,
+  wipeBankrollHistoryCache,
+  upsertAppPresenceHeartbeat,
+  closeAppPresenceSession,
+  getAdminUserPresenceSummary,
+  listHandReviewFavoritesForUser,
+  createHandReviewFavoriteForUser,
+  renameHandReviewFavoriteForUser,
+  deleteHandReviewFavoriteForUser,
 } from "./db";
 import { getUsdToBrlRate, convertUsdToBrl, convertToBrl, getRateToBrl, getAllRates, refreshRates } from "./currency";
 import { PRESET_VENUES } from "@shared/presetVenues";
-import { registerUser, loginUser, setupPasswordForExistingUser } from "./auth";
+import { changePasswordWithCode, registerUser, loginUser, sendPasswordChangeCodeForUser, setupPasswordForExistingUser } from "./auth";
 import { isGGHandHistory, ggHandHistoryToSessionData } from "./parsers/ggIntegration";
 import {
   analyzeReplayTournament,
@@ -88,6 +103,7 @@ import {
   getBankrollHistoryWithCache,
   invalidateCacheForSession,
 } from "./dbCacheWrappers";
+import { getLocalityCities, getLocalityCountries, getLocalityStates } from "./localities";
 
 // Game format enum for validation
 const gameFormatEnum = z.enum([
@@ -116,6 +132,14 @@ const onboardingProfileInput = z.object({
   playsMultiPlatform: z.boolean().optional(),
   showInGlobalRanking: z.boolean().optional(),
   showInFriendsRanking: z.boolean().optional(),
+  country: z.string().trim().max(120).optional(),
+  stateRegion: z.string().trim().max(120).optional(),
+  city: z.string().trim().max(120).optional(),
+  addressLine: z.string().trim().max(300).optional(),
+  postalCode: z.string().trim().max(20).optional(),
+  taxDocument: z.string().trim().max(24).optional(),
+  locationLatE6: z.number().int().min(-90_000_000).max(90_000_000).nullable().optional(),
+  locationLngE6: z.number().int().min(-180_000_000).max(180_000_000).nullable().optional(),
 });
 
 const replayHandInput = z.object({
@@ -138,6 +162,15 @@ const replayHandInput = z.object({
   rawText: z.string().optional(),
   parsedJson: z.string().optional(),
   handContextJson: z.string().optional(),
+});
+
+const gtoMatrixPreferencesInput = z.object({
+  barOrientation: z.enum(["diagonal", "horizontal", "vertical"]),
+  barPosition: z.enum(["normal", "reverse"]),
+  raiseColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  callColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  foldColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  allinColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
 });
 
 const BOARD_ACCESS_IDENTIFIERS = ["toleto", "hugo"];
@@ -511,19 +544,98 @@ function parseImportText(rawText: string, forcedCurrency?: ImportCurrency, force
   });
 }
 
+function getActiveTableVenueNet(table: {
+  buyIn: number;
+  cashOut?: number | null;
+}): number {
+  return (table.cashOut ?? 0) - table.buyIn;
+}
+
+async function applyActiveTableVenueDelta(
+  userId: number,
+  table: {
+    venueId?: number | null;
+    type?: string | null;
+    currency?: string | null;
+  },
+  delta: number,
+  note: string
+) {
+  if (!table.venueId || table.type !== "online" || delta === 0 || !table.currency) return;
+  const venue = await getVenueById(table.venueId, userId);
+  if (!venue) return;
+  if (venue.currency !== table.currency) return;
+  await updateVenueBalance(
+    venue.id,
+    userId,
+    venue.balance + delta,
+    venue.currency as "BRL" | "USD" | "CAD" | "JPY" | "CNY" | "EUR",
+    "session",
+    { note }
+  );
+}
+
+async function applyActiveTableVenueEffect(
+  userId: number,
+  table: {
+    buyIn: number;
+    cashOut?: number | null;
+    venueId?: number | null;
+    type?: string | null;
+    currency?: string | null;
+  },
+  note: string
+) {
+  await applyActiveTableVenueDelta(userId, table, getActiveTableVenueNet(table), note);
+}
+
+async function revertActiveTableVenueEffect(
+  userId: number,
+  table: {
+    buyIn: number;
+    cashOut?: number | null;
+    venueId?: number | null;
+    type?: string | null;
+    currency?: string | null;
+  },
+  note: string
+) {
+  await applyActiveTableVenueDelta(userId, table, -getActiveTableVenueNet(table), note);
+}
+
 export const appRouter = router({
   system: systemRouter,
+  localities: router({
+    countries: protectedProcedure.query(async () => {
+      return getLocalityCountries();
+    }),
+    states: protectedProcedure
+      .input(z.object({ countryCode: z.string().trim().length(2) }))
+      .query(async ({ input }) => {
+        return getLocalityStates(input.countryCode);
+      }),
+    cities: protectedProcedure
+      .input(z.object({
+        countryCode: z.string().trim().length(2),
+        stateName: z.string().trim().min(1).max(160),
+        search: z.string().trim().max(120).optional(),
+      }))
+      .query(async ({ input }) => {
+        return getLocalityCities(input.countryCode, input.stateName, input.search);
+      }),
+  }),
   auth: router({
     me: publicProcedure.query(async ({ ctx }) => {
       if (!ctx.user) return null;
 
       try {
         const cookieOptions = getSessionCookieOptions(ctx.req);
+        const clearOptions = getSessionCookieClearOptions(ctx.req);
         const token = await sdk.createSessionToken(ctx.user.openId, { name: ctx.user.name || "" });
         ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
 
         for (const legacyName of LEGACY_COOKIE_NAMES) {
-          ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+          ctx.res.clearCookie(legacyName, clearOptions);
         }
       } catch (error) {
         // Never block authenticated users if session renewal fails.
@@ -533,11 +645,14 @@ export const appRouter = router({
       return ctx.user;
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      const clearOptions = getSessionCookieClearOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, clearOptions);
       for (const legacyName of LEGACY_COOKIE_NAMES) {
-        ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+        ctx.res.clearCookie(legacyName, clearOptions);
       }
+      getDb()
+        .then((db) => db?.update(users).set({ lastSignedIn: new Date(Date.now() - 10 * 60 * 1000) }).where(eq(users.id, ctx.user?.id ?? -1)))
+        .catch((error) => console.warn("[auth.logout] failed to mark user offline:", error));
       return { success: true } as const;
     }),
     register: publicProcedure
@@ -545,15 +660,22 @@ export const appRouter = router({
         name: z.string().min(2).max(100),
         email: z.string().email(),
         password: z.string().min(6),
+        country: z.string().trim().max(120).optional(),
+        stateRegion: z.string().trim().max(120).optional(),
+        city: z.string().trim().max(120).optional(),
+        addressLine: z.string().trim().max(300).optional(),
+        postalCode: z.string().trim().max(20).optional(),
+        taxDocument: z.string().trim().max(24).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         try {
           const user = await registerUser(input);
-          const { token } = await loginUser({ email: input.email, password: input.password });
+          const { token } = await loginUser({ identifier: input.email, password: input.password });
           const cookieOptions = getSessionCookieOptions(ctx.req);
+          const clearOptions = getSessionCookieClearOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           for (const legacyName of LEGACY_COOKIE_NAMES) {
-            ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+            ctx.res.clearCookie(legacyName, clearOptions);
           }
           return { success: true, user };
         } catch (err: any) {
@@ -564,21 +686,28 @@ export const appRouter = router({
           if (err.message === "NICKNAME_ALREADY_EXISTS") {
             throw new TRPCError({ code: "CONFLICT", message: "Este nickname já está em uso." });
           }
+          if (err.message === "CPF_INVALID") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CPF invalido. Verifique os digitos informados." });
+          }
+          if (err.message === "CPF_ALREADY_EXISTS") {
+            throw new TRPCError({ code: "CONFLICT", message: "Este CPF ja esta cadastrado em outra conta." });
+          }
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar conta. Tente novamente." });
         }
       }),
     login: publicProcedure
       .input(z.object({
-        email: z.string().email(),
+        identifier: z.string().trim().min(1),
         password: z.string().min(1),
       }))
       .mutation(async ({ input, ctx }) => {
         try {
           const { user, token } = await loginUser(input);
           const cookieOptions = getSessionCookieOptions(ctx.req);
+          const clearOptions = getSessionCookieClearOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           for (const legacyName of LEGACY_COOKIE_NAMES) {
-            ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+            ctx.res.clearCookie(legacyName, clearOptions);
           }
           return { success: true, user, needsPasswordSetup: false };
         } catch (err: any) {
@@ -600,14 +729,16 @@ export const appRouter = router({
       .input(z.object({
         email: z.string().email(),
         password: z.string().min(6),
+        taxDocument: z.string().trim().max(24).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         try {
           const { user, token } = await setupPasswordForExistingUser(input);
           const cookieOptions = getSessionCookieOptions(ctx.req);
+          const clearOptions = getSessionCookieClearOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
           for (const legacyName of LEGACY_COOKIE_NAMES) {
-            ctx.res.clearCookie(legacyName, { ...cookieOptions, maxAge: -1 });
+            ctx.res.clearCookie(legacyName, clearOptions);
           }
           return { success: true, user };
         } catch (err: any) {
@@ -618,11 +749,105 @@ export const appRouter = router({
           if (err.message === "PASSWORD_ALREADY_SET") {
             throw new TRPCError({ code: "BAD_REQUEST", message: "Esta conta já possui senha. Use o login normal." });
           }
+          if (err.message === "CPF_INVALID") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CPF inválido." });
+          }
+          if (err.message === "CPF_REQUIRED") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CPF obrigatorio para concluir o cadastro." });
+          }
+          if (err.message === "CPF_ALREADY_EXISTS") {
+            throw new TRPCError({ code: "CONFLICT", message: "Este CPF já está vinculado a outra conta." });
+          }
+          if (err.message === "CPF_MISMATCH") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CPF não confere com o cadastro existente." });
+          }
           if (err.message === "DB_UNAVAILABLE") {
             throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Serviço temporariamente indisponível." });
           }
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao configurar senha. Tente novamente." });
         }
+      }),
+    sendPasswordChangeCode: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        try {
+          const result = await sendPasswordChangeCodeForUser(ctx.user.id);
+          return { success: true, maskedEmail: result.maskedEmail };
+        } catch (err: any) {
+          console.error("[auth.sendPasswordChangeCode] failed:", err);
+          if (err.message === "USER_NOT_FOUND") {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Usuario nao encontrado." });
+          }
+          if (err.message === "USER_HAS_NO_EMAIL") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Sua conta nao possui e-mail para verificacao." });
+          }
+          if (err.message === "CODE_RESEND_TOO_SOON") {
+            throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Aguarde alguns segundos para reenviar o codigo." });
+          }
+          if (err.message === "EMAIL_PROVIDER_NOT_CONFIGURED") {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Servico de e-mail indisponivel no momento." });
+          }
+          if (String(err.message || "").startsWith("EMAIL_PROVIDER_ERROR")) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao enviar e-mail de verificacao." });
+          }
+          if (err.message === "DB_UNAVAILABLE") {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Servico temporariamente indisponivel." });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao enviar codigo. Tente novamente." });
+        }
+      }),
+    changePasswordWithCode: protectedProcedure
+      .input(z.object({
+        code: z.string().regex(/^\d{6}$/),
+        newPassword: z.string().min(6).max(128),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await changePasswordWithCode({
+            userId: ctx.user.id,
+            code: input.code,
+            newPassword: input.newPassword,
+          });
+          return { success: true };
+        } catch (err: any) {
+          console.error("[auth.changePasswordWithCode] failed:", err);
+          if (err.message === "USER_NOT_FOUND") {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Usuario nao encontrado." });
+          }
+          if (err.message === "USER_HAS_NO_EMAIL") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Sua conta nao possui e-mail para verificacao." });
+          }
+          if (err.message === "CODE_NOT_FOUND") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Codigo nao encontrado. Solicite um novo codigo." });
+          }
+          if (err.message === "CODE_EXPIRED") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Codigo expirado. Solicite um novo codigo." });
+          }
+          if (err.message === "CODE_MAX_ATTEMPTS") {
+            throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Numero maximo de tentativas atingido. Solicite novo codigo." });
+          }
+          if (err.message === "CODE_INVALID") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Codigo invalido." });
+          }
+          if (err.message === "DB_UNAVAILABLE") {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Servico temporariamente indisponivel." });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao trocar senha. Tente novamente." });
+        }
+      }),
+  }),
+
+  presence: router({
+    ping: protectedProcedure
+      .input(z.object({ sessionKey: z.string().trim().min(16).max(64) }))
+      .mutation(async ({ ctx, input }) => {
+        await upsertAppPresenceHeartbeat(ctx.user.id, input.sessionKey);
+        return { ok: true } as const;
+      }),
+    close: protectedProcedure
+      .input(z.object({ sessionKey: z.string().trim().min(16).max(64) }))
+      .mutation(async ({ ctx, input }) => {
+        await closeAppPresenceSession(ctx.user.id, input.sessionKey);
+        return { ok: true } as const;
       }),
   }),
 
@@ -692,6 +917,29 @@ export const appRouter = router({
           location: input.location,
         });
 
+        // Keep table-level source of truth aligned for all dashboard/venue calculations.
+        const startedAt = input.sessionDate;
+        const endedAt = new Date(startedAt.getTime() + Math.max(1, input.durationMinutes) * 60_000);
+        await addSessionTable({
+          userId: ctx.user.id,
+          sessionId: session.id,
+          activeSessionId: null,
+          venueId: input.venueId ?? null,
+          type: input.type,
+          gameFormat: input.gameFormat,
+          currency: input.currency,
+          buyIn: input.buyIn,
+          cashOut: input.cashOut,
+          gameType: input.gameType,
+          stakes: input.stakes,
+          tournamentName: input.tournamentName,
+          finalPosition: input.finalPosition,
+          fieldSize: input.fieldSize,
+          notes: input.notes,
+          startedAt,
+          endedAt,
+        } as any);
+
         // Auto-update venue balance for online sessions
         if (input.venueId && input.type === "online") {
           const venue = await getVenueById(input.venueId, ctx.user.id);
@@ -703,9 +951,12 @@ export const appRouter = router({
           }
         }
 
-        // Invalidate cache for this user
+        // Invalidate cache for this user (mark stale) + hard-wipe bankroll history cache
         await invalidateCacheForSession(ctx.user.id).catch(err =>
           console.warn("[Cache] Error invalidating on session create:", err)
+        );
+        await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+          console.warn("[wipeBankrollHistoryCache] failed on session create", err),
         );
 
         return session;
@@ -734,7 +985,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        
+
         // If currency is being changed and values are provided, convert to BRL storage
         if (data.currency && data.currency !== "BRL" && (data.buyIn || data.cashOut !== undefined)) {
           const rates = await getAllRates();
@@ -757,6 +1008,60 @@ export const appRouter = router({
 
         const oldSession = await getSessionById(id, ctx.user.id);
         const updatedSession = await updateSession(id, ctx.user.id, data);
+
+        // ABSOLUTE OVERWRITE: the user's session-level edit is the source of truth.
+        // Force every linked session_table to mirror the new mapping fields in a single bulk
+        // UPDATE. No per-row sync, no "dominant" reconciliation, no race. If the session has no
+        // linked session_tables (legacy), create one so Home aggregations have a row to read.
+        const tablePatch: {
+          venueId?: number | null;
+          type?: "online" | "live";
+          gameFormat?: string;
+          currency?: string;
+          tournamentName?: string | null;
+        } = {};
+        if (data.venueId !== undefined) tablePatch.venueId = data.venueId;
+        if (data.type !== undefined) tablePatch.type = data.type;
+        if (data.gameFormat !== undefined) tablePatch.gameFormat = data.gameFormat;
+        if (data.currency !== undefined) tablePatch.currency = data.currency;
+        if (data.tournamentName !== undefined) tablePatch.tournamentName = data.tournamentName;
+
+        if (updatedSession && Object.keys(tablePatch).length > 0) {
+          const affected = await forceOverwriteSessionMapping(id, ctx.user.id, tablePatch);
+
+          if (affected === 0) {
+            // Legacy session with no session_tables — create one so Home picks it up.
+            const startedAt = updatedSession.sessionDate ?? new Date();
+            const endedAt = new Date(
+              new Date(startedAt).getTime() + Math.max(1, updatedSession.durationMinutes ?? 1) * 60_000,
+            );
+            await addSessionTable({
+              userId: ctx.user.id,
+              sessionId: updatedSession.id,
+              activeSessionId: null,
+              venueId: updatedSession.venueId ?? null,
+              type: updatedSession.type,
+              gameFormat: updatedSession.gameFormat,
+              currency: updatedSession.currency,
+              buyIn: updatedSession.buyIn,
+              cashOut: updatedSession.cashOut,
+              gameType: (updatedSession as any).gameType ?? null,
+              stakes: (updatedSession as any).stakes ?? null,
+              tournamentName: (updatedSession as any).tournamentName ?? null,
+              finalPosition: (updatedSession as any).finalPosition ?? null,
+              fieldSize: (updatedSession as any).fieldSize ?? null,
+              notes: (updatedSession as any).notes ?? null,
+              startedAt,
+              endedAt,
+            } as any);
+          }
+
+          // Wipe the bankroll history cache so it cannot serve a stale snapshot with the old
+          // platform. Next read recomputes from scratch.
+          await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+            console.warn("[wipeBankrollHistoryCache] failed", err),
+          );
+        }
 
         // Auto-adjust venue balance for online sessions
         if (oldSession && updatedSession) {
@@ -817,9 +1122,12 @@ export const appRouter = router({
           }
         }
 
-        // Invalidate cache for this user
+        // Invalidate cache for this user (mark stale) + hard-wipe bankroll history cache
         await invalidateCacheForSession(ctx.user.id).catch(err =>
           console.warn("[Cache] Error invalidating on session delete:", err)
+        );
+        await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+          console.warn("[wipeBankrollHistoryCache] failed on session delete", err),
         );
 
         return result;
@@ -896,8 +1204,21 @@ export const appRouter = router({
     saveOnboardingProfile: protectedProcedure
       .input(onboardingProfileInput)
       .mutation(async ({ ctx, input }) => {
-        await updateUserOnboardingProfile(ctx.user.id, input);
-        return await getUserPreferences(ctx.user.id);
+        try {
+          await updateUserOnboardingProfile(ctx.user.id, input);
+          return await getUserPreferences(ctx.user.id);
+        } catch (error: any) {
+          if (error?.message === "CPF_REQUIRED") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CPF obrigatorio para concluir o cadastro." });
+          }
+          if (error?.message === "CPF_INVALID") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CPF invalido. Verifique os digitos informados." });
+          }
+          if (error?.message === "CPF_ALREADY_EXISTS") {
+            throw new TRPCError({ code: "CONFLICT", message: "Este CPF ja esta cadastrado em outra conta." });
+          }
+          throw error;
+        }
       }),
 
     importPreview: protectedProcedure
@@ -1128,6 +1449,15 @@ export const appRouter = router({
           }
         }
 
+        if (imported > 0) {
+          await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+            console.warn("[wipeBankrollHistoryCache] failed on importFromText", err),
+          );
+          await invalidateCacheForSession(ctx.user.id).catch((err) =>
+            console.warn("[Cache] Error invalidating on importFromText:", err),
+          );
+        }
+
         return {
           imported,
           failed: failures.length,
@@ -1185,6 +1515,10 @@ export const appRouter = router({
           await updateVenue(input.venueId, ctx.user.id, { currency: input.currency as any });
         }
 
+        if (table) {
+          await applyActiveTableVenueEffect(ctx.user.id, table, "active-table:add");
+        }
+
         return table;
       }),
 
@@ -1210,11 +1544,35 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, incrementRebuy, ...data } = input;
+        const current = await getSessionTableById(id, ctx.user.id);
         const updated = await updateSessionTable(id, ctx.user.id, data as any, incrementRebuy === true);
 
         if (data.venueId && data.currency) {
           await updateVenue(data.venueId, ctx.user.id, { currency: data.currency as any });
         }
+
+        if (current && updated) {
+          const sameVenueContext =
+            current.type === updated.type &&
+            current.venueId === updated.venueId &&
+            current.currency === updated.currency;
+
+          if (sameVenueContext) {
+            const delta = getActiveTableVenueNet(updated) - getActiveTableVenueNet(current);
+            await applyActiveTableVenueDelta(ctx.user.id, updated, delta, "active-table:update:delta");
+          } else {
+            await revertActiveTableVenueEffect(ctx.user.id, current, "active-table:update:revert-old");
+            await applyActiveTableVenueEffect(ctx.user.id, updated, "active-table:update:apply-new");
+          }
+        }
+
+        // Hard-wipe bankroll history cache so Home recomputes from scratch after a table edit.
+        await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+          console.warn("[wipeBankrollHistoryCache] failed on updateTable", err),
+        );
+        await invalidateCacheForSession(ctx.user.id).catch((err) =>
+          console.warn("[Cache] Error invalidating on updateTable:", err),
+        );
 
         return updated;
       }),
@@ -1223,7 +1581,18 @@ export const appRouter = router({
     removeTable: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
-        return await removeSessionTable(input.id, ctx.user.id);
+        const current = await getSessionTableById(input.id, ctx.user.id);
+        const removed = await removeSessionTable(input.id, ctx.user.id);
+        if (removed && current) {
+          await revertActiveTableVenueEffect(ctx.user.id, current, "active-table:remove");
+        }
+        await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+          console.warn("[wipeBankrollHistoryCache] failed on removeTable", err),
+        );
+        await invalidateCacheForSession(ctx.user.id).catch((err) =>
+          console.warn("[Cache] Error invalidating on removeTable:", err),
+        );
+        return removed;
       }),
 
     // Finalize the active session (creates a sessions record)
@@ -1240,19 +1609,33 @@ export const appRouter = router({
           JPY: Math.round((rates?.JPY?.rate ?? 0.033) * 100),
           CNY: Math.round((rates?.CNY?.rate ?? 0.80) * 100),
         };
-        return await finalizeActiveSession(
+        const finalized = await finalizeActiveSession(
           ctx.user.id,
           input.activeSessionId,
           input.notes,
           exchangeRates
         );
+        await wipeBankrollHistoryCache(ctx.user.id).catch((err) =>
+          console.warn("[wipeBankrollHistoryCache] failed on finalize", err),
+        );
+        await invalidateCacheForSession(ctx.user.id).catch((err) =>
+          console.warn("[Cache] Error invalidating on finalize:", err),
+        );
+        return finalized;
       }),
 
     // Discard the active session without saving
     discard: protectedProcedure
       .input(z.object({ activeSessionId: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
-        return await discardActiveSession(ctx.user.id, input.activeSessionId);
+        const activeTables = await getActiveSessionTables(input.activeSessionId, ctx.user.id);
+        const discarded = await discardActiveSession(ctx.user.id, input.activeSessionId);
+        if (discarded) {
+          for (const table of activeTables) {
+            await revertActiveTableVenueEffect(ctx.user.id, table, "active-table:discard");
+          }
+        }
+        return discarded;
       }),
 
     // Get tables for a finalized session
@@ -1320,6 +1703,7 @@ export const appRouter = router({
       .input(z.object({
         name: z.string().min(1).max(128),
         type: z.enum(["online", "live"]),
+        currency: z.enum(["BRL", "USD", "CAD", "JPY", "CNY", "EUR"]).default("BRL"),
         logoUrl: z.string().optional(),
         website: z.string().optional(),
         address: z.string().optional(),
@@ -1522,18 +1906,31 @@ export const appRouter = router({
         fileName: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Decode base64
         const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
         const buffer = Buffer.from(base64Data, "base64");
+        const normalizedMime = String(input.mimeType || "").trim().toLowerCase();
 
-        // Store avatar directly in DB as data URL to avoid external storage dependency.
-        if (buffer.length > 1_000_000) {
-          throw new Error("A imagem deve ter no maximo 1MB.");
+        if (!normalizedMime.startsWith("image/")) {
+          throw new Error("Formato de imagem inválido.");
         }
 
-        const inlineUrl = `data:${input.mimeType};base64,${base64Data}`;
-        await updateUserAvatar(ctx.user.id, inlineUrl);
-        return { success: true, url: inlineUrl };
+        if (buffer.length > 10 * 1024 * 1024) {
+          throw new Error("A imagem deve ter no maximo 10MB.");
+        }
+
+        try {
+          const { storagePut } = await import("./storage");
+          const ext = normalizedMime.split("/")[1]?.split(";")[0] || "jpg";
+          const key = `avatars/${ctx.user.id}-${Date.now()}.${ext}`;
+          const { url } = await storagePut(key, buffer, normalizedMime);
+          await updateUserAvatar(ctx.user.id, url);
+          return { success: true, url };
+        } catch (error: any) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error?.message || "Falha ao enviar foto de perfil.",
+          });
+        }
       }),
 
     // Update user name/nickname
@@ -1982,6 +2379,15 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         return await deletePost(input.id, ctx.user.id);
       }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number().int(), content: z.string().max(1000) }))
+      .mutation(async ({ ctx, input }) => {
+        const updated = await updatePost(input.id, ctx.user.id, input.content);
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Post não encontrado." });
+        }
+        return updated;
+      }),
     toggleLike: protectedProcedure
       .input(z.object({ postId: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
@@ -2010,6 +2416,50 @@ export const appRouter = router({
   }),
 
   memory: router({
+    favorites: router({
+      list: protectedProcedure.query(async ({ ctx }) => {
+        return await listHandReviewFavoritesForUser(ctx.user.id);
+      }),
+      add: protectedProcedure
+        .input(z.object({
+          rawInput: z.string().min(1),
+          parserSelection: z.enum(["AUTO", "POKERSTARS", "GG"]),
+          handCount: z.number().int().min(0),
+          label: z.string().min(1).max(191),
+          createdAt: z.number().int().positive().optional(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          return await createHandReviewFavoriteForUser(ctx.user.id, {
+            rawInput: input.rawInput,
+            parserSelection: input.parserSelection,
+            handCount: input.handCount,
+            label: input.label,
+            createdAtMs: input.createdAt,
+          });
+        }),
+      rename: protectedProcedure
+        .input(z.object({ id: z.string().min(1), label: z.string().min(1).max(191) }))
+        .mutation(async ({ ctx, input }) => {
+          const id = Number(input.id);
+          if (!Number.isFinite(id) || id <= 0) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "ID de favorito inválido." });
+          }
+          const renamed = await renameHandReviewFavoriteForUser(ctx.user.id, id, input.label);
+          if (!renamed) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Favorito não encontrado." });
+          }
+          return renamed;
+        }),
+      remove: protectedProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ ctx, input }) => {
+          const id = Number(input.id);
+          if (!Number.isFinite(id) || id <= 0) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "ID de favorito inválido." });
+          }
+          return { ok: await deleteHandReviewFavoriteForUser(ctx.user.id, id) };
+        }),
+    }),
     consent: router({
       get: protectedProcedure.query(async ({ ctx }) => {
         return await getActiveConsent(ctx.user.id);
@@ -2034,16 +2484,7 @@ export const appRouter = router({
       .input(replayImportInput)
       .mutation(async ({ ctx, input }) => {
         try {
-          const importResult = await importReplayToCentralMemory(ctx.user.id, input);
-          const refresh = enqueueReplayStatsRecalculation(ctx.user.id, {
-            delayMs: 60 * 60 * 1000,
-            reason: "import_replay",
-          });
-
-          return {
-            ...importResult,
-            refresh,
-          };
+          return await importReplayToCentralMemory(ctx.user.id, input);
         } catch (error: any) {
           if (String(error?.message) === "CONSENT_REQUIRED") {
             throw new TRPCError({
@@ -2057,12 +2498,28 @@ export const appRouter = router({
               message: "Replay duplicado detectado. Este torneio já existe no histórico do jogador.",
             });
           }
+          if (String(error?.message) === "REPLAY_HISTORY_CHANGED_DURING_IMPORT") {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "O histórico foi alterado durante o salvamento. Tente salvar novamente.",
+            });
+          }
           throw error;
         }
       }),
     clearReplayHistory: protectedProcedure
       .mutation(async ({ ctx }) => {
-        return await clearReplayHistoryForUser(ctx.user.id);
+        try {
+          return await clearReplayHistoryForUser(ctx.user.id);
+        } catch (error: any) {
+          if (String(error?.message) === "CLEAR_REPLAY_HISTORY_INCOMPLETE") {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Limpeza incompleta do histórico. Tente novamente em alguns segundos.",
+            });
+          }
+          throw error;
+        }
       }),
     recalculateHistory: protectedProcedure
       .mutation(async ({ ctx }) => {
@@ -2336,6 +2793,122 @@ export const appRouter = router({
       }),
   }),
 
+  // GTO Trainer routes
+  gto: router({
+    listScenarios: publicProcedure
+      .query(async () => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable." });
+
+        const [rows] = await db.execute(
+          sql`SELECT id, slug, title, gameType, heroPosition, villainPosition, effectiveStackBb, smallBlind, bigBlind, openSizeBbX10, threeBetSizeBbX10
+              FROM gto_baseado_scenarios
+              ORDER BY id ASC`
+        ) as any;
+
+        return (rows || []).map((row: any) => ({
+          id: row.id,
+          slug: row.slug,
+          title: row.title,
+          gameType: row.gameType,
+          heroPosition: row.heroPosition,
+          villainPosition: row.villainPosition,
+          effectiveStackBb: row.effectiveStackBb,
+          smallBlind: row.smallBlind,
+          bigBlind: row.bigBlind,
+          openSizeBbX10: row.openSizeBbX10 ?? 0,
+          threeBetSizeBbX10: row.threeBetSizeBbX10 ?? 0,
+        }));
+      }),
+
+    // Get a GTO scenario with all hands
+    getScenario: publicProcedure
+      .input(z.object({ slug: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable." });
+
+        // Get scenario
+        const [scenarioRows] = await db.execute(
+          sql`SELECT * FROM gto_baseado_scenarios WHERE slug = ${input.slug} LIMIT 1`
+        ) as any;
+
+        if (!scenarioRows || !scenarioRows[0]) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Cenário GTO não encontrado." });
+        }
+
+        const scenario = scenarioRows[0];
+
+        // Get all hands for this scenario
+        const [handRows] = await db.execute(
+          sql`SELECT * FROM gto_baseado_hands WHERE scenarioId = ${scenario.id} ORDER BY id ASC`
+        ) as any;
+
+        // Format hands data for the matrix (organized by hand type)
+        const handsMap = new Map<string, typeof handRows[0]>();
+        handRows.forEach((hand: any) => {
+          handsMap.set(hand.handCode, hand);
+        });
+
+        return {
+          scenario: {
+            id: scenario.id,
+            slug: scenario.slug,
+            title: scenario.title,
+            gameType: scenario.gameType,
+            heroPosition: scenario.heroPosition,
+            villainPosition: scenario.villainPosition,
+            effectiveStackBb: scenario.effectiveStackBb,
+            smallBlind: scenario.smallBlind,
+            bigBlind: scenario.bigBlind,
+            totalCombos: scenario.totalCombos,
+            weightedRaisePctX10: scenario.weightedRaisePctX10,
+            weightedLimpCheckPctX10: scenario.weightedLimpCheckPctX10,
+            weightedFoldPctX10: scenario.weightedFoldPctX10,
+            openSizeBbX10: scenario.openSizeBbX10 ?? 0,
+            threeBetSizeBbX10: scenario.threeBetSizeBbX10 ?? 0,
+          },
+          hands: Object.fromEntries(handsMap),
+          handList: handRows.map((h: any) => ({
+            code: h.handCode,
+            type: h.handType,
+            combos: h.combos,
+            raisePctX10: h.raisePctX10,
+            limpCheckPctX10: h.limpCheckPctX10,
+            foldPctX10: h.foldPctX10,
+            bucket: h.raiseBucket,
+          })),
+        };
+      }),
+
+    getMatrixPreferences: protectedProcedure
+      .query(async ({ ctx }) => {
+        const saved = await getGtoMatrixPreferences(ctx.user.id);
+        return {
+          barOrientation: saved?.barOrientation ?? "diagonal",
+          barPosition: saved?.barPosition ?? "normal",
+          raiseColor: saved?.raiseColor ?? "#22c55e",
+          callColor: saved?.callColor ?? "#a855f7",
+          foldColor: saved?.foldColor ?? "#2563eb",
+          allinColor: saved?.allinColor ?? "#ef4444",
+        };
+      }),
+
+    updateMatrixPreferences: protectedProcedure
+      .input(gtoMatrixPreferencesInput)
+      .mutation(async ({ ctx, input }) => {
+        const saved = await upsertGtoMatrixPreferences(ctx.user.id, input);
+        return {
+          barOrientation: saved.barOrientation,
+          barPosition: saved.barPosition,
+          raiseColor: saved.raiseColor,
+          callColor: saved.callColor,
+          foldColor: saved.foldColor,
+          allinColor: saved.allinColor,
+        };
+      }),
+  }),
+
   chat: router({
     conversations: protectedProcedure
       .query(async ({ ctx }) => {
@@ -2416,6 +2989,15 @@ export const appRouter = router({
                 playsMultiPlatform,
                 showInGlobalRanking,
                 showInFriendsRanking,
+                country,
+                stateRegion,
+                city,
+                addressLine,
+                postalCode,
+                taxDocument,
+                locationLatE6,
+                locationLngE6,
+                locationConsentAt,
                 rankingConsentAnsweredAt,
                 playStyleAnsweredAt,
                 onboardingCompletedAt,
@@ -2458,6 +3040,15 @@ export const appRouter = router({
             playsMultiPlatform: Number(row.playsMultiPlatform ?? 0) === 1,
             showInGlobalRanking: Number(row.showInGlobalRanking ?? 0) === 1,
             showInFriendsRanking: Number(row.showInFriendsRanking ?? 0) === 1,
+            country: row.country ? String(row.country) : "",
+            stateRegion: row.stateRegion ? String(row.stateRegion) : "",
+            city: row.city ? String(row.city) : "",
+            addressLine: row.addressLine ? String(row.addressLine) : "",
+            postalCode: row.postalCode ? String(row.postalCode) : "",
+            taxDocument: row.taxDocument ? String(row.taxDocument) : "",
+            locationLatE6: row.locationLatE6 != null ? Number(row.locationLatE6) : null,
+            locationLngE6: row.locationLngE6 != null ? Number(row.locationLngE6) : null,
+            locationConsentAt: row.locationConsentAt ? new Date(row.locationConsentAt) : null,
             rankingConsentAnsweredAt: row.rankingConsentAnsweredAt ? new Date(row.rankingConsentAnsweredAt) : null,
             playStyleAnsweredAt: row.playStyleAnsweredAt ? new Date(row.playStyleAnsweredAt) : null,
             onboardingCompletedAt: row.onboardingCompletedAt ? new Date(row.onboardingCompletedAt) : null,
@@ -2508,6 +3099,15 @@ export const appRouter = router({
           windowMinutes: 15,
         };
       }),
+    userPresenceSummary: protectedProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
+        }
+
+        return getAdminUserPresenceSummary(input.userId);
+      }),
     diagnoseUser: protectedProcedure
       .input(z.object({ search: z.string().min(1).max(100) }))
       .query(async ({ ctx, input }) => {
@@ -2551,6 +3151,73 @@ export const appRouter = router({
           });
         }
         return results;
+      }),
+    resetUserData: protectedProcedure
+      .input(z.object({
+        userId: z.number().int().positive(),
+        confirmationText: z.string().trim().min(1).max(64),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
+        }
+
+        const expectedConfirmation = `RESETAR ${input.userId}`;
+        if (input.confirmationText !== expectedConfirmation) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Confirmação inválida. Digite exatamente: ${expectedConfirmation}`,
+          });
+        }
+
+        const target = await getUserById(input.userId);
+        if (!target) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado." });
+        }
+        if (String(target.role ?? "").toLowerCase() === "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Por segurança, contas admin não podem ser resetadas por este atalho." });
+        }
+
+        const summary = await resetUserAccountData(input.userId);
+        return {
+          ...summary,
+          expectedConfirmation,
+        };
+      }),
+    deleteUserAccount: protectedProcedure
+      .input(z.object({
+        userId: z.number().int().positive(),
+        confirmationText: z.string().trim().min(1).max(64),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isBoardAdmin(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a diretoria." });
+        }
+
+        const expectedConfirmation = `EXCLUIR ${input.userId}`;
+        if (input.confirmationText !== expectedConfirmation) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Confirmação inválida. Digite exatamente: ${expectedConfirmation}`,
+          });
+        }
+
+        const target = await getUserById(input.userId);
+        if (!target) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado." });
+        }
+        if (String(target.role ?? "").toLowerCase() === "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Por segurança, contas admin não podem ser excluídas por este atalho." });
+        }
+        if (ctx.user?.id && Number(ctx.user.id) === input.userId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Você não pode excluir sua própria conta por este atalho." });
+        }
+
+        const summary = await deleteUserAccountCompletely(input.userId);
+        return {
+          ...summary,
+          expectedConfirmation,
+        };
       }),
     cleanOrphanTables: protectedProcedure
       .input(z.object({ userId: z.number().int().positive() }))

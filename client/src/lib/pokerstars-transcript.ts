@@ -81,6 +81,7 @@ export interface ParsedPokerStarsHand {
   ante: number;
   buyIn: number | null;
   fee: number | null;
+  totalBuyIn: number | null;
   currency: string;
   game: string;
   format: string;
@@ -108,6 +109,7 @@ export interface ParsedPokerStarsTournament {
     tournamentId: string;
     buyIn: number | null;
     fee: number | null;
+    totalBuyIn: number | null;
     currency: string;
     site: "PokerStars";
     handsImported: number;
@@ -150,6 +152,48 @@ function parseNumber(token: string | undefined): number {
 function parseCards(cardsRaw: string | undefined): string[] {
   if (!cardsRaw) return [];
   return cardsRaw.trim().split(/\s+/).filter(Boolean);
+}
+
+function parsePokerStarsBuyInSegment(segment: string): {
+  buyIn: number | null;
+  fee: number | null;
+  totalBuyIn: number | null;
+  currency: string;
+  gameFormatText: string;
+} {
+  // Accept any non-numeric separator between amounts (+ / | , ;) and any currency symbol.
+  // Example segment: "$2.50+$2.40+$0.60 USD Hold'em No Limit".
+  const match = segment.match(
+    /^((?:(?:US\$|R\$|C\$|€|¥|\$)?\d+(?:\.\d+)?)(?:\s*[^A-Za-z0-9\s.]\s*(?:US\$|R\$|C\$|€|¥|\$)?\d+(?:\.\d+)?)*)\s+([A-Z]{3})\s+(.+)$/,
+  );
+  if (!match) {
+    return {
+      buyIn: null,
+      fee: null,
+      totalBuyIn: null,
+      currency: "USD",
+      gameFormatText: "Hold'em No Limit",
+    };
+  }
+
+  const amounts = Array.from(match[1].matchAll(/\d+(?:\.\d+)?/g))
+    .map((entry) => Number(entry[0]))
+    .filter((value) => Number.isFinite(value));
+
+  // Treat the whole entry (buy-in + fee + bounty + add-on, etc.) as a single buy-in total.
+  // The PokerStars header uses "buy-in + rake [+ bounty]" notation, but for ABI/ROI purposes
+  // the player paid the full sum to enter the tournament, so we always sum everything.
+  const totalBuyIn = amounts.length > 0 ? amounts.reduce((sum, value) => sum + value, 0) : null;
+  const buyIn = totalBuyIn;
+  const fee = totalBuyIn != null ? 0 : null;
+
+  return {
+    buyIn,
+    fee,
+    totalBuyIn,
+    currency: match[2]?.toUpperCase() ?? "USD",
+    gameFormatText: match[3] ?? "Hold'em No Limit",
+  };
 }
 
 function normalizeName(name: string | undefined): string {
@@ -206,6 +250,22 @@ function parseGeneralHeader(rawText: string): PokerTranscriptHeader {
 }
 
 function splitHandBlocks(rawText: string): string[] {
+  // Prefer splitting by each hand header so parsing keeps working even when
+  // transcript separators change format across exports/reentries.
+  const handHeaderRegex = /^PokerStars Hand #\d+:/gm;
+  const handHeaders = Array.from(rawText.matchAll(handHeaderRegex));
+
+  if (handHeaders.length > 0) {
+    const blocks: string[] = [];
+    for (let index = 0; index < handHeaders.length; index += 1) {
+      const start = handHeaders[index].index ?? 0;
+      const end = index + 1 < handHeaders.length ? (handHeaders[index + 1].index ?? rawText.length) : rawText.length;
+      const block = rawText.slice(start, end).trim();
+      if (block.startsWith("PokerStars Hand #")) blocks.push(block);
+    }
+    return blocks;
+  }
+
   const separatorRegex = /^\*{5,}\s*#\s*\d+\s*\*{5,}$/gm;
   const matches = Array.from(rawText.matchAll(separatorRegex));
   if (matches.length === 0) {
@@ -542,23 +602,20 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
   const handHeader = lines.find(line => line.startsWith("PokerStars Hand #"));
   if (!handHeader) return null;
 
-  const handMatch = handHeader.match(/^PokerStars Hand #(\d+): Tournament #(\d+),\s*(.+?)\s+-\s+Level\s+([^\s]+)\s+\((\d+)\/(\d+)\)\s+-\s+(\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})\s+([A-Z]+)/);
+  const handMatch = handHeader.match(/^PokerStars Hand #(\d+): Tournament #(\d+),\s*(.+?)\s+-\s+Level\s+(.+?)\s+\(([\d,]+)\/([\d,]+)(?:\/([\d,]+))?\)\s+-\s+(\d{4}\/\d{2}\/\d{2}\s+\d{1,2}:\d{2}:\d{2})(?:\s+([A-Z]{2,5}))?/);
   if (!handMatch) return null;
 
   const handId = handMatch[1];
   const tournamentId = handMatch[2];
   const buyinSegment = handMatch[3];
-  const level = handMatch[4];
+  const level = handMatch[4].trim();
   const smallBlind = parseNumber(handMatch[5]);
   const bigBlind = parseNumber(handMatch[6]);
-  const dateTime = handMatch[7];
-  const timezone = handMatch[8];
+  const anteFromHeader = parseNumber(handMatch[7]);
+  const dateTime = handMatch[8];
+  const timezone = handMatch[9] ?? "";
 
-  const buyInMatch = buyinSegment.match(/\$?(\d+(?:\.\d+)?)\+\$?(\d+(?:\.\d+)?)\s+([A-Z]{3})\s+(.+)/i);
-  const buyIn = buyInMatch ? Number(buyInMatch[1]) : null;
-  const fee = buyInMatch ? Number(buyInMatch[2]) : null;
-  const currency = buyInMatch?.[3] ?? "USD";
-  const gameFormatText = buyInMatch?.[4] ?? "Hold'em No Limit";
+  const { buyIn, fee, totalBuyIn, currency, gameFormatText } = parsePokerStarsBuyInSegment(buyinSegment);
   const game = gameFormatText.includes("Hold'em") ? "Hold'em" : gameFormatText;
   const format = gameFormatText.replace("Hold'em", "").trim() || "No Limit";
 
@@ -591,15 +648,6 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
       ?.match(/^Dealt to\s+(.+?)\s+\[/i)?.[1] ?? null;
   const effectiveHeroName = dealtToHeroName ?? header.heroName;
   const normalizedHeroFromHeader = normalizeName(effectiveHeroName);
-
-  // Ignore hands where hero is seated but explicitly marked as out of hand
-  // (common after table move while posting/transitioning blinds).
-  const heroOutOfHand = lines.some(
-    line => seatLineRegex.test(line)
-      && /out of hand/i.test(line)
-      && normalizeName(line.match(seatLineRegex)?.[2] ?? "") === normalizedHeroFromHeader,
-  );
-  if (heroOutOfHand) return null;
 
   const seatsWithoutPosition: PokerSeat[] = seatsBase.map(seat => ({
     ...seat,
@@ -671,7 +719,7 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
   const heroPosition = heroSeat ? positionMap.get(heroSeat) ?? "" : "";
   const heroRuntimeName = seats.find(seat => seat.isHero)?.playerName ?? header.heroName;
 
-  const ante = actions.find(action => action.action === "post_ante")?.amount ?? 0;
+  const ante = actions.find(action => action.action === "post_ante")?.amount ?? anteFromHeader;
 
   const totalPotLine = lines.find(line => /^Total pot\s+\d+/i.test(line));
   const totalPot = parseNumber(totalPotLine?.match(/Total pot\s+(\d+)/i)?.[1]);
@@ -702,7 +750,13 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
   const eliminationMatch = heroEliminationLine?.match(eliminationRegex) ?? null;
   const eliminationPosition = heroWonTournament ? 1 : (eliminationMatch ? parseNumber(eliminationMatch[1]) : null);
 
-  const showdown = lines.some(line => line.includes("*** SHOW DOWN ***")) || villainCards.length > 0 || heroShowed.length > 0;
+  // Hero went to showdown iff hero showed cards OR (showdown marker present AND hero did not fold).
+  // Without the heroFolded guard, hands where the hero folded but villains went to showdown were marked as hero showdowns, distorting WSD.
+  const heroFoldedAnyStreet = actions.some(
+    action => action.action === "fold" && normalizeName(action.player) === normalizedHeroFromHeader,
+  );
+  const reachedShowdownMarker = lines.some(line => line.includes("*** SHOW DOWN ***"));
+  const showdown = heroShowed.length > 0 || (reachedShowdownMarker && !heroFoldedAnyStreet);
   const heroFolded = actions.some(action => action.player === header.heroName && action.action === "fold");
   const heroInvestedVoluntarily = actions.some(
     action => normalizeName(action.player) === normalizedHeroFromHeader && isVoluntaryHeroInvestment(action),
@@ -754,6 +808,7 @@ function parseSingleHand(block: string, header: PokerTranscriptHeader): ParsedPo
     ante,
     buyIn,
     fee,
+    totalBuyIn,
     currency,
     game,
     format,
@@ -823,7 +878,10 @@ export function parsePokerStarsTranscript(rawTextInput: string): ParsedPokerStar
   const allInsCount = hands.reduce((sum, hand) => sum + hand.actions.filter(action => action.isAllIn).length, 0);
   const showdownCount = hands.filter(hand => hand.summary.showdown).length;
   const bigHandsCount = hands.filter(hand => hand.summary.totalPot >= hand.bigBlind * 20).length;
-  const finalPosition = hands.map(hand => hand.summary.eliminationPosition).find(position => position != null) ?? null;
+  const finalPosition = [...hands]
+    .reverse()
+    .map(hand => hand.summary.eliminationPosition)
+    .find(position => position != null) ?? null;
   const allObservedPlacings = Array.from(rawText.matchAll(/finished the tournament in\s+(\d+)(?:st|nd|rd|th)\s+place/gi))
     .map(match => parseNumber(match[1]))
     .filter(position => Number.isFinite(position) && position > 0);
@@ -857,6 +915,7 @@ export function parsePokerStarsTranscript(rawTextInput: string): ParsedPokerStar
       tournamentId: header.tournamentId || hands[0]?.tournamentId || "",
       buyIn: hands[0]?.buyIn ?? null,
       fee: hands[0]?.fee ?? null,
+      totalBuyIn: hands[0]?.totalBuyIn ?? null,
       currency: hands[0]?.currency ?? "USD",
       site: "PokerStars",
       handsImported: hands.length,

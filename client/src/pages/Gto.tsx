@@ -1,75 +1,145 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, BookOpenCheck, ClipboardList, Sigma } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import GtoStudyLab from "@/components/GtoStudyLab";
+import GtoTrainer from "@/components/GtoTrainer";
+import GtoStudyMode from "@/components/GtoStudyMode";
+import GtoActionFlow from "@/components/GtoActionFlow";
+
+type GtoView = "inicio" | "trainer" | "estudo" | "estudo-avancado" | "fluxo";
 
 export default function Gto() {
   const [, setLocation] = useLocation();
+  const [view, setView] = useState<GtoView>("inicio");
+
+  const subtitle = useMemo(() => {
+    if (view === "trainer") return "Treino prático de decisão";
+    if (view === "estudo") return "Modo estudo clássico";
+    if (view === "estudo-avancado") return "Matriz e exploração de spots";
+    if (view === "fluxo") return "Fluxo de ações preflop";
+    return "Escolha um modo para estudar";
+  }, [view]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
-      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_28%),linear-gradient(135deg,_rgba(10,10,10,0.96),_rgba(20,28,20,0.94))] p-6 text-white shadow-2xl md:p-8">
-        <Badge className="mb-4 border-emerald-400/30 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
-          Novo modulo
-        </Badge>
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-emerald-400/15 p-3 text-emerald-200">
-                <ClipboardList className="h-6 w-6" />
-              </div>
-              <h1 className="text-3xl font-black tracking-tight md:text-4xl">GTO</h1>
-            </div>
-            <p className="text-sm leading-6 text-zinc-300 md:text-base">
-              Espaco reservado para estudo de ranges, sizings e linhas teoricas. A aba ja esta criada na navegacao e pronta para receber a ferramenta completa.
-            </p>
+    <div className="relative h-full w-full overflow-hidden bg-[#050913] text-white">
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-[#050913]/95 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-black uppercase tracking-[0.2em] text-cyan-200">GTO</h1>
+            <p className="truncate text-xs text-slate-400">{subtitle}</p>
           </div>
-          <Button className="bg-emerald-500 text-black hover:bg-emerald-400" onClick={() => setLocation("/sessions")}>
-            Ir para sessoes
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/50 bg-card/70">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sigma className="h-4 w-4 text-emerald-500" />
-              Ranges
-            </CardTitle>
-            <CardDescription>Pré-flop, defesa, 3-bet e spots por posicao.</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Estrutura pronta para receber tabelas, filtros por stack e atalhos de estudo.
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card/70">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BookOpenCheck className="h-4 w-4 text-emerald-500" />
-              Biblioteca
-            </CardTitle>
-            <CardDescription>Links de spots, anotações e teoria aplicada.</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Pode concentrar artigos, drills e resumos operacionais para consulta rapida.
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card/70">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="h-4 w-4 text-emerald-500" />
-              Checklist
-            </CardTitle>
-            <CardDescription>Pipeline pronto para evoluir sem mexer na nav depois.</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            A aba ja esta ligada ao menu lateral e ao roteamento de producao.
-          </CardContent>
-        </Card>
-      </section>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => setView("inicio")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-bold transition ${
+                view === "inicio"
+                  ? "border-cyan-300/60 bg-cyan-500/20 text-cyan-100"
+                  : "border-white/20 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Início
+            </button>
+            <button
+              onClick={() => setView("trainer")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-bold transition ${
+                view === "trainer"
+                  ? "border-cyan-300/60 bg-cyan-500/20 text-cyan-100"
+                  : "border-white/20 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Trainer
+            </button>
+            <button
+              onClick={() => setView("estudo")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-bold transition ${
+                view === "estudo"
+                  ? "border-cyan-300/60 bg-cyan-500/20 text-cyan-100"
+                  : "border-white/20 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Modo estudo
+            </button>
+            <button
+              onClick={() => setView("estudo-avancado")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-bold transition ${
+                view === "estudo-avancado"
+                  ? "border-cyan-300/60 bg-cyan-500/20 text-cyan-100"
+                  : "border-white/20 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Estudo avançado
+            </button>
+            <button
+              onClick={() => setView("fluxo")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-bold transition ${
+                view === "fluxo"
+                  ? "border-cyan-300/60 bg-cyan-500/20 text-cyan-100"
+                  : "border-white/20 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Fluxo
+            </button>
+            <button
+              onClick={() => setLocation("/sessions")}
+              className="rounded-md border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-white/10"
+            >
+              Sair do GTO
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="h-[calc(100%-66px)] overflow-hidden">
+        {view === "inicio" && (
+          <div className="mx-auto flex h-full w-full max-w-5xl flex-col justify-center gap-4 px-4">
+            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 p-5">
+              <h2 className="text-xl font-black text-cyan-100">Hub de estudo GTO</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Aqui você alterna entre o treino de decisões e o modo estudo com matriz completa.
+              </p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <button
+                onClick={() => setView("trainer")}
+                className="rounded-2xl border border-emerald-300/30 bg-emerald-500/15 p-5 text-left transition hover:scale-[1.01]"
+              >
+                <h3 className="text-base font-black text-emerald-100">Abrir Trainer</h3>
+                <p className="mt-1 text-sm text-emerald-50/80">Sessões de treino com feedback por decisão.</p>
+              </button>
+
+              <button
+                onClick={() => setView("estudo")}
+                className="rounded-2xl border border-purple-300/30 bg-purple-500/15 p-5 text-left transition hover:scale-[1.01]"
+              >
+                <h3 className="text-base font-black text-purple-100">Abrir Modo estudo</h3>
+                <p className="mt-1 text-sm text-purple-50/80">Treino guiado de uma mão por vez.</p>
+              </button>
+
+              <button
+                onClick={() => setView("estudo-avancado")}
+                className="rounded-2xl border border-cyan-300/30 bg-cyan-500/15 p-5 text-left transition hover:scale-[1.01]"
+              >
+                <h3 className="text-base font-black text-cyan-100">Abrir Estudo avançado</h3>
+                <p className="mt-1 text-sm text-cyan-50/80">Matriz completa com filtros e spots.</p>
+              </button>
+
+              <button
+                onClick={() => setView("fluxo")}
+                className="rounded-2xl border border-amber-300/30 bg-amber-500/15 p-5 text-left transition hover:scale-[1.01]"
+              >
+                <h3 className="text-base font-black text-amber-100">Abrir Fluxo</h3>
+                <p className="mt-1 text-sm text-amber-50/80">Construção de linhas preflop por ação.</p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === "trainer" && <GtoTrainer />}
+        {view === "estudo" && <GtoStudyMode />}
+        {view === "estudo-avancado" && <GtoStudyLab />}
+        {view === "fluxo" && <GtoActionFlow />}
+      </div>
     </div>
   );
 }

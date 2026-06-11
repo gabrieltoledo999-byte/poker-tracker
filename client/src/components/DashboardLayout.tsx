@@ -19,6 +19,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { PUBLIC_LANDING_URL } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, ListChecks, Settings, MapPin, Users, Wallet, Palette } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -136,15 +137,15 @@ export default function DashboardLayout({
         className="flex items-center justify-center min-h-screen bg-background bg-cover bg-center"
         style={{
           backgroundImage:
-            "linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.58)), url('/TheRail_Primary_WITH-FX_SplashScreen_2000x2000.png')",
+            "linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.58)), url('/all-in-edge-logo-full.webp')",
         }}
       >
         <div className="flex flex-col items-center gap-10 p-8 max-w-sm w-full rounded-2xl border border-white/10 bg-black/35 backdrop-blur-sm">
           {/* Logo grande */}
           <div className="flex flex-col items-center gap-4">
             <img
-              src="/TheRail_Primary_WITH-FX_SplashScreen_2000x2000.png"
-              alt="The Rail"
+              src="/all-in-edge-logo-full-slogan.webp"
+              alt="All in Edge"
               className="h-44 md:h-48 w-auto object-contain drop-shadow-xl"
             />
             <div className="flex flex-col items-center gap-1">
@@ -206,7 +207,6 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
-  const [isBrandHovered, setIsBrandHovered] = useState(false);
   const [hoveredMenuPath, setHoveredMenuPath] = useState<string | null>(null);
 
   useEffect(() => {
@@ -257,78 +257,36 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
                 aria-label="Toggle navigation"
               >
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
                 <div
-                  className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer rounded-xl px-1.5 py-1"
-                  onMouseEnter={() => setIsBrandHovered(true)}
-                  onMouseLeave={() => setIsBrandHovered(false)}
+                  className="group flex items-center gap-2 min-w-0 flex-1 cursor-pointer px-1.5 py-1"
                   onClick={() => setLocation("/")}
-                  style={{
-                    transform: isBrandHovered ? "scale(1.04)" : "scale(1)",
-                    background: isBrandHovered
-                      ? "linear-gradient(90deg, color-mix(in oklab, var(--primary) 26%, transparent), color-mix(in oklab, var(--secondary) 16%, transparent), color-mix(in oklab, var(--primary) 26%, transparent))"
-                      : "transparent",
-                    boxShadow: isBrandHovered
-                      ? "0 0 0 1px rgba(255,255,255,0.10), 0 12px 26px rgba(0,0,0,0.22)"
-                      : "none",
-                    transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
-                  }}
                 >
                   <img
-                    src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
-                    alt="The Rail"
-                    className="h-10 w-auto object-contain"
-                    style={{
-                      transform: isBrandHovered ? "scale(1.12)" : "scale(1)",
-                      filter: isBrandHovered
-                        ? "drop-shadow(0 0 10px rgba(239,68,68,0.85)) drop-shadow(0 0 18px rgba(59,130,246,0.35))"
-                        : "none",
-                      transition: "transform 0.2s ease, filter 0.2s ease",
-                    }}
+                    src="/all-in-edge-logo-vertical.webp"
+                    alt="All in Edge"
+                    className="h-10 w-auto object-contain transition-transform duration-300 ease-out group-hover:scale-110"
                   />
                   <span
                     className="font-semibold tracking-wide text-sm md:text-base whitespace-nowrap"
-                    style={{
-                      transform: isBrandHovered ? "scale(1.06)" : "scale(1)",
-                      color: isBrandHovered ? "color-mix(in oklab, var(--foreground) 60%, var(--primary) 40%)" : "",
-                      textShadow: isBrandHovered ? "0 0 10px rgba(239,68,68,0.55)" : "none",
-                      transition: "transform 0.2s ease, color 0.2s ease, text-shadow 0.2s ease",
-                    }}
                   >
-                    The Rail
+                    All in Edge
                   </span>
                 </div>
               ) : (
                 <div
-                  className="flex justify-center cursor-pointer rounded-xl px-1 py-1"
-                  onMouseEnter={() => setIsBrandHovered(true)}
-                  onMouseLeave={() => setIsBrandHovered(false)}
+                  className="group flex justify-center cursor-pointer px-1 py-1"
                   onClick={() => setLocation("/")}
-                  style={{
-                    transform: isBrandHovered ? "scale(1.04)" : "scale(1)",
-                    background: isBrandHovered
-                      ? "linear-gradient(90deg, color-mix(in oklab, var(--primary) 24%, transparent), color-mix(in oklab, var(--secondary) 14%, transparent))"
-                      : "transparent",
-                    boxShadow: isBrandHovered
-                      ? "0 0 0 1px rgba(255,255,255,0.10), 0 10px 24px rgba(0,0,0,0.20)"
-                      : "none",
-                    transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
-                  }}
                 >
                   <img
-                    src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
-                    alt="The Rail"
-                    className="h-10 w-auto object-contain"
-                    style={{
-                      transform: isBrandHovered ? "scale(1.12)" : "scale(1)",
-                      filter: isBrandHovered ? "drop-shadow(0 0 12px rgba(239,68,68,0.85))" : "none",
-                      transition: "transform 0.2s ease, filter 0.2s ease",
-                    }}
+                    src="/all-in-edge-logo-vertical.webp"
+                    alt="All in Edge"
+                    className="h-10 w-auto object-contain transition-transform duration-300 ease-out group-hover:scale-110"
                   />
                 </div>
               )}

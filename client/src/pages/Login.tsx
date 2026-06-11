@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PasswordStrengthMeter } from "@/components/PasswordStrengthMeter";
 import { Eye, EyeOff, Loader2, Mail, Lock, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,11 +41,19 @@ function AppleIcon() {
 }
 
 export default function Login() {
-  const [mode, setMode] = useState<"login" | "register" | "setup_password">("login");
+  const [mode, setMode] = useState<"login" | "register" | "setup_password" | "verify_email">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [country, setCountry] = useState("");
+  const [stateRegion, setStateRegion] = useState("");
+  const [city, setCity] = useState("");
+  const [addressLine, setAddressLine] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [taxDocument, setTaxDocument] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -62,6 +71,7 @@ export default function Login() {
         toast.info("Conta encontrada! Crie uma senha para acessar seu histórico.");
         return;
       }
+      utils.auth.me.setData(undefined, data.user);
       utils.auth.me.invalidate();
       window.location.href = "/";
     },
@@ -71,8 +81,9 @@ export default function Login() {
   });
 
   const registerMutation = trpc.auth.register.useMutation({
-    onSuccess: () => {
-      toast.success("Conta criada! Bem-vindo ao The Rail.");
+    onSuccess: (data) => {
+      toast.success("Conta criada! Bem-vindo ao All in Edge.");
+      utils.auth.me.setData(undefined, data.user);
       utils.auth.me.invalidate();
       window.location.href = "/";
     },
@@ -82,8 +93,9 @@ export default function Login() {
   });
 
   const setupPasswordMutation = trpc.auth.setupPassword.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success("Senha criada! Bem-vindo de volta — seu histórico está intacto.");
+      utils.auth.me.setData(undefined, data.user);
       utils.auth.me.invalidate();
       window.location.href = "/";
     },
@@ -92,10 +104,10 @@ export default function Login() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === "login") {
-      loginMutation.mutate({ email, password });
+      loginMutation.mutate({ identifier: email, password });
     } else if (mode === "register") {
       if (password !== confirmPassword) {
         toast.error("As senhas não conferem.");
@@ -105,7 +117,17 @@ export default function Login() {
         toast.error("A senha deve ter pelo menos 6 caracteres.");
         return;
       }
-      registerMutation.mutate({ name, email, password });
+      registerMutation.mutate({
+        name,
+        email,
+        password,
+        country,
+        stateRegion,
+        city,
+        addressLine,
+        postalCode,
+        taxDocument,
+      });
     } else if (mode === "setup_password") {
       if (password !== confirmPassword) {
         toast.error("As senhas não conferem.");
@@ -115,19 +137,54 @@ export default function Login() {
         toast.error("A senha deve ter pelo menos 6 caracteres.");
         return;
       }
-      setupPasswordMutation.mutate({ email, password });
+      setupPasswordMutation.mutate({ email, password, taxDocument });
+    } else if (mode === "verify_email") {
+      const code = verificationCode.replace(/\D/g, "");
+      if (code.length !== 6) {
+        toast.error("Informe o codigo de 6 digitos.");
+        return;
+      }
+
+      setVerificationBusy(true);
+      try {
+        const response = await fetch("/api/oauth/google/verify-code", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toast.error(data?.message || "Nao foi possivel validar o codigo.");
+          return;
+        }
+
+        utils.auth.me.invalidate();
+        window.location.href = "/";
+      } catch {
+        toast.error("Falha de rede ao validar o codigo.");
+      } finally {
+        setVerificationBusy(false);
+      }
     }
   };
 
-  const switchMode = (newMode: "login" | "register" | "setup_password") => {
+  const switchMode = (newMode: "login" | "register" | "setup_password" | "verify_email") => {
     setMode(newMode);
     setPassword("");
     setConfirmPassword("");
+    setVerificationCode("");
     setShowPassword(false);
     setShowConfirmPassword(false);
   };
 
-  const isLoading = loginMutation.isPending || registerMutation.isPending || setupPasswordMutation.isPending;
+  const isLoading =
+    loginMutation.isPending ||
+    registerMutation.isPending ||
+    setupPasswordMutation.isPending ||
+    verificationBusy;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -141,6 +198,40 @@ export default function Login() {
     window.history.replaceState({}, "", nextUrl);
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const verifyEmail = params.get("verifyEmail");
+    const pendingEmail = params.get("email");
+    if (verifyEmail !== "1") return;
+
+    setMode("verify_email");
+    if (pendingEmail) {
+      setEmail(decodeURIComponent(pendingEmail));
+    }
+  }, []);
+
+  const resendVerificationCode = async () => {
+    setVerificationBusy(true);
+    try {
+      const response = await fetch("/api/oauth/google/resend-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data?.message || "Nao foi possivel reenviar o codigo.");
+        return;
+      }
+      toast.success("Novo codigo enviado para seu e-mail.");
+    } catch {
+      toast.error("Falha de rede ao reenviar codigo.");
+    } finally {
+      setVerificationBusy(false);
+    }
+  };
+
   const handleSocialLogin = (provider: "Google" | "Apple") => {
     if (provider === "Google") {
       window.location.href = "/api/oauth/google";
@@ -150,22 +241,15 @@ export default function Login() {
     toast.info("Login com Apple em breve.");
   };
 
-  const passwordStrength = password.length === 0 ? 0
-    : password.length < 6 ? 1
-    : password.length < 10 ? 2
-    : /[A-Z]/.test(password) && /[0-9]/.test(password) ? 4
-    : 3;
-
-  const strengthColors = ["bg-muted", "bg-red-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
-  const strengthLabels = ["", "Fraca", "Regular", "Boa", "Forte"];
+  const needsPasswordConfirmation = mode === "register" || mode === "setup_password";
+  const passwordMismatch = needsPasswordConfirmation && confirmPassword.length > 0 && password !== confirmPassword;
 
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4 bg-cover"
       style={{
-        backgroundImage:
-          "linear-gradient(rgba(0,0,0,0.62), rgba(0,0,0,0.62)), url('/Tela-de-Login.PNG')",
-              backgroundPosition: "center 13%",
+        backgroundImage: "radial-gradient(circle at 18% 22%, rgba(56,189,248,0.22), transparent 46%), radial-gradient(circle at 82% 76%, rgba(16,185,129,0.2), transparent 45%), linear-gradient(180deg, #030712 0%, #0b1220 100%)",
+        backgroundPosition: "center",
       }}
     >
       <div className="w-full max-w-sm space-y-4">
@@ -173,9 +257,9 @@ export default function Login() {
         {/* Logo */}
         <div className="flex justify-center">
           <img
-            src="/TheRail_Login_front.png"
-            alt="The Rail"
-            className="h-32 md:h-36 w-auto object-contain drop-shadow-xl"
+            src="/all-in-edge-logo-full-slogan.webp"
+            alt="All in Edge"
+            className="h-32 md:h-36 w-auto object-contain drop-shadow-xl transition-transform duration-300 ease-out hover:scale-110"
           />
         </div>
 
@@ -187,6 +271,7 @@ export default function Login() {
               {mode === "login" && "Entrar na sua conta"}
               {mode === "register" && "Criar nova conta"}
               {mode === "setup_password" && "Criar sua senha"}
+              {mode === "verify_email" && "Confirmar codigo do e-mail"}
             </CardTitle>
           </CardHeader>
 
@@ -215,16 +300,49 @@ export default function Login() {
                 </div>
               )}
 
+              {mode === "register" && (
+                <div className="space-y-2 rounded-xl border border-border/60 bg-muted/30 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cadastro - Localizacao e seguranca</p>
+                  <p className="text-[11px] text-muted-foreground">Esses dados ajudam a validar acesso, compras e segurança da conta.</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="country" className="text-xs">Pais</Label>
+                      <Input id="country" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Brasil" maxLength={120} disabled={isLoading} required />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="stateRegion" className="text-xs">Estado/Regiao</Label>
+                      <Input id="stateRegion" value={stateRegion} onChange={(e) => setStateRegion(e.target.value)} placeholder="SP" maxLength={120} disabled={isLoading} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="city" className="text-xs">Cidade</Label>
+                      <Input id="city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Sao Paulo" maxLength={120} disabled={isLoading} required />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="postalCode" className="text-xs">CEP</Label>
+                      <Input id="postalCode" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="00000-000" maxLength={20} disabled={isLoading} />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="addressLine" className="text-xs">Endereco</Label>
+                    <Input id="addressLine" value={addressLine} onChange={(e) => setAddressLine(e.target.value)} placeholder="Rua, numero e complemento" maxLength={300} disabled={isLoading} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="taxDocument" className="text-xs">CPF ou documento fiscal (opcional)</Label>
+                    <Input id="taxDocument" value={taxDocument} onChange={(e) => setTaxDocument(e.target.value)} placeholder="000.000.000-00" maxLength={24} disabled={isLoading} />
+                  </div>
+                </div>
+              )}
+
               {/* E-mail (oculto no setup_password pois já foi preenchido) */}
-              {mode !== "setup_password" && (
+              {(mode === "login" || mode === "register") && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-sm font-medium">E-mail</Label>
+                  <Label htmlFor="email" className="text-sm font-medium">E-mail ou CPF</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="email"
-                      type="email"
-                      placeholder="seu@email.com"
+                      type={mode === "login" ? "text" : "email"}
+                      placeholder={mode === "login" ? "seu@email.com ou seu CPF" : "seu@email.com"}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -236,7 +354,31 @@ export default function Login() {
                 </div>
               )}
 
+              {mode === "verify_email" && (
+                <div className="space-y-2">
+                  <Label htmlFor="verificationCode" className="text-sm font-medium">Codigo de verificacao</Label>
+                  <Input
+                    id="verificationCode"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    placeholder="000000"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required
+                    disabled={isLoading}
+                    className="text-center tracking-[0.35em] text-lg font-semibold"
+                    autoComplete="one-time-code"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enviamos um codigo para {email || "seu e-mail"}. Digite para concluir o login com Google.
+                  </p>
+                </div>
+              )}
+
               {/* Senha */}
+              {mode !== "verify_email" && (
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-sm font-medium">Senha</Label>
                 <div className="relative">
@@ -264,10 +406,25 @@ export default function Login() {
                   </button>
                 </div>
               </div>
+              )}
 
-              {/* Confirmar senha + indicador de força (registro e setup_password) */}
+              {/* CPF opcional e confirmar senha (registro e setup_password) */}
               {(mode === "register" || mode === "setup_password") && (
                 <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="taxDocument" className="text-sm font-medium">CPF ou documento fiscal (opcional)</Label>
+                    <div className="relative">
+                      <Input
+                        id="taxDocument"
+                        value={taxDocument}
+                        onChange={(e) => setTaxDocument(e.target.value)}
+                        placeholder="000.000.000-00"
+                        maxLength={24}
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirmar senha</Label>
                     <div className="relative">
@@ -280,7 +437,7 @@ export default function Login() {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         required
                         disabled={isLoading}
-                        className="pl-9 pr-10"
+                        className={`pl-9 pr-10 ${passwordMismatch ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         autoComplete="new-password"
                       />
                       <button
@@ -293,28 +450,12 @@ export default function Login() {
                         {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
+                    {passwordMismatch && (
+                      <p className="text-xs text-red-400">As senhas precisam ser iguais nas duas tentativas.</p>
+                    )}
                   </div>
 
-                  {/* Indicador de força da senha */}
-                  {password.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4].map((level) => (
-                          <div
-                            key={level}
-                            className={`h-1 flex-1 rounded-full transition-all duration-300 ${
-                              passwordStrength >= level ? strengthColors[passwordStrength] : "bg-muted"
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      {passwordStrength > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          Força da senha: <span className="font-medium">{strengthLabels[passwordStrength]}</span>
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  <PasswordStrengthMeter password={password} />
                 </>
               )}
 
@@ -322,24 +463,38 @@ export default function Login() {
               <Button
                 type="submit"
                 className="w-full font-semibold mt-2"
-                disabled={isLoading}
+                disabled={isLoading || passwordMismatch}
                 size="lg"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    {mode === "login" && "Continuando com e-mail..."}
+                    {mode === "login" && "Continuando..."}
                     {mode === "register" && "Criando conta..."}
                     {mode === "setup_password" && "Salvando senha..."}
+                    {mode === "verify_email" && "Validando codigo..."}
                   </>
                 ) : (
                   <>
-                    {mode === "login" && "Continuar com e-mail"}
+                    {mode === "login" && "Continuar"}
                     {mode === "register" && "Criar conta"}
                     {mode === "setup_password" && "Salvar senha e entrar"}
+                    {mode === "verify_email" && "Confirmar e entrar"}
                   </>
                 )}
               </Button>
+
+              {mode === "verify_email" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={resendVerificationCode}
+                  disabled={isLoading}
+                >
+                  Reenviar codigo
+                </Button>
+              )}
 
               {mode === "login" && (
                 <div className="mt-4 rounded-2xl bg-card px-4 py-4">
@@ -404,6 +559,15 @@ export default function Login() {
                   className="text-muted-foreground hover:text-foreground hover:underline"
                 >
                   ← Voltar ao login
+                </button>
+              )}
+              {mode === "verify_email" && (
+                <button
+                  type="button"
+                  onClick={() => (window.location.href = "/login")}
+                  className="text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  ← Reiniciar login
                 </button>
               )}
             </div>

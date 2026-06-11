@@ -10,11 +10,19 @@ export default function Home() {
       className="min-h-screen flex flex-col justify-center bg-cover bg-center"
       style={{
         backgroundImage:
-          "linear-gradient(rgba(0,0,0,0.64), rgba(0,0,0,0.64)), url('/TheRail_Primary_WITH-FX_SplashScreen_2000x2000.png')",
+          "linear-gradient(rgba(0,0,0,0.64), rgba(0,0,0,0.64)), url('/all-in-edge-logo-full.webp')",
       }}
     >
       <main className="mx-auto w-full max-w-4xl px-4 py-12">
         <div className="rounded-2xl border border-white/10 bg-black/40 p-8 md:p-12 backdrop-blur-sm">
+          <div className="mb-4 flex justify-center">
+            <img
+              src="/all-in-edge-logo-neymar-homebar.png"
+              alt="All in Edge"
+              className="h-16 md:h-20 w-auto object-contain"
+            />
+          </div>
+
           <button
             type="button"
             onClick={() => (window.location.href = "/sessions")}
@@ -22,8 +30,8 @@ export default function Home() {
             aria-label="Ir para sessões"
           >
             <img
-              src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
-              alt="The Rail"
+              src="/all-in-edge-logo-horizontal.webp"
+              alt="All in Edge"
               className="mx-auto h-24 md:h-32 w-auto object-contain transition-transform duration-200 group-hover:scale-[1.03]"
             />
           </button>

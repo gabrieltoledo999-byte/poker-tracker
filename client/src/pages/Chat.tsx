@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import SocialHubNav from "@/components/SocialHubNav";
+import { OnlinePresenceDot, OnlinePresenceLabel } from "@/components/OnlinePresence";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { ArrowLeft, Image, Send, MessageCircle, X, Radio, Sparkles } from "lucide-react";
+import { ArrowLeft, Image, Send, MessageCircle, X, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 const MESSAGE_REACTIONS = ["❤️", "🔥", "😂", "👏", "👀"] as const;
@@ -37,16 +37,37 @@ function formatTime(date: string | Date): string {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+function normalizeExternalUrl(rawUrl: string): string {
+  const value = String(rawUrl ?? "").trim();
+  if (!value) return "";
+  if (/^(https?:|blob:|data:)/i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function openInNewTab(url: string): boolean {
+  const normalized = normalizeExternalUrl(url);
+  if (!normalized) return false;
+  const popup = window.open(normalized, "_blank", "noopener,noreferrer");
+  if (popup) {
+    popup.opener = null;
+    return true;
+  }
+  window.location.assign(normalized);
+  return false;
+}
+
 // ─── Conversation view ────────────────────────────────────────────────────────
 function ConversationView({
   friendId,
   friendName,
   friendAvatarUrl,
+  friendIsOnline,
   onBack,
 }: {
   friendId: number;
   friendName: string | null;
   friendAvatarUrl: string | null;
+  friendIsOnline?: boolean;
   onBack: () => void;
 }) {
   const { user } = useAuth();
@@ -55,9 +76,18 @@ function ConversationView({
   const [pendingImagePreview, setPendingImagePreview] = useState<string | null>(null);
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [openReactionMessageId, setOpenReactionMessageId] = useState<number | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+  }, []);
 
   const { data: msgs = [], isLoading } = trpc.chat.messages.useQuery(
     { friendId },
@@ -118,10 +148,13 @@ function ConversationView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [friendId]);
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when opening a conversation and when messages update.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs.length]);
+    const raf = window.requestAnimationFrame(() => {
+      scrollToBottom("auto");
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [friendId, msgs, scrollToBottom]);
 
   const clearPendingImage = () => {
     setPendingImageFile(null);
@@ -204,18 +237,25 @@ function ConversationView({
         <Button variant="ghost" size="icon" onClick={onBack} className="lg:hidden">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <Avatar className="h-9 w-9">
-          <AvatarImage src={getAvatarSrc({ id: friendId, name: friendName, avatarUrl: friendAvatarUrl })} />
-          <AvatarFallback>{getInitials(friendName)}</AvatarFallback>
-        </Avatar>
+        <div className="relative">
+          <Avatar className="h-9 w-9">
+            <AvatarImage src={getAvatarSrc({ id: friendId, name: friendName, avatarUrl: friendAvatarUrl })} />
+            <AvatarFallback>{getInitials(friendName)}</AvatarFallback>
+          </Avatar>
+          {friendIsOnline ? <OnlinePresenceDot className="absolute -bottom-1 -right-1" /> : null}
+        </div>
         <p className="font-semibold">{friendName ?? "Jogador"}</p>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
-          <Radio className="h-3 w-3" /> Online agora
-        </span>
+        {friendIsOnline ? (
+          <OnlinePresenceLabel text="Online agora" className="ml-auto" />
+        ) : (
+          <span className="ml-auto inline-flex items-center rounded-full bg-zinc-500/12 px-2.5 py-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-300">
+            Offline
+          </span>
+        )}
       </div>
 
       {/* Messages */}
-      <div className="app-scrollbar flex-1 space-y-2 overflow-y-auto rounded-[1.5rem] bg-background/55 px-2 pb-2 pr-2 pt-1 md:px-3">
+      <div ref={messagesContainerRef} className="app-scrollbar flex-1 space-y-2 overflow-y-auto rounded-[1.5rem] bg-background/55 px-2 pb-2 pr-2 pt-1 md:px-3">
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -251,7 +291,7 @@ function ConversationView({
                         src={msg.content}
                         alt="imagem"
                         className="rounded-lg max-w-[240px] max-h-[240px] object-cover cursor-pointer"
-                        onClick={() => window.open(msg.content, "_blank")}
+                        onClick={() => openInNewTab(msg.content)}
                       />
                       {msg.caption ? (
                         <p className="whitespace-pre-wrap break-words text-sm">{msg.caption}</p>
@@ -385,6 +425,7 @@ export default function Chat() {
     id: number;
     name: string | null;
     avatarUrl: string | null;
+    isOnline?: boolean;
   } | null>(null);
 
   const { data: friends = [], isLoading: loadingFriends } = trpc.ranking.friends.useQuery(undefined, {
@@ -417,6 +458,7 @@ export default function Chat() {
         id: firstFriend.id,
         name: firstFriend.name,
         avatarUrl: firstFriend.avatarUrl,
+        isOnline: Boolean(conversations[0]?.isOnline),
       });
     }
   }, [conversations, friends, selectedFriend]);
@@ -424,11 +466,11 @@ export default function Chat() {
   if (selectedFriend && typeof window !== "undefined" && window.innerWidth < 1024) {
     return (
       <div className="social-page space-y-4">
-        <SocialHubNav />
         <ConversationView
           friendId={selectedFriend.id}
           friendName={selectedFriend.name}
           friendAvatarUrl={selectedFriend.avatarUrl}
+          friendIsOnline={selectedFriend.isOnline}
           onBack={() => setSelectedFriend(null)}
         />
       </div>
@@ -437,8 +479,6 @@ export default function Chat() {
 
   return (
     <div className="social-page flex flex-col space-y-4">
-      <SocialHubNav />
-
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold">
@@ -495,7 +535,7 @@ export default function Chat() {
                         ? "border-primary/30 bg-primary/10 shadow-sm"
                         : "border-border/60 bg-background/45 hover:bg-muted/45"
                     }`}
-                    onClick={() => setSelectedFriend({ id: friend.id, name: friend.name, avatarUrl: friend.avatarUrl })}
+                    onClick={() => setSelectedFriend({ id: friend.id, name: friend.name, avatarUrl: friend.avatarUrl, isOnline: Boolean(conv?.isOnline) })}
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative shrink-0">
@@ -503,6 +543,7 @@ export default function Chat() {
                           <AvatarImage src={getAvatarSrc({ id: friend.id, name: friend.name, avatarUrl: friend.avatarUrl })} />
                           <AvatarFallback>{getInitials(friend.name)}</AvatarFallback>
                         </Avatar>
+                        {conv?.isOnline ? <OnlinePresenceDot className="absolute -bottom-1 -right-1" /> : null}
                         {unread > 0 && (
                           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
                             {unread > 9 ? "9+" : unread}
@@ -537,6 +578,7 @@ export default function Chat() {
               friendId={selectedFriend.id}
               friendName={selectedFriend.name}
               friendAvatarUrl={selectedFriend.avatarUrl}
+              friendIsOnline={selectedFriend.isOnline}
               onBack={() => setSelectedFriend(null)}
             />
           ) : (

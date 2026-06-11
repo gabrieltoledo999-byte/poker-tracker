@@ -6,17 +6,24 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import "./index.css";
+import { PUBLIC_LANDING_URL } from "@/const";
 
 const queryClient = new QueryClient();
+
+const PUBLIC_PATHS = new Set<string>(["/login", "/onboarding", PUBLIC_LANDING_URL]);
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
   if (!isUnauthorized) return;
 
+  const currentPath = window.location.pathname;
+  // Em rotas publicas (login, onboarding, landing) o erro UNAUTHORIZED nao deve disparar redirect.
+  if (PUBLIC_PATHS.has(currentPath)) return;
+
+  // Dentro do app, perda de sessao vai para /login (nao para a landing).
   window.location.href = "/login";
 };
 
@@ -50,6 +57,14 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw-notifications.js").catch((error) => {
+      console.error("[Notifications] Service worker registration failed", error);
+    });
+  });
+}
 
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>

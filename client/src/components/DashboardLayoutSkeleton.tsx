@@ -8,8 +8,8 @@ export function DashboardLayoutSkeleton() {
         {/* Logo area */}
         <div className="flex items-center gap-3 px-2">
           <img
-            src="/TheRail_Primary_WITH-FX_navbar_400x120_V02.png"
-            alt="The Rail"
+            src="/all-in-edge-logo-vertical.webp"
+            alt="All in Edge"
             className="h-9 w-auto object-contain"
           />
         </div>
